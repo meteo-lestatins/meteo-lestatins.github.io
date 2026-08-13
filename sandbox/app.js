@@ -3162,8 +3162,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       if (candidateDetails) candidateDetails.hidden = true;
     });
     if (collapse) return;
-    const rowTop = card.offsetTop;
-    [...grid.children].filter(candidate => candidate.offsetTop === rowTop && !candidate.classList.contains("disappeared")).forEach(candidate => candidate.classList.add("row-expanded"));
+    card.classList.add("row-expanded");
     card.classList.add("detail-expanded");
     button.setAttribute("aria-expanded", "true");
     details.hidden = false;
