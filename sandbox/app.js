@@ -2550,8 +2550,9 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
-  const height = 360;
+  const compactDesktopMap = !window.matchMedia("(max-width: 900px)").matches;
+  const width = compactDesktopMap ? 960 : 360;
+  const height = compactDesktopMap ? 240 : 360;
   const radarCells = (radar?.cells || []).filter(cell => {
     const centerDistance = Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
     return Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0))) <= mapRadiusKm;
@@ -2710,7 +2711,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + (trackPoints ? '<polyline class="storm-track' + (primaryProjection ? ' projected' : '') + '" points="' + trackPoints + '"></polyline>' : '') + milestones +
     '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (targetY + 22) + '" text-anchor="middle">Les Tatins</text></g>' +
-    '<g class="scale-bar"><path d="M24 334v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="328">' + scaleBarKm + ' km</text></g>' +
+    '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
     '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span><span><i class="legend-lightning">ϟ</i> foudre</span></div></div>';
 }
 
@@ -2726,8 +2727,9 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
-  const height = 360;
+  const compactDesktopMap = !window.matchMedia("(max-width: 900px)").matches;
+  const width = compactDesktopMap ? 960 : 360;
+  const height = compactDesktopMap ? 240 : 360;
   const scale = width === 360
     ? (width - 32) / (mapRadiusKm * 2)
     : Math.min((width - 96) / (mapRadiusKm * 2.2), (height - 64) / (mapRadiusKm * 2.2));
@@ -3260,7 +3262,7 @@ async function renderAppVersion() {
   let releaseNumber = "";
   try {
     const config = await json("api/config");
-    releaseNumber = String(config.releaseNumber || "");
+    releaseNumber = String(runtimeConfig.releaseNumber || config.releaseNumber || "");
   } catch {}
   if (!/^\d+\.\d{3}$/.test(releaseNumber)) {
     try {
