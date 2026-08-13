@@ -36,6 +36,7 @@ let weekForecastRetryTimer = 0;
 let weekForecastErrors = {};
 let meteoFranceWeekPollTimer = 0;
 let weekActiveDayTimer = 0;
+let latestWeekEvolutionHistory = [];
 let activeNowcastMapRadius = 80;
 let nowcastMapRadiusManuallySelected = false;
 let nowcastLeafletMap = null;
@@ -1205,10 +1206,17 @@ function weekForecastEvolution() {
   };
   const signature = JSON.stringify(current);
   if (signature === weekEvolutionState.signature) return weekEvolutionState.byDate;
-  let history = [];
+  let history = Array.isArray(latestWeekEvolutionHistory) ? latestWeekEvolutionHistory.filter(item => item?.models) : [];
   try {
     const stored = JSON.parse(localStorage.getItem("week-forecast-history-v2") || "null");
-    if (Array.isArray(stored?.history)) history = stored.history.filter(item => item?.models);
+    if (Array.isArray(stored?.history)) {
+      const known = new Set(history.map(item => JSON.stringify(item.models)));
+      stored.history.filter(item => item?.models).forEach(item => {
+        const itemSignature = JSON.stringify(item.models);
+        if (!known.has(itemSignature)) history.push(item);
+      });
+      history.sort((left, right) => Number(left.savedAt || 0) - Number(right.savedAt || 0));
+    }
     if (!history.length) {
       const previous = JSON.parse(localStorage.getItem("week-forecast-history-v1") || "null");
       if (previous?.models) history.push(previous);
@@ -1557,6 +1565,7 @@ function scheduleMeteoFranceWeekPoll(status) {
   meteoFranceWeekPollTimer = setTimeout(async () => {
     try {
       const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
+      latestWeekEvolutionHistory = Array.isArray(payload.history) ? payload.history : [];
       if (payload.status === "ready" && payload.data?.version >= 20 && payload.data?.days?.length === 4) {
         const ensembleStatus = payload.data.version >= 7 ? payload.ensemble || null : { status: "pending", stage: payload.stage, progress: 0, error: null };
         latestMeteoFranceWeek = { ...payload.data, ensembleStatus };
@@ -1575,6 +1584,7 @@ function scheduleMeteoFranceWeekPoll(status) {
 async function loadMeteoFranceWeek() {
   for (let attempt = 0; attempt < 300; attempt++) {
     const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
+    latestWeekEvolutionHistory = Array.isArray(payload.history) ? payload.history : [];
     if (payload.status === "ready" && payload.data?.version >= 20 && payload.data?.days?.length === 4) {
       const ensembleStatus = payload.data.version >= 7 ? payload.ensemble || null : { status: "pending", stage: payload.stage, progress: 0, error: null };
       scheduleMeteoFranceWeekPoll(ensembleStatus?.status);
