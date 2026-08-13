@@ -2931,19 +2931,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const distance = Math.hypot(Number(flash.eastKm || 0) - Number(cell.eastKm || 0), Number(flash.northKm || 0) - Number(cell.northKm || 0));
     return distance <= Math.max(8, Number(cell.radiusKm || 0) + 5);
   }).length;
-  const hasStormSignal = cell => {
-    const passage = Math.max(0, Math.min(100, Number(cell.risks?.passage) || 0));
-    // 4 mm/h est une averse convective modérée : elle peut caractériser un
-    // orage même si la grêle ou le vent restent faibles.
-    const convectiveRain = Math.max(0, Number(cell.maximum) || 0) >= 4;
-    return passage > 0 && convectiveRain;
-  };
   const cellStormProbability = cell => {
     const passage = Math.max(0, Math.min(100, Number(cell.risks?.passage) || 0));
-    // Une fois l'orage caractérisé, sa probabilité est celle du passage de sa
-    // cellule. Grêle et rafales décrivent l'intensité, pas sa qualification.
-    return hasStormSignal(cell) ? Math.round(passage) : 0;
+    const stormPotential = Math.max(0, Math.min(100, Number(cell.risks?.storm) || 0));
+    // Le risque local exige à la fois que la cellule atteigne le point et
+    // qu'elle présente un potentiel orageux : aucun seuil binaire arbitraire.
+    return Math.round(passage * stormPotential / 100);
   };
+  const hasStormSignal = cell => cellStormProbability(cell) > 0;
   const maximumCellStormRisk = Math.max(0, ...cells.map(cellStormProbability));
   const generalStormRisk = maximumCellStormRisk;
   const stormRiskLevel = generalStormRisk <= 0 ? 0 : Math.min(5, Math.ceil(generalStormRisk / 20));
@@ -2952,7 +2947,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
   // pas la cellule la plus forte parmi toutes celles visibles dans les 80 km.
   const relevantStormCell = cells
     .filter(hasStormSignal)
-    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
+    .sort((left, right) => cellStormProbability(right) - cellStormProbability(left) || Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
   const relevantStormIntensity = relevantStormCell ? (() => {
     const passage = Math.round(Number(relevantStormCell.risks?.passage) || 0);
     const rain = Math.max(0, Number(relevantStormCell.maximum) || 0);
@@ -3051,7 +3046,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
   }
   const stormLevel = relevantStormIntensity?.level || stormRiskLevel;
   const stormDetail = relevantStormCell
-    ? "Orage · cellule " + relevantStormCell.id + " · risque de passage " + generalStormRisk + " % · importance " + stormLevel + " sur 5"
+    ? "Orage · cellule " + relevantStormCell.id + " · risque local " + generalStormRisk + " % · importance " + stormLevel + " sur 5"
     : "Aucune cellule pluvio-convective susceptible de passer";
   const rainDetail = "Pluie · cumul PIAF prévu sur 3 h : " + rainAmount.toFixed(1) + " mm · " + rainTrend.detail;
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
