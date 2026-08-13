@@ -3041,6 +3041,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · intensité radar maximale " + rainIntensityLabel : ""));
     const hailPictogram = nowcastMetricPictogram("hail", probabilityStep(hailRisk), "Grêle : risque " + hailRisk + " %");
     const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
+    const cellIntensityLevel = Math.max(rainLevel, probabilityStep(hailRisk), flashCountStep(flashes));
     const hazards = hazardMetric("hail", riskTone(hailRisk), "Grêle : risque " + hailRisk + " %", hailPictogram)
       + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · " + rainIntensityLabel : ""), rainPictogram)
       + hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram);
@@ -3062,7 +3063,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       ? '<span class="nowcast-cell-eta">ETA ' + formatMinutes(etaMinutes) + '</span>'
       : '';
     const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (eta ? " · ETA disponible" : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Proba passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Proba passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="nowcast-cell-intensity">Intensité : ' + cellIntensityLevel + ' point' + (cellIntensityLevel > 1 ? 's' : '') + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
   };
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
@@ -3136,11 +3137,24 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     renderRadarNowcast(radar, piaf, arome, lightning);
   }));
   element.querySelectorAll(".nowcast-cell-card-button").forEach(button => button.addEventListener("click", () => {
+    const card = button.closest(".nowcast-cell-card");
+    const grid = card?.parentElement;
     const details = document.getElementById(button.getAttribute("aria-controls"));
-    if (!details) return;
-    const expanded = button.getAttribute("aria-expanded") === "true";
-    button.setAttribute("aria-expanded", String(!expanded));
-    details.hidden = expanded;
+    if (!card || !grid || !details) return;
+    const collapse = card.classList.contains("detail-expanded");
+    grid.querySelectorAll(".nowcast-cell-card").forEach(candidate => {
+      candidate.classList.remove("row-expanded", "detail-expanded");
+      const candidateButton = candidate.querySelector(".nowcast-cell-card-button");
+      const candidateDetails = document.getElementById(candidateButton?.getAttribute("aria-controls"));
+      if (candidateButton) candidateButton.setAttribute("aria-expanded", "false");
+      if (candidateDetails) candidateDetails.hidden = true;
+    });
+    if (collapse) return;
+    const rowTop = card.offsetTop;
+    [...grid.children].filter(candidate => candidate.offsetTop === rowTop && !candidate.classList.contains("disappeared")).forEach(candidate => candidate.classList.add("row-expanded"));
+    card.classList.add("detail-expanded");
+    button.setAttribute("aria-expanded", "true");
+    details.hidden = false;
   }));
   if (threat) bindChartTooltips();
 }
