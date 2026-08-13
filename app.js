@@ -37,6 +37,8 @@ let weekForecastErrors = {};
 let meteoFranceWeekPollTimer = 0;
 let weekActiveDayTimer = 0;
 let latestWeekEvolutionHistory = [];
+let dashboardCacheHydrated = false;
+let weekCacheHydrated = false;
 let activeNowcastMapRadius = 80;
 let nowcastMapRadiusManuallySelected = false;
 let nowcastLeafletMap = null;
@@ -457,11 +459,45 @@ function isNight(date) {
   return date < sunrise || date >= sunset;
 }
 
+const publicDataCacheName = "meteo-public-data-v1";
+
+function cacheableApiTarget(target) {
+  try {
+    const url = new URL(target, document.baseURI);
+    return url.origin === apiBaseUrl.origin && /\/api\/(dashboard|week)$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function readCachedJson(target, maximumAge) {
+  if (!("caches" in window) || !cacheableApiTarget(target)) return null;
+  try {
+    const response = await (await caches.open(publicDataCacheName)).match(String(target));
+    const cachedAt = Number(response?.headers.get("x-meteo-cached-at")) || 0;
+    if (!response || !cachedAt || Date.now() - cachedAt > maximumAge) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedJson(target, data) {
+  if (!("caches" in window) || !cacheableApiTarget(target)) return;
+  try {
+    const response = new Response(JSON.stringify(data), {
+      headers: { "content-type": "application/json", "x-meteo-cached-at": String(Date.now()) }
+    });
+    await (await caches.open(publicDataCacheName)).put(String(target), response);
+  } catch {}
+}
+
 async function json(url) {
   const target = typeof url === "string" && /^\/?api\//.test(url) ? apiUrl(url) : url;
   const response = await fetch(target, { cache: "no-store" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Erreur " + response.status);
+  void writeCachedJson(target, data);
   return data;
 }
 
@@ -1204,26 +1240,28 @@ function weekForecastEvolution() {
     ecmwf: Object.fromEntries((latestWeekForecast?.days || []).map(day => [day.date, fields(day)])),
     arpege: Object.fromEntries((latestMeteoFranceWeek?.days || []).map(day => [day.date, fields(day)]))
   };
-  const signature = JSON.stringify(current);
-  if (signature === weekEvolutionState.signature) return weekEvolutionState.byDate;
+  const currentSignature = JSON.stringify(current);
   let history = Array.isArray(latestWeekEvolutionHistory) ? latestWeekEvolutionHistory.filter(item => item?.models) : [];
-  try {
-    const stored = JSON.parse(localStorage.getItem("week-forecast-history-v2") || "null");
-    if (Array.isArray(stored?.history)) {
-      const known = new Set(history.map(item => JSON.stringify(item.models)));
-      stored.history.filter(item => item?.models).forEach(item => {
-        const itemSignature = JSON.stringify(item.models);
-        if (!known.has(itemSignature)) history.push(item);
-      });
-      history.sort((left, right) => Number(left.savedAt || 0) - Number(right.savedAt || 0));
+  // L'historique fourni par le serveur est la référence commune aux deux
+  // domaines. Le stockage local ne sert qu'en secours, sinon GitHub Pages et
+  // le site principal finissent par comparer des séries différentes.
+  if (!history.length) {
+    try {
+      const stored = JSON.parse(localStorage.getItem("week-forecast-history-v2") || "null");
+      if (Array.isArray(stored?.history)) history = stored.history.filter(item => item?.models);
+      if (!history.length) {
+        const previous = JSON.parse(localStorage.getItem("week-forecast-history-v1") || "null");
+        if (previous?.models) history.push(previous);
+      }
+    } catch {
+      history = [];
     }
-    if (!history.length) {
-      const previous = JSON.parse(localStorage.getItem("week-forecast-history-v1") || "null");
-      if (previous?.models) history.push(previous);
-    }
-  } catch {}
-  if (JSON.stringify(history.at(-1)?.models) !== signature) history.push({ savedAt: Date.now(), models: current });
+  }
+  history.sort((left, right) => Number(left.savedAt || 0) - Number(right.savedAt || 0));
+  if (JSON.stringify(history.at(-1)?.models) !== currentSignature) history.push({ savedAt: Date.now(), models: current });
   history = history.slice(-6);
+  const signature = JSON.stringify(history.map(item => item.models));
+  if (signature === weekEvolutionState.signature) return weekEvolutionState.byDate;
   const byDate = new Map();
   const dates = [...new Set([...Object.keys(current.ecmwf), ...Object.keys(current.arpege)])];
   const wet = day => day && ((day.precipitationSum || 0) >= .2 || (day.precipitationProbabilityMax || 0) >= 45);
@@ -1599,6 +1637,21 @@ async function loadMeteoFranceWeek() {
 }
 
 async function ensureWeekForecast() {
+  if (!weekCacheHydrated) {
+    weekCacheHydrated = true;
+    const weekPath = "api/week?lat=" + point.lat + "&lon=" + point.lon;
+    const cachedPayload = await readCachedJson(apiUrl(weekPath), 6 * 3600000);
+    if (cachedPayload) {
+      latestWeekEvolutionHistory = Array.isArray(cachedPayload.history) ? cachedPayload.history : [];
+      if (cachedPayload.status === "ready" && cachedPayload.data?.version >= 20 && cachedPayload.data?.days?.length === 4) {
+        latestMeteoFranceWeek = {
+          ...cachedPayload.data,
+          ensembleStatus: cachedPayload.data.version >= 7 ? cachedPayload.ensemble || null : { status: "pending", stage: cachedPayload.stage, progress: 0, error: null }
+        };
+        renderWeekForecast();
+      }
+    }
+  }
   const confidenceReady = latestWeekForecast?.days?.length && latestWeekForecast.days.every(day => day.confidence);
   if (latestWeekForecast?.days?.length && latestMeteoFranceWeek?.days?.length && confidenceReady) {
     renderWeekForecast();
@@ -3167,9 +3220,7 @@ function renderPiaf(piaf, radar = null) {
   bindChartTooltips();
 }
 
-async function refresh() {
-  try {
-    const payload = await json("api/dashboard?lat=" + point.lat + "&lon=" + point.lon);
+function applyDashboardPayload(payload) {
     const receivedData = payload.data;
     // PIAF is intentionally absent from the public payload while its
     // four-minute cache is being refreshed. Keep the previous complete run
@@ -3218,6 +3269,18 @@ async function refresh() {
       lastRadarStamp = radarStamp;
       renderActiveRain();
     }
+}
+
+async function refresh() {
+  try {
+    const dashboardPath = "api/dashboard?lat=" + point.lat + "&lon=" + point.lon;
+    if (!dashboardCacheHydrated) {
+      dashboardCacheHydrated = true;
+      const cachedPayload = await readCachedJson(apiUrl(dashboardPath), 3 * 3600000);
+      if (cachedPayload?.data) applyDashboardPayload(cachedPayload);
+    }
+    const payload = await json(dashboardPath);
+    applyDashboardPayload(payload);
     scheduleRefresh(payload.status === "loading" ? 3000 : 60000);
   } catch (error) {
     console.error(error);
