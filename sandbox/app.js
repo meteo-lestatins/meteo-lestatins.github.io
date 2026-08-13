@@ -2571,7 +2571,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return '<g class="range-distance"><circle class="range-ring" cx="' + targetX + '" cy="' + targetY + '" r="' + radius.toFixed(1) + '"></circle><text x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="middle">' + distance + ' km</text></g>';
     }).join('');
     const lightningMarks = (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm), Number(flash.northKm)) <= mapRadiusKm).map(flash => '<g class="lightning-flash" transform="translate(' + (targetX + flash.eastKm * scale).toFixed(1) + ' ' + (targetY - flash.northKm * scale).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path></g>').join('');
-    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (targetY + (compactDesktopMap ? 36 : 22)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
+    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (targetY + (compactDesktopMap ? 48 : 22)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
   const buildApproachProjection = cell => {
@@ -2710,7 +2710,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Trajectoire prévue de la cellule ' + escapeText(threat.id) + ' sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + (trackPoints ? '<polyline class="storm-track' + (primaryProjection ? ' projected' : '') + '" points="' + trackPoints + '"></polyline>' : '') + milestones +
-    '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (targetY + (compactDesktopMap ? 36 : 22)) + '" text-anchor="middle">Les Tatins</text></g>' +
+    '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (targetY + (compactDesktopMap ? 48 : 22)) + '" text-anchor="middle">Les Tatins</text></g>' +
     '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
     '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span><span><i class="legend-lightning">ϟ</i> foudre</span></div></div>';
 }
@@ -3080,8 +3080,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const referenceTime = Number.isFinite(currentObservation) ? currentObservation : Date.now();
     const elapsedMinutes = Number.isFinite(disappearedAt) ? Math.max(0, Math.round((referenceTime - disappearedAt) / 60000)) : null;
     const elapsed = elapsedMinutes == null ? "récemment" : "depuis " + formatMinutes(elapsedMinutes);
-    const title = "Cellule " + cell.id + " non détectée " + elapsed + " · dernière distance " + distance;
-    return '<article class="nowcast-cell-card disappeared"><button class="nowcast-cell-card-button" type="button" aria-disabled="true" title="' + escapeText(title) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-missing-copy"><b>Non détectée</b><small>' + escapeText(elapsed) + '</small></span></button></article>';
+    const title = "Cellule " + cell.id + " · fin de détection " + elapsed + " · dernière distance " + distance;
+    return '<article class="nowcast-cell-card disappeared"><button class="nowcast-cell-card-button" type="button" aria-disabled="true" title="' + escapeText(title) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-missing-copy"><b>Fin de détection</b><small>' + escapeText(elapsed) + '</small></span></button></article>';
   };
   const cellCards = cellsInRange.map(cellCard).join("") + disappearedCellsInRange.map(disappearedCellCard).join("");
   const cellsPanel = '<section class="nowcast-cells-panel" aria-label="Cellules visibles sur la carte">'
