@@ -2890,6 +2890,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const lead = index => "+" + Math.round(Number(values[index]?.seconds) / 60) + " min";
     const timing = "premier signal " + lead(firstWet) + " · dernier signal " + lead(lastWet) + " · " + stepDetail;
 
+    const peak = Math.max(...series);
+    const peakIndex = series.indexOf(peak);
+    // La flèche suit l'évolution du premier épisode pluvieux : si les
+    // quantités montent vers un pic, elle monte, même si l'averse cesse plus tard.
+    if (peakIndex > firstWet && peak - series[firstWet] > threshold) {
+      return { label: "croissant", change: peak - series[firstWet], detail: "Pluie augmentant au fil des prochains créneaux selon PIAF · " + timing };
+    }
+    if (peakIndex === firstWet && (lastWet < series.length - 1 || peak - series[lastWet] > threshold)) {
+      return { label: "decroissant", change: series[lastWet] - peak, detail: "Pluie diminuant au fil des prochains créneaux selon PIAF · " + timing };
+    }
     if (projectedChange > threshold) {
       const wording = firstWet > 0 ? "Pluie arrivant" : "Pluie s’intensifiant";
       return { label: "croissant", change: projectedChange, detail: wording + " selon PIAF · " + timing };
