@@ -3026,16 +3026,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     ];
     const distance = cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
     const etaMinutes = Number(cell.etaMinutes);
-    const eta = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
-      ? '<span class="nowcast-cell-eta">ETA ' + (etaMinutes <= 0 ? "en cours" : formatMinutes(etaMinutes)) + '</span>'
+    const eta = Number.isFinite(etaMinutes) && etaMinutes > 0 && etaMinutes <= 240
+      ? '<span class="nowcast-cell-eta">ETA ' + formatMinutes(etaMinutes) + '</span>'
       : '';
     const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (eta ? " · ETA disponible" : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name">Cellule<br><strong>' + escapeText(cell.id) + '</strong></span><span class="nowcast-cell-primary"><b>' + passageRisk + ' %</b><span>' + escapeText(distance) + '</span>' + passageTrendMarkup(cell) + eta + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong></span><span class="nowcast-cell-primary"><b>Proba passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + '<span>' + escapeText(distance) + '</span>' + eta + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
   };
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
     .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
-  const cellsPanel = '<section class="nowcast-cells-panel"><h3>Cellules à moins de ' + activeNowcastMapRadius + ' km</h3>'
+  const cellsPanel = '<section class="nowcast-cells-panel" aria-label="Cellules visibles sur la carte">'
     + (cellsInRange.length ? '<div class="nowcast-cell-grid">' + cellsInRange.map(cellCard).join("") + '</div>' : '<p class="nowcast-cells-empty">Aucune cellule détectée dans ce périmètre.</p>')
     + '</section>';
   if (radar.observedAt && cellPassageSnapshot?.observedAt !== radar.observedAt) {
