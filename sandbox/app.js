@@ -2682,7 +2682,11 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const eta = cell.etaMinutes == null ? '—' : cell.etaMinutes <= 0 ? 'en cours' : Math.round(cell.etaMinutes) + ' min';
     const risks = cell.risks || {};
     const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + Math.round(Number(risks.hail) || 0) + ' %\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nSurface : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nRayon : ' + Number(cell.radiusKm || 0).toFixed(1) + ' km\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
-    return '<g><circle class="radar-cell chart-point' + (selected ? ' selected' : '') + '" cx="' + x(cell.eastKm).toFixed(1) + '" cy="' + y(cell.northKm).toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name) + '" data-tooltip="' + escapeText(detail) + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (x(cell.eastKm) - radius - 4).toFixed(1) + '" y="' + (y(cell.northKm) - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
+    const cellX = x(cell.eastKm);
+    const cellY = y(cell.northKm);
+    const tatinsX = x(0);
+    const tatinsY = y(0);
+    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellX.toFixed(1) + '" y1="' + cellY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><text class="cell-distance-label" x="' + ((cellX + tatinsX) / 2).toFixed(1) + '" y="' + (((cellY + tatinsY) / 2) - 5).toFixed(1) + '" text-anchor="middle">' + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km</text><circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · " + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km des Tatins") + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (cellX - radius - 4).toFixed(1) + '" y="' + (cellY - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
   const secondaryTracks = radarCells.filter(cell => cell.id !== threat.id && cell.track?.points?.length).map(cell => {
@@ -3075,7 +3079,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       ? '<span class="nowcast-cell-eta">ETA ' + formatMinutes(etaMinutes) + '</span>'
       : '';
     const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (eta ? " · ETA disponible" : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden><div class="nowcast-cell-detail-hazards"><dt>Intensité détaillée</dt><dd><span class="cell-hazards">' + hazards + '</span></dd></div>' + details.filter(Boolean).join("") + '</dl></article>';
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" data-nowcast-cell="' + escapeText(cell.id) + '" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden><div class="nowcast-cell-detail-hazards"><dt>Intensité détaillée</dt><dd><span class="cell-hazards">' + hazards + '</span></dd></div>' + details.filter(Boolean).join("") + '</dl></article>';
   };
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
@@ -3166,6 +3170,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     card.classList.add("detail-expanded");
     button.setAttribute("aria-expanded", "true");
     details.hidden = false;
+  }));
+  element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => marker.addEventListener("click", () => {
+    const cellId = marker.getAttribute("data-nowcast-cell");
+    const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
+    if (!button) return;
+    if (button.getAttribute("aria-expanded") !== "true") button.click();
+    button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    button.focus({ preventScroll: true });
   }));
   if (threat) bindChartTooltips();
 }
