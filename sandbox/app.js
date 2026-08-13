@@ -2550,9 +2550,9 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const compactDesktopMap = !window.matchMedia("(max-width: 900px)").matches;
-  const width = compactDesktopMap ? 960 : 360;
-  const height = compactDesktopMap ? 330 : 360;
+  const compactDesktopMap = !window.matchMedia("(max-width: 700px)").matches;
+  const width = compactDesktopMap ? 640 : 360;
+  const height = compactDesktopMap ? 640 : 360;
   const radarCells = (radar?.cells || []).filter(cell => {
     const centerDistance = Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
     return Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0))) <= mapRadiusKm;
@@ -2727,9 +2727,9 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const compactDesktopMap = !window.matchMedia("(max-width: 900px)").matches;
-  const width = compactDesktopMap ? 960 : 360;
-  const height = compactDesktopMap ? 330 : 360;
+  const compactDesktopMap = !window.matchMedia("(max-width: 700px)").matches;
+  const width = compactDesktopMap ? 640 : 360;
+  const height = compactDesktopMap ? 640 : 360;
   const scale = width === 360
     ? (width - 32) / (mapRadiusKm * 2)
     : Math.min((width - 32) / (mapRadiusKm * 2.02), (height - 32) / (mapRadiusKm * 2.02));
