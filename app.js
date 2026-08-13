@@ -1789,14 +1789,49 @@ function piafRunTime(piaf) {
   return runText ? Date.parse(runText.replace(/\./g, ":")) : NaN;
 }
 
-function piafHourlyRain(piaf) {
+function piafQuarterHourRain(piaf) {
   const runTime = piafRunTime(piaf);
-  if (!Number.isFinite(runTime)) return new Map();
+  if (!Number.isFinite(runTime)) return [];
+  const fiveMinutes = 5 * 60000;
+  const quarterHour = 15 * 60000;
+  const buckets = new Map();
+  for (const item of piaf.values || []) {
+    const endTime = runTime + Number(item.seconds) * 1000;
+    if (!Number.isFinite(endTime) || !Number.isFinite(Number(item.precipitation))) continue;
+    const bucketEnd = (Math.floor((endTime - 1) / quarterHour) + 1) * quarterHour;
+    if (!buckets.has(bucketEnd)) buckets.set(bucketEnd, []);
+    buckets.get(bucketEnd).push({ ...item, endTime });
+  }
+  return [...buckets.entries()].sort(([left], [right]) => left - right).map(([bucketEnd, items]) => {
+    items.sort((left, right) => left.endTime - right.endTime);
+    const expectedEnds = [bucketEnd - 2 * fiveMinutes, bucketEnd - fiveMinutes, bucketEnd];
+    const complete = expectedEnds.every(expected => items.some(item => item.endTime === expected));
+    const sum = field => items.reduce((total, item) => total + (Number(item[field]) || 0), 0);
+    const has = field => items.some(item => Number.isFinite(Number(item[field])));
+    const intervalStart = items[0].endTime - fiveMinutes;
+    const intervalEnd = items.at(-1).endTime;
+    return {
+      slotTime: new Date(complete ? bucketEnd : intervalEnd),
+      endTime: bucketEnd,
+      seconds: (intervalEnd - runTime) / 1000,
+      precipitation: sum("precipitation"),
+      nowcastPrecipitation: has("nowcastPrecipitation") ? sum("nowcastPrecipitation") : undefined,
+      radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
+      probability: has("probability") ? Math.max(...items.filter(item => Number.isFinite(Number(item.probability))).map(item => Number(item.probability))) : null,
+      intervalStart,
+      intervalEnd,
+      complete
+    };
+  });
+}
+
+function piafHourlyRain(piaf) {
   const radarAdjusted = (piaf.values || []).some(item => Number.isFinite(item.nowcastPrecipitation));
-  return completeHourlyRain((piaf.values || []).map(item => ({
-    endTime: runTime + Number(item.seconds) * 1000,
+  const quarters = piafQuarterHourRain(piaf).filter(item => item.complete);
+  return completeHourlyRain(quarters.map(item => ({
+    endTime: item.endTime,
     precipitation: Number(item.nowcastPrecipitation ?? item.precipitation)
-  })), 5, radarAdjusted ? "Météo-France PIAF + radar" : "Météo-France PIAF", true);
+  })), 15, radarAdjusted ? "Météo-France PIAF + radar" : "Météo-France PIAF", true);
 }
 
 function openMeteoHourlyRain(openMeteo) {
@@ -2203,7 +2238,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
       ? '\nPériode : ' + hourFormat.format(new Date(item.rainIntervalStart)) + '–' + hourFormat.format(new Date(item.rainIntervalEnd))
       : '';
     const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationHours + ' h)' + intervalPeriod + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
-    const precipitationLabel = drops ? 'gouttes' : measurable ? displayedAmount.toFixed(1) + ' mm' : (!pearome && probability > 0 ? 'averse' : '');
+    const precipitationLabel = drops ? 'gouttes' : measurable ? displayedAmount.toFixed(isPiafHour ? 2 : 1) + ' mm' : (!pearome && probability > 0 ? 'averse' : '');
     const intervalAmountLabel = interval && measurable && !drops ? '(' + interval.low.toFixed(1) + '–' + interval.high.toFixed(1) + ' mm)' : '';
     const centerX = usePearomePeriod ? (periodIndexes[0] * cell + (periodIndexes.length * cell) / 2) : x(index);
     const chanceLabel = 'Averse ' + probability + ' %';
@@ -3160,24 +3195,7 @@ function renderPiaf(piaf, radar = null) {
   piafBaseTime.setMilliseconds(0);
   // PIAF arrive toutes les 5 minutes. La frise publique regroupe trois pas
   // afin de présenter des cumuls exacts de 15 minutes issus du même run.
-  const piafSteps = [...(piaf.values || [])].sort((left, right) => Number(left.seconds) - Number(right.seconds));
-  const values = isTimedForecast ? piaf.values : Array.from({ length: Math.floor(piafSteps.length / 3) }, (_, groupIndex) => piafSteps.slice(groupIndex * 3, groupIndex * 3 + 3))
-    .filter(group => group.length === 3 && group.every((item, index) => index === 0 || Number(item.seconds) - Number(group[index - 1].seconds) === 300))
-    .map(group => {
-      const last = group.at(-1);
-      const sum = field => group.reduce((total, item) => total + (Number(item[field]) || 0), 0);
-      const has = field => group.some(item => Number.isFinite(item[field]));
-      return {
-        slotTime: new Date(piafBaseTime.getTime() + Number(last.seconds) * 1000),
-        seconds: Number(last.seconds),
-        precipitation: sum("precipitation"),
-        nowcastPrecipitation: has("nowcastPrecipitation") ? sum("nowcastPrecipitation") : undefined,
-        radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
-        probability: group.some(item => Number.isFinite(item.probability))
-          ? Math.max(...group.filter(item => Number.isFinite(item.probability)).map(item => Number(item.probability)))
-          : null
-      };
-    });
+  const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf);
   const slotTimes = values.map(item => item.slotTime || (isTimedForecast ? new Date(item.time) : new Date(piafBaseTime.getTime() + item.seconds * 1000)));
   const precipitationFor = item => Number(item.nowcastPrecipitation ?? item.precipitation) || 0;
   // Echelle absolue : 4 mm en 15 minutes remplit le graphique. Une faible
@@ -3207,7 +3225,8 @@ function renderPiaf(piaf, radar = null) {
     const label = trace ? "gouttes" : wet ? precipitation.toFixed(2) + " mm" : probability == null ? "" : probability + "%";
     const slotTime = hourFormat.format(slotTimes[index]);
     const fusionDetail = Number.isFinite(item.radarPrecipitation) ? " · PIAF " + item.precipitation.toFixed(2) + " mm · radar extrapolé " + item.radarPrecipitation.toFixed(2) + " mm" : "";
-    const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : " (cumul sur 15 min)";
+    const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
+    const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
     const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · pluie " + precipitation.toFixed(2) + " mm" + fusionDetail + (isTimedForecast ? periodDetail : "");
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + (Number.isFinite(item.radarPrecipitation) ? " radar-adjusted" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value">' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';

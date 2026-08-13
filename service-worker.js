@@ -1,5 +1,5 @@
-const cacheName = "meteo-france-v70";
-const shell = ["/runtime-config.js?v=2.059", "/changelog.html", "/", "/index.html", "/style.css?v=93", "/app.js?v=123", "/manifest.webmanifest", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
+const cacheName = "meteo-france-v71";
+const shell = ["/runtime-config.js?v=2.061", "/changelog.html", "/", "/index.html", "/style.css?v=93", "/app.js?v=124", "/manifest.webmanifest", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
