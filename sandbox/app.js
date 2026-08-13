@@ -3175,6 +3175,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const cellId = marker.getAttribute("data-nowcast-cell");
     const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
     if (!button) return;
+    element.querySelectorAll(".nowcast-cell-card.map-selected").forEach(card => card.classList.remove("map-selected"));
+    element.querySelectorAll('.nowcast-cell-card-button[aria-current="true"]').forEach(candidate => candidate.removeAttribute("aria-current"));
+    button.closest(".nowcast-cell-card")?.classList.add("map-selected");
+    button.setAttribute("aria-current", "true");
     if (button.getAttribute("aria-expanded") !== "true") button.click();
     button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
     button.focus({ preventScroll: true });
