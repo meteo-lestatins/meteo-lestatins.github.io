@@ -3045,10 +3045,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rainIntensityLabel = Number.isFinite(rainIntensity)
       ? rainIntensity.toLocaleString("fr-FR", { minimumFractionDigits: rainIntensity < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h"
       : null;
+    const rainMean = Number(cell.mean);
+    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
     const flashes = flashesNearCell(cell);
     const lightningTone = flashes >= 5 ? "high" : flashes >= 2 ? "medium" : flashes > 0 ? "low" : "none";
     const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, rainIntensity) : 0;
-    const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · intensité radar maximale " + rainIntensityLabel : ""));
+    const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""));
     const hailPictogram = nowcastMetricPictogram("hail", probabilityStep(hailRisk), "Grêle : risque " + hailRisk + " %");
     const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
     const hailLevel = probabilityStep(hailRisk);
@@ -3056,16 +3058,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const weightedIntensityLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
     const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
     const hazards = hazardMetric("hail", riskTone(hailRisk), "Grêle : risque " + hailRisk + " %", hailPictogram)
-      + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · " + rainIntensityLabel : ""), rainPictogram)
+      + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""), rainPictogram)
       + hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram);
     const detailsId = "cell-details-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
     const details = [
       detailMetric("Distance du centre", cellCenterDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"),
       detailMetric("Rayon estimé", Number.isFinite(Number(cell.radiusKm)) ? Number(cell.radiusKm).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km" : null),
-      detailMetric("Surface", Number.isFinite(Number(cell.areaKm2)) ? Math.round(Number(cell.areaKm2)).toLocaleString("fr-FR") + " km²" : null),
-      detailMetric("Indice convectif", risks.storm == null ? null : Math.round(Number(risks.storm)) + " / 100"),
-      detailMetric("Pluie maximale", cell.maximum == null ? null : Number(cell.maximum).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " mm/h"),
-      detailMetric("Pluie moyenne", cell.mean == null ? null : Number(cell.mean).toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " mm/h"),
+      risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice convectif</dt><dd>' + nowcastMetricPictogram("storm", probabilityStep(Number(risks.storm)), "Indice convectif : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
       detailMetric("Vitesse estimée", Number.isFinite(Number(cell.track?.speedKmh)) ? Number(cell.track.speedKmh).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km/h" : null),
       detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
       detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)

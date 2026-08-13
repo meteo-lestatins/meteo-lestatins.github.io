@@ -1,5 +1,5 @@
-const cacheName = "meteo-sandbox-v25";
-const shell = ["/sandbox/runtime-config.js?v=2.061", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=109", "/sandbox/app.js?v=140", "/sandbox/manifest.webmanifest", "/sandbox/vendor/leaflet/leaflet.css", "/sandbox/vendor/leaflet/leaflet.js"];
+const cacheName = "meteo-sandbox-v26";
+const shell = ["/sandbox/runtime-config.js?v=2.061", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=110", "/sandbox/app.js?v=141", "/sandbox/manifest.webmanifest", "/sandbox/vendor/leaflet/leaflet.css", "/sandbox/vendor/leaflet/leaflet.js"];
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
