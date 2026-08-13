@@ -2918,29 +2918,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const remaining = rounded % 60;
     return hours + " h" + (remaining ? " " + remaining : "");
   };
-  const trajectoryProjection = cell => {
-    const points = cell.track?.points || [];
-    const start = points.find(point => point.minutes === 0) || points[0];
-    const end = points.at(-1);
-    if (!start || !end || Number(end.minutes) <= Number(start.minutes)) return "trajectoire à confirmer";
-    const trackConfidence = Number(cell.track?.confidence) || 0;
-    const projectedDistances = points.map(point => Math.hypot(Number(point.eastKm), Number(point.northKm)));
-    const distanceIncrease15 = projectedDistances.length > 1 ? projectedDistances[1] - projectedDistances[0] : 0;
-    const alwaysMovingAway = projectedDistances.slice(1).every((distance, index) => distance >= projectedDistances[index] - .1);
-    if (trackConfidence >= 50 && distanceIncrease15 >= 1 && alwaysMovingAway) return "s’éloigne";
-    const duration = Number(end.minutes) - Number(start.minutes);
-    const velocityEast = (Number(end.eastKm) - Number(start.eastKm)) / duration;
-    const velocityNorth = (Number(end.northKm) - Number(start.northKm)) / duration;
-    const speedSquared = velocityEast * velocityEast + velocityNorth * velocityNorth;
-    if (speedSquared <= 0.0001) return "trajectoire à confirmer";
-    const closestMinutes = Math.min(duration, Math.max(0, -(Number(start.eastKm) * velocityEast + Number(start.northKm) * velocityNorth) / speedSquared));
-    const closestEast = Number(start.eastKm) + velocityEast * closestMinutes;
-    const closestNorth = Number(start.northKm) + velocityNorth * closestMinutes;
-    const closestCenterDistance = Math.hypot(closestEast, closestNorth);
-    const closestDistance = Math.max(0, closestCenterDistance - Math.max(0, Number(cell.radiusKm || 0)));
-    if (closestMinutes <= 1) return closestDistance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km · maintenant";
-    return closestDistance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km · dans " + formatMinutes(closestMinutes);
-  };
   const nearbyCells = cells.filter(cell => cellDistance(cell) < 80);
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const hazardIcons = {
@@ -3017,8 +2994,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     return '<span class="cell-passage-trend ' + trend.label + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '">' + arrow + '</span>';
   };
   const detailMetric = (label, value) => value == null || value === "" ? "" : '<div><dt>' + escapeText(label) + '</dt><dd>' + escapeText(value) + '</dd></div>';
-  const detailRow = (id, metrics) => '<tr class="cell-details-row" id="' + escapeText(id) + '" hidden><td colspan="5"><dl class="cell-details-grid">' + metrics.filter(Boolean).join("") + '</dl></td></tr>';
-  const cellTableRow = cell => {
+  const cellCard = cell => {
     const risks = cell.risks || {};
     const passageRisk = Math.round(Number(risks.passage) || 0);
     const hailRisk = Math.round(Number(risks.hail) || 0);
@@ -3048,46 +3024,20 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
       detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)
     ];
-    const trajectory = trajectoryProjection(cell);
-    const trajectoryTitle = trajectory === "trajectoire à confirmer"
-      ? ' title="Le radar ne mesure pas encore de déplacement exploitable entre deux images."'
+    const distance = cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const etaMinutes = Number(cell.etaMinutes);
+    const eta = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
+      ? '<span class="nowcast-cell-eta">ETA ' + (etaMinutes <= 0 ? "en cours" : formatMinutes(etaMinutes)) + '</span>'
       : '';
-    const main = '<tr class="storm-cell-row passage-' + riskTone(passageRisk) + '" id="cell-row-' + escapeText(String(cell.id).replace(/[^a-z0-9_-]/gi, "")) + '" data-details-id="' + escapeText(detailsId) + '"><th scope="row"><button class="cell-expand-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '"><strong>Cellule ' + escapeText(cell.id) + '</strong><span class="cell-expand-chevron" aria-hidden="true">⌄</span></button></th><td class="cell-current-distance">' + cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km</td><td><div class="cell-passage"><span class="cell-passage-badge ' + riskTone(passageRisk) + '">' + passageRisk + ' %</span>' + passageTrendMarkup(cell) + '</div></td><td' + trajectoryTitle + '>' + escapeText(trajectory) + '</td><td><div class="cell-hazards">' + hazards + '</div></td></tr>';
-    return main + detailRow(detailsId, details);
+    const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (eta ? " · ETA disponible" : "");
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name">Cellule<br><strong>' + escapeText(cell.id) + '</strong></span><span class="nowcast-cell-primary"><b>' + passageRisk + ' %</b><span>' + escapeText(distance) + '</span>' + passageTrendMarkup(cell) + eta + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
   };
-  const disappearedCells = (radar.disappearedCells || []).filter(cell => {
-    const centerDistance = Number(cell.lastDistanceKm);
-    const edgeDistance = Math.max(0, (Number.isFinite(centerDistance) ? centerDistance : cellCenterDistance(cell)) - Math.max(0, Number(cell.radiusKm || 0)));
-    return edgeDistance < 80;
-  });
-  const disappearedRows = disappearedCells.map(cell => {
-    const endedAt = cell.disappearedAt ? new Date(cell.disappearedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "heure inconnue";
-    const centerDistance = Number(cell.lastDistanceKm);
-    const edgeDistance = Math.max(0, (Number.isFinite(centerDistance) ? centerDistance : cellCenterDistance(cell)) - Math.max(0, Number(cell.radiusKm || 0)));
-    const detailsId = "cell-details-ended-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
-    const main = '<tr class="storm-cell-row cell-disappeared-row" data-details-id="' + escapeText(detailsId) + '"><th scope="row"><button class="cell-expand-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '"><span><strong>Cellule ' + escapeText(cell.id) + '</strong><small>Fin de détection à ' + escapeText(endedAt) + '</small></span><span class="cell-expand-chevron" aria-hidden="true">⌄</span></button></th><td></td><td></td><td></td><td></td></tr>';
-    const details = [
-      detailMetric("Fin de détection", endedAt),
-      detailMetric("Rayon estimé", Number.isFinite(Number(cell.radiusKm)) ? Number(cell.radiusKm).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km" : null)
-    ];
-    return main + detailRow(detailsId, details);
-  }).join("");
-  const cellsTable = nearbyCells.length || disappearedCells.length
-    ? '<section class="storm-cells-table"><h3>Cellules à moins de 80 km</h3><div class="storm-table-scroll"><table><thead><tr><th>Cellule</th><th>Distance actuelle</th><th>Probabilité de passage</th><th>Distance minimale prévue</th><th>Importance de la cellule</th></tr></thead><tbody>' + nearbyCells.map(cellTableRow).join("") + disappearedRows + '</tbody></table></div></section>'
-    : '<section class="storm-cells-table empty"><h3>Cellules à moins de 80 km</h3><p>Aucune cellule détectée.</p></section>';
-  const bindCellTableRows = () => {
-    element.querySelectorAll(".storm-cell-row").forEach(row => {
-      row.addEventListener("click", () => {
-        const details = document.getElementById(row.dataset.detailsId);
-        const button = row.querySelector(".cell-expand-button");
-        if (!details || !button) return;
-        const expanded = button.getAttribute("aria-expanded") === "true";
-        button.setAttribute("aria-expanded", String(!expanded));
-        details.hidden = expanded;
-        row.classList.toggle("expanded", !expanded);
-      });
-    });
-  };
+  const cellsInRange = nearbyCells
+    .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
+    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
+  const cellsPanel = '<section class="nowcast-cells-panel"><h3>Cellules à moins de ' + activeNowcastMapRadius + ' km</h3>'
+    + (cellsInRange.length ? '<div class="nowcast-cell-grid">' + cellsInRange.map(cellCard).join("") + '</div>' : '<p class="nowcast-cells-empty">Aucune cellule détectée dans ce périmètre.</p>')
+    + '</section>';
   if (radar.observedAt && cellPassageSnapshot?.observedAt !== radar.observedAt) {
     cellPassageSnapshot = {
       observedAt: radar.observedAt,
@@ -3128,31 +3078,21 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       });
     });
   }
-  const cellsAtRisk = cells
-    .filter(cell => Number(cell.risks?.passage) > 0 && cellDistance(cell) < activeNowcastMapRadius)
-    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
-  const cellLinksMarkup = cellsAtRisk.map(cell => {
-    const rowId = 'cell-row-' + String(cell.id).replace(/[^a-z0-9_-]/gi, '');
-    const passageRisk = Math.round(Number(cell.risks?.passage) || 0);
-    return '<button class="nowcast-cell-link passage-' + riskTone(passageRisk) + '" type="button" data-cell-row-id="' + escapeText(rowId) + '" aria-label="Cellule ' + escapeText(cell.id) + ' : probabilité de passage ' + passageRisk + ' %">Cellule ' + escapeText(cell.id) + '</button>';
-  }).join('');
-  const cellLinksGroup = cellLinksMarkup ? '<div class="nowcast-cell-links" role="group" aria-label="Cellules susceptibles de passer">' + cellLinksMarkup + '</div>' : '';
-  const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 80 ? ' active' : '') + '" type="button" data-nowcast-radius="80" aria-pressed="' + (activeNowcastMapRadius === 80) + '">80 km</button>' + cellLinksGroup + '</div>';
-  element.innerHTML = mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius) + cellsTable;
+  const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 80 ? ' active' : '') + '" type="button" data-nowcast-radius="80" aria-pressed="' + (activeNowcastMapRadius === 80) + '">80 km</button></div>';
+  element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius) + '</div>' + cellsPanel + '</div>';
   initializeNowcastMapBackground(activeNowcastMapRadius);
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
     activeNowcastMapRadius = Number(event.currentTarget.dataset.nowcastRadius) === 20 ? 20 : 80;
     renderRadarNowcast(radar, piaf, arome, lightning);
   }));
-  element.querySelectorAll("[data-cell-row-id]").forEach(button => button.addEventListener("click", event => {
-    const row = document.getElementById(event.currentTarget.dataset.cellRowId);
-    if (!row) return;
-    row.scrollIntoView({ behavior: "smooth", block: "center" });
-    const expandButton = row.querySelector(".cell-expand-button");
-    if (expandButton?.getAttribute("aria-expanded") !== "true") expandButton.click();
+  element.querySelectorAll(".nowcast-cell-card-button").forEach(button => button.addEventListener("click", () => {
+    const details = document.getElementById(button.getAttribute("aria-controls"));
+    if (!details) return;
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    button.setAttribute("aria-expanded", String(!expanded));
+    details.hidden = expanded;
   }));
-  bindCellTableRows();
   if (threat) bindChartTooltips();
 }
 
