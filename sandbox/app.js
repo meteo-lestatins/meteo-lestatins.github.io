@@ -3041,7 +3041,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · intensité radar maximale " + rainIntensityLabel : ""));
     const hailPictogram = nowcastMetricPictogram("hail", probabilityStep(hailRisk), "Grêle : risque " + hailRisk + " %");
     const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
-    const cellIntensityLevel = Math.max(rainLevel, probabilityStep(hailRisk), flashCountStep(flashes));
+    const hailLevel = probabilityStep(hailRisk);
+    const lightningLevel = flashCountStep(flashes);
+    const weightedIntensityLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
+    const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
     const hazards = hazardMetric("hail", riskTone(hailRisk), "Grêle : risque " + hailRisk + " %", hailPictogram)
       + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · " + rainIntensityLabel : ""), rainPictogram)
       + hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram);
@@ -3063,7 +3066,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       ? '<span class="nowcast-cell-eta">ETA ' + formatMinutes(etaMinutes) + '</span>'
       : '';
     const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (eta ? " · ETA disponible" : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Proba passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="nowcast-cell-intensity">Intensité : ' + cellIntensityLevel + ' point' + (cellIntensityLevel > 1 ? 's' : '') + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-primary"><b>Proba passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + eta + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span><span class="cell-hazards">' + hazards + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden>' + details.filter(Boolean).join("") + '</dl></article>';
   };
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
