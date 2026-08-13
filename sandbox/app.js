@@ -3171,7 +3171,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     button.setAttribute("aria-expanded", "true");
     details.hidden = false;
   }));
-  element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => marker.addEventListener("click", () => {
+  const showMappedCell = marker => {
     const cellId = marker.getAttribute("data-nowcast-cell");
     const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
     if (!button) return;
@@ -3181,8 +3181,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     button.setAttribute("aria-current", "true");
     if (button.getAttribute("aria-expanded") !== "true") button.click();
     button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    button.focus({ preventScroll: true });
-  }));
+  };
+  element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => {
+    marker.addEventListener("pointerenter", () => showMappedCell(marker));
+    marker.addEventListener("focusin", () => showMappedCell(marker));
+    marker.addEventListener("click", () => showMappedCell(marker));
+  });
   if (threat) bindChartTooltips();
 }
 
