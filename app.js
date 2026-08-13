@@ -1289,7 +1289,8 @@ function weekForecastEvolution() {
     const changedTransitions = transitions.filter(item => item.changes.size);
     const changes = new Set(changedTransitions.flatMap(item => [...item.changes]));
     const changeRate = transitions.length ? changedTransitions.length / transitions.length : null;
-    const frequent = changedTransitions.length >= 2 && changeRate >= .5;
+    const stabilityPoints = Number.isFinite(changeRate) ? Math.max(1, Math.round((1 - changeRate) * 5)) : 0;
+    const frequent = stabilityPoints <= 2;
     const level = !transitions.length ? "unknown" : !changedTransitions.length ? "stable" : frequent ? "frequent" : "few";
     const description = level === "frequent" ? "Changements fréquents sur : " + [...changes].join(", ") + "."
       : level === "few" ? "Quelques changements récents sur : " + [...changes].join(", ") + "."
@@ -1468,16 +1469,17 @@ function renderWeekForecast() {
     const windDirection = windDirections.length ? (Math.atan2(windDirections.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), windDirections.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
     const windDirectionMarkup = windDirection == null ? "" : '<span class="week-wind-arrow" style="transform:rotate(' + windDirection + 'deg)">↑</span>';
     const ensembleLabel = agreement.stability === "stable" ? "Plutôt stable" : agreement.stability === "evolving" ? "Évolutif" : agreement.stability === "variable" ? "Très variable" : "À confirmer";
-    const convergenceLabel = agreement.level === "agreement" ? "Forte" : agreement.level === "mixed" ? "Partielle" : "Faible";
+    const modelAgreementScore = Number.isFinite(Number(agreement.score)) ? Number(agreement.score) : .5;
+    const modelAgreementPoints = Math.min(5, Math.max(1, Math.round(modelAgreementScore * 5)));
+    const convergenceLabel = modelAgreementPoints >= 5 ? "Forte" : modelAgreementPoints >= 3 ? "Partielle" : "Faible";
     const evolutionLabel = evolution.level === "frequent" ? "Forte" : evolution.level === "few" ? "Faible" : evolution.level === "stable" ? "Nulle" : "Sans recul";
     const verdictLevel = evolution.level === "frequent" && agreement.level === "agreement" ? "mixed" : agreement.level;
     // La concordance chiffrée entre modèles porte l'essentiel du verdict.
     // Stabilité et évolution nuancent le score sans imposer seules "faible".
-    const modelAgreementScore = Number.isFinite(Number(agreement.score)) ? Number(agreement.score) : .5;
     const stabilityScore = agreement.stability === "stable" ? 1 : agreement.stability === "evolving" ? .68 : agreement.stability === "variable" ? .35 : .55;
     const evolutionScore = evolution.level === "stable" ? 1 : evolution.level === "few" ? .75 : evolution.level === "frequent" ? .35 : .55;
     const combinedConfidenceScore = modelAgreementScore * .65 + stabilityScore * .2 + evolutionScore * .15;
-    let confidenceLevel = combinedConfidenceScore >= .74 ? "strong" : combinedConfidenceScore >= .46 ? "medium" : "low";
+    let confidenceLevel = combinedConfidenceScore >= .9 ? "strong" : combinedConfidenceScore >= .5 ? "medium" : "low";
     if (agreement.criticalDisagreement || agreement.rainDisagreement === "major" || modelAgreementScore < .38) {
       confidenceLevel = "low";
     } else if ((agreement.rainDisagreement === "meaningful" || agreement.level === "mixed" || evolution.level === "frequent") && confidenceLevel === "strong") {
@@ -1486,12 +1488,17 @@ function renderWeekForecast() {
     const confidenceLabel = confidenceLevel === "strong" ? "forte" : confidenceLevel === "medium" ? "moyenne" : "faible";
     const rainDisagreementLabel = agreement.rainDisagreement === "major" ? "majeur" : agreement.rainDisagreement === "meaningful" ? "significatif" : agreement.rainDisagreement === "minor" ? "mineur" : "faible";
     const confidenceTitle = "Concordance pondérée : " + Math.round(modelAgreementScore * 100) + "/100 · écart pluie : " + rainDisagreementLabel + " · stabilité : " + ensembleLabel + " · évolution : " + evolutionLabel;
+    const statusPointCount = score => Number.isFinite(score) ? Math.min(5, Math.max(score > 0 ? 1 : 0, Math.round(score * 5))) : 0;
+    const statusTone = score => {
+      const points = statusPointCount(score);
+      return points >= 5 ? "strong" : points >= 3 ? "medium" : points >= 1 ? "low" : "medium";
+    };
     const statusDots = score => {
-      const points = Number.isFinite(score) ? Math.min(5, Math.max(score > 0 ? 1 : 0, Math.round(score * 5))) : 0;
+      const points = statusPointCount(score);
       return '<span class="week-status-dots" aria-hidden="true">' + Array.from({ length: 5 }, (_, index) => '<i class="' + (index < points ? 'filled' : '') + '"></i>').join('') + '</span>';
     };
     const confidenceDisplayScore = confidenceLevel === "low" ? Math.min(combinedConfidenceScore, .4) : confidenceLevel === "medium" ? Math.min(combinedConfidenceScore, .7) : combinedConfidenceScore;
-    const confidenceMarkup = '<span class="week-footer-status ' + confidenceLevel + '" title="' + escapeText(confidenceTitle) + '"><span>Confiance</span><span role="img" aria-label="Confiance ' + escapeText(confidenceLabel) + '">' + statusDots(confidenceDisplayScore) + '</span></span>';
+    const confidenceMarkup = '<span class="week-footer-status ' + statusTone(confidenceDisplayScore) + '" title="' + escapeText(confidenceTitle) + '"><span>Confiance</span><span role="img" aria-label="Confiance ' + escapeText(confidenceLabel) + '">' + statusDots(confidenceDisplayScore) + '</span></span>';
     const rainRange = values => {
       const valid = finite(values);
       if (!valid.length) return "—";
@@ -1534,13 +1541,13 @@ function renderWeekForecast() {
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
     const stormHoverLabel = "Orage · Open-Meteo " + (Number(ecmwf.weatherCode) >= 95 ? "possible" : "non prévu") + " · Météo-France " + (Number(arpege.weatherCode) >= 95 ? "possible" : "non prévu");
     const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", stormDescription);
-    const convergenceTone = agreement.level === "agreement" ? "strong" : agreement.level === "mixed" ? "medium" : "low";
-    const evolutionTone = evolution.level === "stable" ? "strong" : evolution.level === "frequent" ? "low" : "medium";
+    const convergenceTone = statusTone(modelAgreementScore);
     const convergenceTitle = "Convergence des modèles : " + convergenceLabel.toLowerCase() + " · " + Math.round(modelAgreementScore * 100) + "/100";
     const convergenceMarkup = '<span class="week-footer-status ' + convergenceTone + '" title="' + escapeText(convergenceTitle) + '"><span>Convergence des modèles</span><span role="img" aria-label="' + escapeText(convergenceTitle) + '">' + statusDots(modelAgreementScore) + '</span></span>';
     const evolutionCounts = evolution.transitionCount ? evolution.changedCount + " changement" + (evolution.changedCount > 1 ? "s" : "") + " sur " + evolution.transitionCount + " comparaison" + (evolution.transitionCount > 1 ? "s" : "") + ". " : "";
     const evolutionTitle = evolutionCounts + (evolution.description || (evolution.level === "stable" ? "Aucun changement notable dans les dernières prévisions." : evolution.level === "unknown" ? "Pas encore assez de recul pour évaluer les changements." : ""));
-    const evolutionDisplayScore = Number.isFinite(evolution.changeRate) ? evolution.changeRate : null;
+    const evolutionDisplayScore = Number.isFinite(evolution.changeRate) ? Math.max(.2, 1 - evolution.changeRate) : null;
+    const evolutionTone = statusTone(evolutionDisplayScore);
     const evolutionMarkup = '<span class="week-footer-status ' + evolutionTone + '" title="' + escapeText(evolutionTitle) + '"><span>Évolution des prévisions</span><span role="img" aria-label="' + escapeText(evolutionLabel + " : " + evolutionTitle) + '">' + statusDots(evolutionDisplayScore) + '</span></span>';
     const footerMarkup = '<div class="week-synthesis-footer">' + convergenceMarkup + evolutionMarkup + confidenceMarkup + '</div>';
     return '<article class="week-day week-consensus-day ' + verdictLevel + '">' + weekDayHeading(date, arpege.date, ecmwf, arpege) + sourceControls + '<div class="week-day-overview"><div class="week-icon weather-icon">' + icon + '</div><div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(mean([ecmwf.temperatureMax, arpege.temperatureMax])) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(mean([ecmwf.temperatureMin, arpege.temperatureMin])) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + footerMarkup + '</article>';
@@ -2880,7 +2887,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const metric = stormLayout
       ? nowcastMetricPictogram(kind, stormPassageLevel, detail)
         + (trend ? trendMarkup(trend, detail) : '')
-        + (stormPassageLevel > 0 ? '<span class="three-hour-storm-intensity">' + nowcastMetricPictogram(kind, level, detail, false) + '</span>' : '')
+        + (stormPassageLevel > 0 ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, detail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
