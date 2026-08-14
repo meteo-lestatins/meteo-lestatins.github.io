@@ -2571,7 +2571,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return '<g class="range-distance"><circle class="range-ring" cx="' + targetX + '" cy="' + targetY + '" r="' + radius.toFixed(1) + '"></circle><text x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="middle">' + distance + ' km</text></g>';
     }).join('');
     const lightningMarks = (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm), Number(flash.northKm)) <= mapRadiusKm).map(flash => '<g class="lightning-flash" transform="translate(' + (targetX + flash.eastKm * scale).toFixed(1) + ' ' + (targetY - flash.northKm * scale).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path></g>').join('');
-    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
+    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
   const buildApproachProjection = cell => {
@@ -2686,7 +2686,14 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const cellY = y(cell.northKm);
     const tatinsX = x(0);
     const tatinsY = y(0);
-    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellX.toFixed(1) + '" y1="' + cellY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><text class="cell-distance-label" x="' + ((cellX + tatinsX) / 2).toFixed(1) + '" y="' + (((cellY + tatinsY) / 2) - 5).toFixed(1) + '" text-anchor="middle">' + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + ' km</text><circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · " + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km des Tatins") + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (cellX - radius - 4).toFixed(1) + '" y="' + (cellY - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
+    const distanceLabel = distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const linkLength = Math.max(1, Math.hypot(tatinsX - cellX, tatinsY - cellY));
+    const linkX = (tatinsX - cellX) / linkLength;
+    const linkY = (tatinsY - cellY) / linkLength;
+    const labelX = cellX + (tatinsX - cellX) * .32 - linkY * 13;
+    const labelY = cellY + (tatinsY - cellY) * .32 + linkX * 13;
+    const labelWidth = Math.max(42, distanceLabel.length * 6.3 + 12);
+    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellX.toFixed(1) + '" y1="' + cellY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-10" width="' + labelWidth.toFixed(1) + '" height="20" rx="8"></rect><text x="0" y="4" text-anchor="middle">' + distanceLabel + '</text></g><circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · " + distanceLabel + " des Tatins") + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (cellX - radius - 4).toFixed(1) + '" y="' + (cellY - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
   const secondaryTracks = radarCells.filter(cell => cell.id !== threat.id && cell.track?.points?.length).map(cell => {
@@ -2711,7 +2718,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const distanceLink = '';
   const scaleBarKm = scale * 20 > 150 ? 10 : 20;
   const scaleBarWidth = scaleBarKm * scale;
-  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Trajectoire prévue de la cellule ' + escapeText(threat.id) + ' sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"></path></marker></defs>' +
+  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Trajectoire prévue de la cellule ' + escapeText(threat.id) + ' sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + (trackPoints ? '<polyline class="storm-track' + (primaryProjection ? ' projected' : '') + '" points="' + trackPoints + '"></polyline>' : '') + milestones +
     '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g>' +
@@ -2760,6 +2767,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
     zoomAnimation: false,
     markerZoomAnimation: false
   }).setView([point.lat, point.lon], mapRadiusKm === 20 ? 9 : 7);
+  window.L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "" }).addTo(nowcastLeafletMap);
   let placeContext = [];
   const regionalPlaceNames = new Set(["Montélimar", "Carpentras", "Sisteron", "Embrun", "Valence", "Grenoble", "Gap", "Briançon"]);
   const regionalPlaceFallback = [
@@ -3188,7 +3196,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     button.closest(".nowcast-cell-card")?.classList.add("map-selected");
     button.setAttribute("aria-current", "true");
     if (button.getAttribute("aria-expanded") !== "true") button.click();
-    button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    if (window.matchMedia("(min-width: 1101px)").matches) {
+      button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
   };
   element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => {
     marker.addEventListener("pointerenter", () => showMappedCell(marker));
@@ -3369,5 +3379,14 @@ function bindHeaderNowcastLink() {
 
 bindForecastLayout();
 bindHeaderNowcastLink();
+if (window.location.hash === "#radar-nowcast") {
+  const nowcastDetails = $("nowcast-details");
+  if (nowcastDetails) {
+    nowcastDetails.hidden = false;
+    $("header-nowcast-link")?.setAttribute("aria-expanded", "true");
+    $("nowcast-title-toggle")?.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => $("radar-nowcast")?.scrollIntoView({ block: "start" }));
+  }
+}
 renderAppVersion();
 refresh();

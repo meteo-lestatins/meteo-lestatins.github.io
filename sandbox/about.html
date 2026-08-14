@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8fafb">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="echelle-kilometrique.css?v=4">
+  <title>Résolution des API utilisées · Météo les Tatins</title>
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <h1><a href="index.html">Météo les Tatins</a></h1>
+      <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
+    </div>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.094</a>
+  </header>
+  <main class="resolution-page">
+    <section class="map-section" aria-labelledby="map-title">
+      <h2 id="map-title">Résolution des API utilisées</h2>
+      <div class="map-layout">
+        <div id="scale-map" role="region" aria-label="Carte des résolutions des API météo"></div>
+        <aside aria-label="Sources affichées">
+          <div id="layer-controls" class="layer-controls"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="echelle-kilometrique.js?v=10"></script>
+</body>
+</html>
