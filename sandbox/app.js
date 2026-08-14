@@ -2669,6 +2669,15 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const cell = radarCells.find(candidate => candidate.id === projection.id);
     return coneFor(projection.points, 'storm-cone projected secondary', 'storm-probability-secondary-' + index, '#5e93ad', cell?.radiusKm);
   }).join('');
+  const mapProbabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
+  const mapRainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
+  const mapRainSynthesisStep = (probability, intensity) => {
+    const intensityLevel = mapRainIntensityStep(intensity);
+    const probabilityValue = Math.max(0, Math.min(100, Number(probability) || 0));
+    return intensityLevel && probabilityValue ? Math.max(1, Math.min(5, Math.ceil(intensityLevel * (.5 + probabilityValue / 200)))) : 0;
+  };
+  const mapFlashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
+  const mapFlashesNearCell = cell => (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm || 0) - Number(cell.eastKm || 0), Number(flash.northKm || 0) - Number(cell.northKm || 0)) <= Math.max(8, Number(cell.radiusKm || 0) + 5)).length;
   const cells = radarCells.map((cell, index) => {
     const radius = Math.max(5, Number(cell.radiusKm || 1) * scale);
     const selected = Math.abs(cell.eastKm - threat.eastKm) < .1 && Math.abs(cell.northKm - threat.northKm) < .1;
@@ -2687,13 +2696,19 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const tatinsX = x(0);
     const tatinsY = y(0);
     const distanceLabel = distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const rainLevel = mapRainSynthesisStep(Math.round(Number(risks.intenseRain) || 0), Number(cell.maximum));
+    const hailLevel = mapProbabilityStep(Math.round(Number(risks.hail) || 0));
+    const lightningLevel = mapFlashCountStep(mapFlashesNearCell(cell));
+    const weightedIntensityLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
+    const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
+    const intensityLabel = "Intensité générale : " + cellIntensityLevel + "/5";
     const linkLength = Math.max(1, Math.hypot(tatinsX - cellX, tatinsY - cellY));
     const linkX = (tatinsX - cellX) / linkLength;
     const linkY = (tatinsY - cellY) / linkLength;
     const labelX = cellX + (tatinsX - cellX) * .32 - linkY * 13;
     const labelY = cellY + (tatinsY - cellY) * .32 + linkX * 13;
-    const labelWidth = Math.max(42, distanceLabel.length * 6.3 + 12);
-    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellX.toFixed(1) + '" y1="' + cellY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-10" width="' + labelWidth.toFixed(1) + '" height="20" rx="8"></rect><text x="0" y="4" text-anchor="middle">' + distanceLabel + '</text></g><circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · " + distanceLabel + " des Tatins") + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (cellX - radius - 4).toFixed(1) + '" y="' + (cellY - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
+    const labelWidth = Math.max(96, distanceLabel.length * 6.3 + 12, intensityLabel.length * 4.8 + 12);
+    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellX.toFixed(1) + '" y1="' + cellY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><text class="cell-intensity-label" x="0" y="11" text-anchor="middle">' + intensityLabel + '</text></g><circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · " + distanceLabel + " des Tatins · " + intensityLabel) + '"></circle><text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + (cellX - radius - 4).toFixed(1) + '" y="' + (cellY - radius - 4).toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
   const secondaryTracks = radarCells.filter(cell => cell.id !== threat.id && cell.track?.points?.length).map(cell => {
@@ -3200,9 +3215,23 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
     }
   };
+  const hideMappedCell = marker => {
+    const cellId = marker.getAttribute("data-nowcast-cell");
+    const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
+    const card = button?.closest(".nowcast-cell-card");
+    const details = document.getElementById(button?.getAttribute("aria-controls"));
+    card?.classList.remove("map-selected", "row-expanded", "detail-expanded");
+    button?.removeAttribute("aria-current");
+    button?.setAttribute("aria-expanded", "false");
+    if (details) details.hidden = true;
+    marker.classList.remove("panel-selected");
+    marker.querySelector(".radar-cell")?.removeAttribute("aria-current");
+  };
   element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => {
     marker.addEventListener("pointerenter", () => showMappedCell(marker));
+    marker.addEventListener("pointerleave", () => hideMappedCell(marker));
     marker.addEventListener("focusin", () => showMappedCell(marker));
+    marker.addEventListener("focusout", () => hideMappedCell(marker));
     marker.addEventListener("click", () => showMappedCell(marker));
   });
   if (threat) bindChartTooltips();
