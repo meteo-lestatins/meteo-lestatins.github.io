@@ -70,10 +70,10 @@
   </g>
 
   <path class="arrow both" d="M290 310H390"/>
-  <text class="edge-label" x="340" y="282" text-anchor="middle">Requêtes sécurisées</text>
-  <text class="edge-label" x="340" y="345" text-anchor="middle">Données reçues</text>
+  <text class="edge-label" x="340" y="288" text-anchor="middle">Requêtes</text>
+  <text class="edge-label" x="340" y="339" text-anchor="middle">Données</text>
 
   <path class="arrow both" d="M790 310H875"/>
-  <text class="edge-label" x="832.5" y="282" text-anchor="middle">Demande HTTPS</text>
-  <text class="edge-label" x="832.5" y="345" text-anchor="middle">JSON prêt à l’emploi</text>
+  <text class="edge-label" x="832.5" y="288" text-anchor="middle">HTTPS</text>
+  <text class="edge-label" x="832.5" y="339" text-anchor="middle">JSON</text>
 </svg>
