@@ -11,17 +11,17 @@
     <style>
       .frame{stroke-width:2.5}.api-frame{fill:#fffdf7;stroke:#e2bb58}.server-frame{fill:#f3f9fb;stroke:#55a3c1}
       .box{stroke-width:2;filter:url(#shadow)}.source{fill:#fff8e8;stroke:#d9a12f}.server{fill:#eaf5f9;stroke:#4b9dbd}.output{fill:#eaf7f0;stroke:#55a378}.site{fill:#fff;stroke:#9dbdca}
-      .frame-title{fill:#173f57;font:800 22px Inter,system-ui,sans-serif}.node-title{fill:#173f57;font:700 18px Inter,system-ui,sans-serif}
+      .frame-title{fill:#173f57;font:700 17px Inter,system-ui,sans-serif}.node-title{fill:#173f57;font:600 14px Inter,system-ui,sans-serif}
       .arrow{fill:none;stroke:#397f9e;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}
-      .edge-label{fill:#33718c;font:700 14px Inter,system-ui,sans-serif}
+      .edge-label{fill:#33718c;font:600 10.5px Inter,system-ui,sans-serif}
     </style>
   </defs>
 
   <rect width="1120" height="620" rx="18" fill="#f7fafb"/>
 
-  <g aria-label="API">
+  <g aria-label="APIs">
     <rect class="frame api-frame" x="25" y="25" width="265" height="570" rx="20"/>
-    <text class="frame-title" x="157.5" y="62" text-anchor="middle">API</text>
+    <text class="frame-title" x="157.5" y="62" text-anchor="middle">APIs</text>
 
     <g transform="translate(55 105)">
       <rect class="box source" width="205" height="82" rx="14"/>
