@@ -1,11 +1,16 @@
-const cacheName = "meteo-sandbox-v33";
-const shell = ["/sandbox/runtime-config.js?v=2.061", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=115", "/sandbox/app.js?v=147", "/sandbox/manifest.webmanifest", "/sandbox/vendor/leaflet/leaflet.css", "/sandbox/vendor/leaflet/leaflet.js"];
+const cacheName = "meteo-sandbox-v36";
+const shell = ["/sandbox/runtime-config.js?v=2.094", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=117", "/sandbox/app.js?v=148", "/sandbox/manifest.webmanifest", "/sandbox/vendor/leaflet/leaflet.css", "/sandbox/vendor/leaflet/leaflet.js"];
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.origin !== location.origin || url.pathname.startsWith("/sandbox/api/")) return;
+  if (
+    url.origin !== location.origin ||
+    url.pathname.startsWith("/sandbox/api/") ||
+    url.pathname === "/sandbox/usage-guard" ||
+    url.pathname.startsWith("/sandbox/usage-guard/")
+  ) return;
   if (event.request.mode === "navigate" || url.pathname.endsWith("/sandbox/changelog") || url.pathname.endsWith("/sandbox/changelog.html")) {
     const network = fetch(event.request).then(async response => {
       if (response.ok) await (await caches.open(cacheName)).put(event.request, response.clone());

@@ -3157,6 +3157,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const grid = card?.parentElement;
     const details = document.getElementById(button.getAttribute("aria-controls"));
     if (!card || !grid || !details) return;
+    const cellId = button.getAttribute("data-nowcast-cell");
+    element.querySelectorAll(".radar-cell-marker.panel-selected").forEach(marker => {
+      marker.classList.remove("panel-selected");
+      marker.querySelector(".radar-cell")?.removeAttribute("aria-current");
+    });
+    const mappedMarker = [...element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]")].find(marker => marker.getAttribute("data-nowcast-cell") === cellId);
+    mappedMarker?.classList.add("panel-selected");
+    mappedMarker?.querySelector(".radar-cell")?.setAttribute("aria-current", "true");
     const collapse = card.classList.contains("detail-expanded");
     grid.querySelectorAll(".nowcast-cell-card").forEach(candidate => {
       candidate.classList.remove("row-expanded", "detail-expanded");
