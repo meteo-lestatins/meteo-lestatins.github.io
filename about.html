@@ -14,7 +14,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.096</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.097</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -88,6 +88,15 @@
 <p>Pour des raisons techniques, de sécurité et de confidentialité, meteo-lestatins.github.io demande les données à un serveur personnel 1&amp;1. C’est ce serveur qui contacte ensuite Météo-France et EUMETSAT avec les clés privées. Il télécharge, contrôle et met en cache les données, puis renvoie au site un JSON prêt à afficher. Les clés des fournisseurs ne sont jamais incluses dans la page publique.</p>
 <h3>Langages et bibliothèques</h3>
 <ul><li><strong>Serveur :</strong> JavaScript moderne sous Node.js, en modules ESM.</li><li><strong>meteo-lestatins.github.io :</strong> HTML, CSS et JavaScript natifs, sans framework frontal.</li><li><strong>Cartographie :</strong> Leaflet, distribué localement avec le site.</li><li><strong>GeoTIFF :</strong> bibliothèque <code>geotiff</code> pour lire certaines grilles météorologiques.</li><li><strong>HDF5 / NetCDF4 :</strong> <code>h5wasm</code> pour les mosaïques radar et les produits foudre.</li><li><strong>Projections cartographiques :</strong> <code>proj4</code> pour convertir les coordonnées radar vers WGS84.</li></ul>
+</section>
+<section class="technical-chapter">
+<h2>Évolutions envisagées</h2>
+<h3>Analyse radar polarimétrique</h3>
+<p>Les données multipolarisées gratuites de Météo-France pourraient compléter la mosaïque de pluie actuelle. La mosaïque resterait utilisée pour détecter, dessiner et suivre les cellules ; seules les données du radar individuel couvrant Les Tatins seraient analysées autour des cellules utiles.</p>
+<p>La réflectivité horizontale ZH, la réflectivité différentielle ZDR, la corrélation ρHV et la phase différentielle ΦDP pourraient être croisées avec la hauteur de l’isotherme 0 °C et le contexte atmosphérique.</p>
+<p>Cette évolution pourrait améliorer :</p>
+<ul><li>la distinction entre pluie, neige, grésil et grêle ;</li><li>l’estimation des pluies très intenses et du caractère convectif ;</li><li>le filtrage des faux échos, notamment liés au relief ;</li><li>l’analyse du renforcement ou de l’affaiblissement des cellules ;</li><li>la confiance associée aux cellules et à leur indice convectif.</li></ul>
+<p>Elle n’améliorerait pas directement la trajectoire horizontale ni la probabilité de passage, qui resteraient principalement déterminées par le déplacement et la géométrie des cellules. Les nouveaux indices devraient être validés sur plusieurs situations réelles avant de remplacer les scores actuels.</p>
 </section></div>
   </main>
   <script src="vendor/leaflet/leaflet.js"></script>
