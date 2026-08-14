@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="echelle-kilometrique.css?v=5">
+  <link rel="stylesheet" href="echelle-kilometrique.css?v=7">
   <title>Résolution des API utilisées · Météo les Tatins</title>
 </head>
 <body>
@@ -26,7 +26,8 @@
         </aside>
       </div>
     </section>
-    <section class="technical-details" aria-label="Détails techniques des API"><h2>Détails techniques des API</h2>
+    <div class="technical-details" aria-label="Informations techniques"><section class="technical-chapter">
+<h2>Détails techniques des API</h2>
 <h3>Radar v1 Météo-France</h3>
 <ul><li>Catalogue : <code>DPRadar/v1/mosaiques/METROPOLE/observations/LAME_D_EAU</code>.</li><li>Produit demandé : lame d’eau nationale avec une maille de 500 m.</li><li>Format lu : HDF5.</li><li>La projection du fichier est convertie vers la longitude et la latitude avec <code>proj4</code>.</li><li>Les valeurs de gain, décalage, absence de donnée et valeur indétectable sont appliquées avant analyse.</li><li>Le serveur extrait uniquement la zone utile autour des Tatins.</li><li>Les pixels significatifs sont regroupés en composantes connexes pour identifier des cellules pluvio-orageuses.</li><li>Pour chaque cellule sont estimés le centre pondéré par l’intensité, la surface, le rayon, la pluie moyenne et la pluie maximale.</li><li>Deux images successives servent à estimer le déplacement, extrapolé jusqu’à 60 minutes.</li></ul>
 <p>Le risque de passage, le potentiel orageux, la pluie intense et la grêle sont des indicateurs locaux dérivés. Ce ne sont pas des bulletins officiels.</p>
@@ -48,6 +49,8 @@
 <ul><li>API JSON sans clé.</li><li>Données demandées : température, précipitations, probabilité de pluie, code météo, nébulosité, vent, rafales, lever et coucher du soleil.</li><li>Pas de temps utilisés : 15 minutes, horaire et quotidien.</li><li>Fuseau demandé : <code>Europe/Paris</code>.</li><li>Cette source sert de comparaison et de repli.</li></ul>
 <h3>Cache et fréquence d’actualisation</h3>
 <div class="technical-table-scroll"><table><thead><tr><th>Donnée</th><th>Durée cible du cache serveur</th></tr></thead><tbody><tr><td>PIAF</td><td>4 min</td></tr><tr><td>Radar</td><td>4 min</td></tr><tr><td>Foudre EUMETSAT</td><td>5 min</td></tr><tr><td>AROME</td><td>60 min</td></tr><tr><td>PE-AROME, probabilités</td><td>3 h</td></tr><tr><td>PE-AROME, ensemble</td><td>6 h</td></tr><tr><td>Vigilance</td><td>30 min</td></tr><tr><td>Open-Meteo</td><td>30 min</td></tr><tr><td>ARPEGE et PE-ARPEGE</td><td>6 h</td></tr></tbody></table></div>
+</section>
+<section class="technical-chapter">
 <h2>Nowcasting</h2>
 <p>Le <strong>nowcasting</strong> décrit le temps présent et son évolution probable à très courte échéance. Il est ici designé pour les 3h suivantes environ pour la pluie et la prochaine heure pour le déplacement des cellules pluvio-orageuses.</p>
 <h3>Données réunies</h3>
@@ -72,22 +75,16 @@
 <p>Le radar mesure un taux instantané en millimètres par heure. Pour le comparer à PIAF, ce taux est converti en cumul équivalent sur cinq minutes, puis rapproché des mêmes échéances.</p>
 <p>Le radar ne remplace pas PIAF : le premier décrit l’observation et le déplacement récent ; le second fournit une prévision de précipitations jusqu’à trois heures.</p>
 <h3>Actualisation et limites</h3>
-<ul><li>Le radar est normalement réactualisé toutes les quatre minutes environ.</li><li>Une cellule qui n’est plus retrouvée peut être conservée brièvement comme « fin de détection ».</li><li>Une cellule peut se renforcer, faiblir, fusionner ou se diviser entre deux images.</li><li>Le relief peut influencer la mesure radar et l’évolution réelle des précipitations.</li><li>L’extrapolation suppose que le mouvement récent reste assez stable pendant l’heure suivante.</li><li>Le cercle, la trajectoire, l’heure d’arrivée et les risques sont des estimations locales calculées par Météo les Tatins.</li><li>Ces indications ne remplacent pas la vigilance officielle de Météo-France.</li></ul>
-<h2>Technique</h2>
+<ul><li>Le radar est normalement réactualisé toutes les quatre minutes environ.</li><li>Une cellule qui n’est plus retrouvée peut être conservée brièvement comme « fin de détection ».</li><li>Une cellule peut se renforcer, faiblir, fusionner ou se diviser entre deux images.</li><li>Le relief peut influencer la mesure radar et l’évolution réelle des précipitations.</li><li>L’extrapolation suppose que le mouvement récent reste assez stable pendant l’heure suivante.</li><li>Le cercle, la trajectoire, l’heure d’arrivée et les risques sont des calculs persos à éventuellement affiner.</li></ul>
+</section>
+<section class="technical-chapter">
+<h2>Techniques / Sécurité / Confidentialité</h2>
 <h3>Architecture</h3>
-<pre class="technical-diagram"><code class="language-mermaid">flowchart LR
-  UI[&quot;Site statique GitHub Pages&lt;br&gt;HTML · CSS · JavaScript&quot;] --&gt; API[&quot;Serveur Node.js&lt;br&gt;server.mjs&quot;]
-  API --&gt; MF[&quot;API Météo-France&quot;]
-  API --&gt; EU[&quot;API EUMETSAT&quot;]
-  API --&gt; OM[&quot;API Open-Meteo&quot;]
-  MF --&gt; C[&quot;Cache et traitements locaux&quot;]
-  EU --&gt; C
-  OM --&gt; C
-  C --&gt; API
-  API --&gt; UI</code></pre>
-<p>Pour des raisons techniques/securité/confidentialitée meteo-lestatins.github.io demande les données à un serveur perso 1&amp;1. C’est ce serveur qui contacte ensuite Météo-France et EUMETSAT avec les clés privées. Il télécharge, contrôle et met en cache les données, puis renvoie au site un JSON prêt à afficher. Les clés des fournisseurs ne sont jamais incluses dans la page publique.</p>
+<figure class="technical-figure"><img src="architecture.svg" alt="Architecture des échanges entre le site, le serveur et les API météorologiques" loading="lazy"></figure>
+<p>Pour des raisons techniques, de sécurité et de confidentialité, meteo-lestatins.github.io demande les données à un serveur personnel 1&amp;1. C’est ce serveur qui contacte ensuite Météo-France et EUMETSAT avec les clés privées. Il télécharge, contrôle et met en cache les données, puis renvoie au site un JSON prêt à afficher. Les clés des fournisseurs ne sont jamais incluses dans la page publique.</p>
 <h3>Langages et bibliothèques</h3>
-<ul><li><strong>Serveur :</strong> JavaScript moderne sous Node.js, en modules ESM.</li><li><strong>Interface :</strong> HTML, CSS et JavaScript natifs, sans framework frontal.</li><li><strong>Cartographie :</strong> Leaflet, distribué localement avec le site.</li><li><strong>GeoTIFF :</strong> bibliothèque <code>geotiff</code> pour lire certaines grilles météorologiques.</li><li><strong>HDF5 / NetCDF4 :</strong> <code>h5wasm</code> pour les mosaïques radar et les produits foudre.</li><li><strong>Projections cartographiques :</strong> <code>proj4</code> pour convertir les coordonnées radar vers WGS84.</li><li><strong>PWA (<code>meteo-lestatins.github.io</code>) :</strong> application en HTML, CSS et JavaScript, avec un manifeste web au format JSON et un service worker en JavaScript pour les fichiers statiques.</li></ul></section>
+<ul><li><strong>Serveur :</strong> JavaScript moderne sous Node.js, en modules ESM.</li><li><strong>meteo-lestatins.github.io :</strong> HTML, CSS et JavaScript natifs, sans framework frontal.</li><li><strong>Cartographie :</strong> Leaflet, distribué localement avec le site.</li><li><strong>GeoTIFF :</strong> bibliothèque <code>geotiff</code> pour lire certaines grilles météorologiques.</li><li><strong>HDF5 / NetCDF4 :</strong> <code>h5wasm</code> pour les mosaïques radar et les produits foudre.</li><li><strong>Projections cartographiques :</strong> <code>proj4</code> pour convertir les coordonnées radar vers WGS84.</li></ul>
+</section></div>
   </main>
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="echelle-kilometrique.js?v=10"></script>
