@@ -2959,12 +2959,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     if (!intensityLevel || !probabilityValue) return 0;
     return Math.max(1, Math.min(5, Math.ceil(intensityLevel * (0.5 + probabilityValue / 200))));
   };
-  const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null) => {
+  const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null, stormDetails = null) => {
     const stormLayout = stormPassageLevel != null;
+    const passageDetail = stormDetails?.passage || detail;
+    const intensityDetail = stormDetails?.intensity || detail;
+    const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
     const metric = stormLayout
-      ? nowcastMetricPictogram(kind, stormPassageLevel, detail)
-        + (trend ? trendMarkup(trend, detail) : '')
-        + (stormPassageLevel > 0 ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, detail, false) + '</span>' : '')
+      ? nowcastMetricPictogram(kind, stormPassageLevel, passageDetail)
+        + (displayedTrend ? trendMarkup(displayedTrend, passageDetail) : '')
+        + (stormPassageLevel > 0 ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
@@ -2988,6 +2991,18 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     && currentObservation - previousObservation <= 45 * 60000
       ? cellPassageSnapshot
       : null;
+  const passageTrendFor = cell => {
+    let trend = cell?.passageTrend;
+    if (!trend && previousPassageSnapshot && Object.prototype.hasOwnProperty.call(previousPassageSnapshot.values, cell?.id)) {
+      const previous = Number(previousPassageSnapshot.values[cell.id]);
+      const current = Number(cell.risks?.passage);
+      if (Number.isFinite(previous) && Number.isFinite(current)) {
+        const change = Math.round(current - previous);
+        trend = { label: change > 0 ? "croissant" : change < 0 ? "decroissant" : "stable", change };
+      }
+    }
+    return trend && ["croissant", "decroissant", "stable"].includes(trend.label) ? trend : null;
+  };
   const formatMinutes = minutes => {
     const rounded = Math.max(0, Math.round(minutes));
     if (rounded < 60) return rounded + " min";
@@ -3008,53 +3023,51 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const distance = Math.hypot(Number(flash.eastKm || 0) - Number(cell.eastKm || 0), Number(flash.northKm || 0) - Number(cell.northKm || 0));
     return distance <= Math.max(8, Number(cell.radiusKm || 0) + 5);
   }).length;
-  const cellStormProbability = cell => {
-    const passage = Math.max(0, Math.min(100, Number(cell.risks?.passage) || 0));
-    const stormPotential = Math.max(0, Math.min(100, Number(cell.risks?.storm) || 0));
-    // Le risque local exige à la fois que la cellule atteigne le point et
-    // qu'elle présente un potentiel orageux : aucun seuil binaire arbitraire.
-    return Math.round(passage * stormPotential / 100);
-  };
-  const hasStormSignal = cell => cellStormProbability(cell) > 0;
-  const maximumCellStormRisk = Math.max(0, ...cells.map(cellStormProbability));
-  const generalStormRisk = maximumCellStormRisk;
-  const stormRiskLevel = generalStormRisk <= 0 ? 0 : Math.min(5, Math.ceil(generalStormRisk / 20));
   const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
-  // L'intensité concerne d'abord la cellule la plus susceptible de passer,
-  // pas la cellule la plus forte parmi toutes celles visibles dans les 80 km.
-  const relevantStormCell = cells
-    .filter(hasStormSignal)
-    .sort((left, right) => cellStormProbability(right) - cellStormProbability(left) || Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
-  const relevantStormIntensity = relevantStormCell ? (() => {
-    const passage = Math.round(Number(relevantStormCell.risks?.passage) || 0);
-    const rain = Math.max(0, Number(relevantStormCell.maximum) || 0);
-    const intenseRainRisk = Math.round(Number(relevantStormCell.risks?.intenseRain) || 0);
-    const hailRisk = Math.round(Number(relevantStormCell.risks?.hail) || 0);
-    const flashes = flashesNearCell(relevantStormCell);
+  const stormIntensityFor = cell => {
+    const passage = Math.round(Number(cell.risks?.passage) || 0);
+    const rain = Math.max(0, Number(cell.maximum) || 0);
+    const intenseRainRisk = Math.round(Number(cell.risks?.intenseRain) || 0);
+    const hailRisk = Math.round(Number(cell.risks?.hail) || 0);
+    const rainMean = Number(cell.mean);
+    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
+    const flashes = flashesNearCell(cell);
     const rainLevel = rainSynthesisStep(intenseRainRisk, rain);
     const hailLevel = probabilityStep(hailRisk);
     const lightningLevel = lightningIntensityStep(flashes);
     const weightedLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
     const level = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedLevel))) : 0;
-    return { cell: relevantStormCell, passage, rain, intenseRainRisk, hailRisk, flashes, rainLevel, hailLevel, lightningLevel, level };
-  })() : null;
+    return { cell, passage, rain, intenseRainRisk, hailRisk, flashes, rainLevel, hailLevel, lightningLevel, level };
+  };
+  // Le premier indicateur décrit uniquement la probabilité de passage. Le
+  // second décrit l'intensité de la cellule qui porte le maximum. A égalité
+  // de probabilité, la cellule la plus intense est retenue.
+  const passageCandidates = cells
+    .filter(cell => Number(cell.risks?.passage) > 0)
+    .map(cell => stormIntensityFor(cell))
+    .sort((left, right) => right.passage - left.passage || right.level - left.level || cellDistance(left.cell) - cellDistance(right.cell));
+  const relevantStormIntensity = passageCandidates[0] || null;
+  const relevantStormCell = relevantStormIntensity?.cell || null;
+  const otherPassageCells = passageCandidates.slice(1);
   const rainTrend = piafRainTrend(threeHours);
   const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
   const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
-  const stormTrend = relevantStormCell?.passageTrend && ["croissant", "decroissant", "stable"].includes(relevantStormCell.passageTrend.label)
-    ? relevantStormCell.passageTrend
-    : { label: "stable", change: 0 };
+  const snapshotPassages = previousPassageSnapshot
+    ? Object.values(previousPassageSnapshot.values || {}).map(Number).filter(Number.isFinite)
+    : [
+        ...cells.map(cell => Number(cell.passageTrend?.previous)).filter(Number.isFinite),
+        ...(radar.disappearedCells || []).map(cell => Number(cell.risks?.passage)).filter(Number.isFinite)
+      ];
+  const previousMaximumPassageRisk = snapshotPassages.length ? Math.max(0, ...snapshotPassages) : maximumPassageRisk;
+  const maximumPassageChange = Math.round(maximumPassageRisk - previousMaximumPassageRisk);
+  const stormTrend = {
+    label: maximumPassageChange > 0 ? "croissant" : maximumPassageChange < 0 ? "decroissant" : "stable",
+    change: maximumPassageChange,
+    previous: previousMaximumPassageRisk
+  };
   const passageTrendMarkup = cell => {
-    let trend = cell.passageTrend;
-    if (!trend && previousPassageSnapshot && Object.prototype.hasOwnProperty.call(previousPassageSnapshot.values, cell.id)) {
-      const previous = Number(previousPassageSnapshot.values[cell.id]);
-      const current = Number(cell.risks?.passage);
-      if (Number.isFinite(previous) && Number.isFinite(current)) {
-        const change = Math.round(current - previous);
-        trend = { label: change > 0 ? "croissant" : change < 0 ? "decroissant" : "stable", change };
-      }
-    }
-    if (!trend || !["croissant", "decroissant", "stable"].includes(trend.label)) return "";
+    const trend = passageTrendFor(cell);
+    if (!trend) return "";
     const arrow = trend.label === "croissant" ? "↗" : trend.label === "decroissant" ? "↘" : "→";
     const wording = trend.label === "croissant" ? "Risque en hausse" : trend.label === "decroissant" ? "Risque en baisse" : "Risque stable";
     const change = Number(trend.change);
@@ -3075,8 +3088,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rainIntensityLabel = Number.isFinite(rainIntensity)
       ? rainIntensity.toLocaleString("fr-FR", { minimumFractionDigits: rainIntensity < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h"
       : null;
-    const rainMean = Number(cell.mean);
-    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
     const flashes = flashesNearCell(cell);
     const lightningTone = flashes >= 5 ? "high" : flashes >= 2 ? "medium" : flashes > 0 ? "low" : "none";
     const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, rainIntensity) : 0;
@@ -3141,16 +3152,31 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
       // L'affichage reste fonctionnel si le stockage local est indisponible.
     }
   }
-  const stormLevel = relevantStormIntensity?.level || stormRiskLevel;
+  const stormLevel = relevantStormIntensity?.level || 0;
+  const otherPassageDetail = otherPassageCells.length
+    ? " · autres cellules : " + otherPassageCells.map(item => item.cell.id + " " + item.passage + " %").join(", ")
+    : "";
   const stormDetail = relevantStormCell
-    ? "Orage · cellule " + relevantStormCell.id + " · risque local " + generalStormRisk + " % · importance " + stormLevel + " sur 5"
+    ? "Orage · cellule retenue " + relevantStormCell.id + " · probabilité de passage " + maximumPassageRisk + " % · intensité " + stormLevel + " sur 5" + otherPassageDetail
     : "Aucune cellule pluvio-convective susceptible de passer";
+  const stormPassageDetail = relevantStormCell
+    ? "Probabilité de passage maximale : " + maximumPassageRisk + " % · cellule " + relevantStormCell.id + " · niveau " + probabilityStep(maximumPassageRisk) + " sur 5" + otherPassageDetail
+    : "Aucune cellule susceptible de passer · niveau 0 sur 5";
+  const stormIntensityDetail = relevantStormCell
+    ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
+    : "Aucune intensité de cellule à afficher";
+  const stormTrendWording = stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
+  const stormTrendChange = Number(stormTrend.change);
+  const stormTrendDetail = "Probabilité de passage " + stormTrendWording
+    + (Number.isFinite(stormTrendChange) && stormTrendChange !== 0 ? " de " + Math.abs(Math.round(stormTrendChange)) + " point" + (Math.abs(Math.round(stormTrendChange)) > 1 ? "s" : "") : "")
+    + " · maximum global " + previousMaximumPassageRisk + " % → " + maximumPassageRisk + " %"
+    + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
   const rainDetail = "Pluie · cumul PIAF prévu sur 3 h : " + rainAmount.toFixed(1) + " mm · " + rainTrend.detail;
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainAmount.toFixed(1) + ' mm', rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
-    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', probabilityStep(generalStormRisk))
+    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', probabilityStep(maximumPassageRisk), { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
   if (summaryElement) {
