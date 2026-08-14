@@ -3029,8 +3029,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rain = Math.max(0, Number(cell.maximum) || 0);
     const intenseRainRisk = Math.round(Number(cell.risks?.intenseRain) || 0);
     const hailRisk = Math.round(Number(cell.risks?.hail) || 0);
-    const rainMean = Number(cell.mean);
-    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
     const flashes = flashesNearCell(cell);
     const rainLevel = rainSynthesisStep(intenseRainRisk, rain);
     const hailLevel = probabilityStep(hailRisk);
@@ -3088,6 +3086,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const rainIntensityLabel = Number.isFinite(rainIntensity)
       ? rainIntensity.toLocaleString("fr-FR", { minimumFractionDigits: rainIntensity < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h"
       : null;
+    const rainMean = Number(cell.mean);
+    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
     const flashes = flashesNearCell(cell);
     const lightningTone = flashes >= 5 ? "high" : flashes >= 2 ? "medium" : flashes > 0 ? "low" : "none";
     const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, rainIntensity) : 0;
