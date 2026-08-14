@@ -14,7 +14,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.095</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.096</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -68,6 +68,10 @@
 <p>Les cinq points orange combinent :</p>
 <ul><li>l’intensité de pluie mesurée par le radar et le risque de pluie intense ;</li><li>le risque de grêle calculé pour la cellule ;</li><li>le nombre d’éclairs détectés à proximité par EUMETSAT LI.</li></ul>
 <p>Ces composantes sont ramenées sur une échelle de 0 à 5, puis pondérées : <strong>40 % pluie, 30 % grêle et 30 % foudre</strong>. Les détails restent disponibles dans la fiche de la cellule.</p>
+<h3>Risques de pluie intense et de grêle</h3>
+<p>Ces deux risques sont des estimations calculées par le site à partir du radar, et non des probabilités fournies directement par Météo-France.</p>
+<ul><li><strong>Pluie intense :</strong> le score dépend à 90 % de l’intensité maximale relevée dans la cellule, avec une progression rapide autour de 12 mm/h, et à 10 % de sa probabilité de passage aux Tatins. Il décrit donc surtout la puissance de la cellule ; une cellule très pluvieuse qui passe à côté peut conserver un score élevé.</li><li><strong>Grêle :</strong> le score combine l’intensité radar au-delà de 18 mm/h et 18 % de l’indice convectif. Il est volontairement plafonné à 65 %, car la pluie seule ne permet pas de détecter sûrement la grêle.</li></ul>
+<p>Le calcul de grêle pourrait être affiné avec la température en altitude, la hauteur de l’isotherme 0 °C, l’énergie convective, le cisaillement du vent ou des données radar polarimétriques. Ces informations ne sont pas encore intégrées au calcul actuel.</p>
 <h3>Risque de passage</h3>
 <p>Le risque de passage estime la possibilité que la trajectoire et sa zone d’incertitude atteignent Les Tatins. Il tient compte de la distance au bord, de la direction, de la vitesse, des positions projetées, de la largeur de la cellule et de l’incertitude.</p>
 <p>Une cellule intense peut présenter un faible risque local si elle s’éloigne ou passe à côté. Une cellule plus faible peut au contraire avoir un risque de passage élevé si elle se dirige vers Les Tatins.</p>
