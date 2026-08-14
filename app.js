@@ -3230,9 +3230,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     button.closest(".nowcast-cell-card")?.classList.add("map-selected");
     button.setAttribute("aria-current", "true");
     showCellDetails(button);
-    if (window.matchMedia("(min-width: 1101px)").matches) {
-      button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    }
   };
   const hideMappedCell = marker => {
     const cellId = marker.getAttribute("data-nowcast-cell");

@@ -1,5 +1,5 @@
-const cacheName = "meteo-france-v81";
-const shell = ["/about.html", "/architecture.svg", "/echelle-kilometrique.css?v=8", "/echelle-kilometrique.js?v=11", "/runtime-config.js?v=2.097", "/changelog.html", "/", "/index.html", "/style.css?v=123", "/app.js?v=155", "/manifest.webmanifest", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
+const cacheName = "meteo-france-v82";
+const shell = ["/about.html", "/architecture.svg", "/echelle-kilometrique.css?v=8", "/echelle-kilometrique.js?v=11", "/runtime-config.js?v=2.098", "/changelog.html", "/", "/index.html", "/style.css?v=123", "/app.js?v=156", "/manifest.webmanifest", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
