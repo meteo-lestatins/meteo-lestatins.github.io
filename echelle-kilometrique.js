@@ -12,7 +12,16 @@ const sources = [
   { id: "pearpege", label: "PE‑ARPEGE", detail: "Mesure l’incertitude à 4 jours", sizeLabel: "7,9 × 11,1 km", color: "#8b4ca3", originLongitude: -32, originLatitude: 72, longitudeStep: 0.1, latitudeStep: 0.1 }
 ];
 
-const map = L.map("scale-map", { preferCanvas: true, zoomControl: true }).setView([tatins.latitude, tatins.longitude], 11);
+const map = L.map("scale-map", {
+  preferCanvas: true,
+  zoomControl: true,
+  dragging: false,
+  keyboard: false,
+  boxZoom: false,
+  scrollWheelZoom: "center",
+  doubleClickZoom: "center",
+  touchZoom: "center"
+}).setView([tatins.latitude, tatins.longitude], 11);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   maxZoom: 19,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
