@@ -629,6 +629,14 @@ function todayDateKey() {
   return values.year + "-" + values.month + "-" + values.day;
 }
 
+function forecastDateKey(value) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Europe/Paris"
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return values.year + "-" + values.month + "-" + values.day;
+}
+
 function weekForecastStartKey(now = new Date(appNow())) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
@@ -1294,6 +1302,8 @@ function weekForecastEvolution() {
   const changesBetween = (beforeModels, afterModels, date) => {
     const changes = new Set();
     let comparable = false;
+    let stormComparable = false;
+    let stormChanged = false;
     ["ecmwf", "arpege"].forEach(model => {
       const before = beforeModels?.[model]?.[date];
       const after = afterModels?.[model]?.[date];
@@ -1306,9 +1316,15 @@ function weekForecastEvolution() {
       if (Math.abs(after.cloudCover - before.cloudCover) >= 25) changes.add("ciel");
       if (Math.abs(after.windSpeedMax - before.windSpeedMax) >= 10 || Math.abs(after.windGustMax - before.windGustMax) >= 15) changes.add("vent");
       if (before.gustPeriod && after.gustPeriod && before.gustPeriod !== after.gustPeriod) changes.add("horaire des rafales");
-      if ((after.weatherCode >= 95) !== (before.weatherCode >= 95)) changes.add("orage");
+      if (model === "ecmwf") {
+        stormComparable = true;
+        if ((after.weatherCode >= 95) !== (before.weatherCode >= 95)) {
+          stormChanged = true;
+          changes.add("orage");
+        }
+      }
     });
-    return { comparable, changes };
+    return { comparable, changes, stormComparable, stormChanged };
   };
   dates.forEach(date => {
     const transitions = history.slice(1).map((item, index) => changesBetween(history[index].models, item.models, date)).filter(item => item.comparable);
@@ -1321,11 +1337,37 @@ function weekForecastEvolution() {
     const description = level === "frequent" ? "Changements fréquents sur : " + [...changes].join(", ") + "."
       : level === "few" ? "Quelques changements récents sur : " + [...changes].join(", ") + "."
       : "";
-    byDate.set(date, { level, description, changeRate, changedCount: changedTransitions.length, transitionCount: transitions.length });
+    const stormTransitions = transitions.filter(item => item.stormComparable);
+    const stormChangedCount = stormTransitions.filter(item => item.stormChanged).length;
+    byDate.set(date, { level, description, changeRate, changedCount: changedTransitions.length, transitionCount: transitions.length, stormChangedCount, stormTransitionCount: stormTransitions.length });
   });
   try { localStorage.setItem("week-forecast-history-v2", JSON.stringify({ history })); } catch {}
   weekEvolutionState = { signature, byDate };
   return byDate;
+}
+
+function weekStormRisk(dateKey, { includeOpenMeteo = true, includeHres = true } = {}) {
+  const openMeteoDay = (latestWeekForecast?.days || []).find(day => day.date === dateKey) || null;
+  const hresDay = (latestEcmwfHresForecast?.days || []).find(day => day.date === dateKey) || null;
+  const sources = [
+    includeOpenMeteo && Number(openMeteoDay?.weatherCode) >= 95 ? "Open-Meteo" : "",
+    includeHres && Number(hresDay?.weatherCode) >= 95 ? ecmwfWeekLabel : ""
+  ].filter(Boolean);
+  if (!sources.length) return { level: 0, baseLevel: 0, instabilityPenalty: 0, horizonDays: null, sources };
+  const targetDay = Date.parse(dateKey + "T12:00:00Z");
+  const currentDay = Date.parse(todayDateKey() + "T12:00:00Z");
+  const horizonDays = Math.max(0, Math.round((targetDay - currentDay) / 86400000));
+  const nearLevel = horizonDays === 0 ? 3 : horizonDays <= 2 ? 2 : 1;
+  const baseLevel = sources.length >= 2 ? nearLevel + 2 : nearLevel;
+  const evolution = weekForecastEvolution().get(dateKey) || null;
+  const instabilityPenalty = Number(evolution?.stormChangedCount) >= 2 ? 2 : Number(evolution?.stormChangedCount) === 1 ? 1 : 0;
+  return {
+    level: Math.max(0, Math.min(5, baseLevel - instabilityPenalty)),
+    baseLevel,
+    instabilityPenalty,
+    horizonDays,
+    sources
+  };
 }
 
 function renderWeekForecast() {
@@ -1472,9 +1514,11 @@ function renderWeekForecast() {
     const gustHoverLabel = "Rafales · " + sourceLabel + " · " + number(day.windGustMax) + " km/h" + gustTiming;
     const cloudMarkup = cloudMetricRow(cloudPresentation, cloudHoverLabel, summaries.sky);
     const windMarkup = windMetricGroup([day.windSpeedMax], windDirection + escapeText(number(day.windSpeedMax) + " km/h"), [day.windGustMax], escapeText(number(day.windGustMax) + " km/h"), summaries.wind, windHoverLabel, gustHoverLabel);
-    const stormLevel = code >= 95 ? 5 : 0;
+    const stormRisk = weekStormRisk(day.date, { includeOpenMeteo: sourceKey === "openmeteo", includeHres: false });
+    const stormLevel = stormRisk.level;
     const stormPeriodLabel = activeDay ? "sur la période restante" : "sur la journée";
-    const stormHoverLabel = "Orage · " + sourceLabel + " · " + (code >= 95 ? "possible " : "non prévu ") + stormPeriodLabel;
+    const stormHoverLabel = "Orage · " + sourceLabel + " · " + (code >= 95 ? "possible " : "non prévu ") + stormPeriodLabel
+      + (stormLevel ? " · risque " + stormLevel + " sur 5" + (stormRisk.instabilityPenalty ? " après pénalité d’instabilité de " + stormRisk.instabilityPenalty : "") : "");
     const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", code >= 95 ? "Orage possible." : "Pas d’orage.");
     const sourceStormMarkup = code >= 95 ? stormSignalPictogram(stormHoverLabel, "week-source-storm-source") : "";
     const sourceWeatherMarkup = code >= 95 ? '<div class="week-weather-pictograms"><div class="week-icon weather-icon">' + icon + '</div>' + sourceStormMarkup + '</div>' : '<div class="week-icon weather-icon">' + icon + '</div>';
@@ -1494,7 +1538,7 @@ function renderWeekForecast() {
     const synthesisCloud = mean([ecmwf.cloudCoverMean ?? ecmwf.cloudCover, arpege.cloudCoverMean ?? arpege.cloudCover]) ?? 50;
     const synthesisStorm = openMeteoStorm || meteoFranceStorm || hresStorm;
     const icon = displayIcon({ time: arpege.time, cloudCover: synthesisCloud, rain: Math.max(synthesisStorm ? .5 : 0, dailyRainIconAmount(agreement.rainIconAmount)), rainLevel: rainPictogramStep(agreement.rainIconAmount) });
-    const stormModels = [openMeteoStorm ? "Open-Meteo" : "", meteoFranceStorm ? "Météo-France" : "", hresStorm ? ecmwfWeekLabel : ""].filter(Boolean);
+    const stormModels = [openMeteoStorm ? "Open-Meteo" : "", hresStorm ? ecmwfWeekLabel : ""].filter(Boolean);
     const stormLabel = stormModels.length >= 2 ? "Risque partagé" : stormModels.length ? stormModels[0] + " seulement" : "possible";
     const showerLabel = (Number(ecmwf.showersSum) || 0) >= .1 ? "oui" : Number(ecmwf.weatherCode) >= 80 ? "probable" : "non";
     const windDirections = [ecmwf.windDirection, arpege.windDirection].map(Number).filter(Number.isFinite);
@@ -1546,7 +1590,8 @@ function renderWeekForecast() {
       { value: arpege.precipitationProbabilityMax, name: "Météo-France" }
     ];
     const showerLevel = showerLabel === "oui" ? 5 : showerLabel === "probable" ? 3 : 0;
-    const stormLevel = stormModels.length >= 2 ? 5 : stormModels.length ? 3 : 0;
+    const stormRisk = weekStormRisk(arpege.date);
+    const stormLevel = stormRisk.level;
     const cloudPresentation = cloudCoverPresentation([ecmwf, arpege]);
     const synthesisCloudPeriods = [
       cloudPresentation.morning != null ? "matin " + number(cloudPresentation.morning) + " %" : "",
@@ -1572,8 +1617,9 @@ function renderWeekForecast() {
     const stormDescription = stormModels.length >= 2 ? "Orage possible selon " + stormModels.join(" et ") + "."
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
     const stormHoverLabel = "Orage · Open-Meteo " + (openMeteoStorm ? "possible" : "non prévu")
-      + " · Météo-France " + (meteoFranceStorm ? "possible" : "non prévu")
-      + " · " + ecmwfWeekLabel + " via Open-Meteo " + (hresStorm ? "possible" : "non prévu");
+      + " · " + ecmwfWeekLabel + " via Open-Meteo " + (hresStorm ? "possible" : "non prévu")
+      + " · risque " + stormLevel + " sur 5"
+      + (stormRisk.instabilityPenalty ? " · pénalité d’instabilité " + stormRisk.instabilityPenalty : "");
     const synthesisStormMarkup = synthesisStorm ? stormSignalPictogram(stormHoverLabel, "week-synthesis-storm-source") : "";
     const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", stormDescription);
     const convergenceTone = statusTone(modelAgreementScore);
@@ -2110,11 +2156,11 @@ function renderComparisonForecast(arome, openMeteo) {
     const hresHour = hresByTime.get(date.getTime()) || null;
     const stormSources = [
       Number(pair.openMeteo.weatherCode) >= 95 ? "Open-Meteo" : "",
-      Number(pair.meteoFrance.weatherCode) >= 95 ? "Météo-France" : "",
       Number(hresHour?.weatherCode) >= 95 ? ecmwfWeekLabel + " via Open-Meteo" : ""
     ].filter(Boolean);
+    const weeklyStormRisk = weekStormRisk(forecastDateKey(date));
     const stormDetail = "Orage possible · " + stormSources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date);
-    const stormMarkup = stormSources.length ? stormSignalPictogram(stormDetail, "comparison-storm-source", true) : "";
+    const stormMarkup = stormSources.length && weeklyStormRisk.level > 3 ? stormSignalPictogram(stormDetail + " · risque semaine " + weeklyStormRisk.level + " sur 5", "comparison-storm-source", true) : "";
     const detail = levelLabel(score) + ' (' + score + '%)\nTempérature : ' + item.temperature.toFixed(1) + ' / ' + pair.openMeteo.temperature.toFixed(1) + ' °C\nVent : ' + Math.round(item.windSpeed) + ' / ' + Math.round(pair.openMeteo.windSpeed) + ' km/h\n' + dateTimeFormat.format(date);
     return '<div class="comparison-hour chart-point" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time>' + stormMarkup + '</div></div>';
   }).join("");
@@ -2287,8 +2333,9 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const cloud = cloudiness(item);
     const iconRain = iconRainAmountFor(item);
     const hresHour = hresHours[index];
-    const hresStorm = Number(hresHour?.weatherCode) >= 95;
-    const hresStormMarkup = hresStormPictogram(hresHour, forecastWeekdayLabel(date) + " " + forecastHourLabel(date), "overview-storm-source");
+    const weeklyStormRisk = weekStormRisk(forecastDateKey(date));
+    const hresStorm = Number(hresHour?.weatherCode) >= 95 && weeklyStormRisk.level > 3;
+    const hresStormMarkup = hresStorm ? hresStormPictogram(hresHour, forecastWeekdayLabel(date) + " " + forecastHourLabel(date), "overview-storm-source") : "";
     const iconClass = "weather-icon" + (isNight(date) ? " night-icon" : " day-icon") + (iconRain >= measurableRainThreshold ? " precipitation-icon" : "");
     const headerWind = '<div class="wind"><span class="wind-arrow" style="transform:rotate(' + item.windDirection + 'deg)">↑</span> ' + item.windSpeed + ' km/h</div><div class="gust">' + (item.windGust > item.windSpeed + 8 ? item.windGust + ' km/h' : '&nbsp;') + '</div>';
     const eclipsePeakSlot = isEclipsePeakSlot(date);
