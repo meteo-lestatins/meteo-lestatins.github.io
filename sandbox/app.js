@@ -4,6 +4,7 @@ const runtimeConfig = window.METEO_RUNTIME_CONFIG && typeof window.METEO_RUNTIME
   : {};
 const apiBaseUrl = new URL(runtimeConfig.apiBase || "./", document.baseURI);
 const apiUrl = path => new URL(String(path).replace(/^\/+/, ""), apiBaseUrl);
+const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
 const point = { lat: 44.6538, lon: 5.5995 };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const forecastHourLabel = date => Number(hourFormat.format(date).slice(0, 2)) + "h";
@@ -25,8 +26,8 @@ let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
 let dashboardSync = { status: "loading", error: null };
-let activeForecastSource = "meteofrance";
-let activeRainSource = "meteofrance";
+let activeForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
+let activeRainSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
 let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
@@ -103,7 +104,7 @@ const meteoFranceLinks = () => sourceLink("arome", "https://portail-api.meteofra
   + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
   + sourceLink("pearome", "https://portail-api.meteofrance.fr/web/fr/api/AROME-PI", "AROME-PI");
 const openMeteoLink = () => sourceLink("openMeteo", "https://open-meteo.com/en/docs", "Open-Meteo");
-const radarLink = () => sourceLink("radar", "https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar", "Radar v1");
+const radarLink = () => sourceLink("radar", "https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar", window.METEO_REPLAY ? "Radar non archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "https://data.eumetsat.int/product/EO%3AEUM%3ADAT%3A0691", "EUMETSAT LI");
 const threeHourLinks = () => radarLink()
   + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
@@ -494,6 +495,7 @@ async function writeCachedJson(target, data) {
 }
 
 async function json(url) {
+  if (window.METEO_REPLAY?.request) return window.METEO_REPLAY.request(String(url));
   const target = typeof url === "string" && /^\/?api\//.test(url) ? apiUrl(url) : url;
   const response = await fetch(target, { cache: "no-store" });
   const data = await response.json();
@@ -1921,7 +1923,7 @@ function renderComparisonForecast(arome, openMeteo) {
     return;
   }
   const openByTime = new Map(openMeteo.hours.map(item => [new Date(item.time).getTime(), item]));
-  const nextHour = new Date();
+  const nextHour = new Date(appNow());
   nextHour.setMinutes(0, 0, 0);
   nextHour.setHours(nextHour.getHours() + 1);
   const hours = arome.hours
@@ -2051,7 +2053,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
   }
   // A forecast cycle can stay cached across midnight.  Never let its past
   // slots push the current forecast off screen: begin at the next full hour.
-  const nextHour = new Date();
+  const nextHour = new Date(appNow());
   nextHour.setMinutes(0, 0, 0);
   nextHour.setHours(nextHour.getHours() + 1);
   const hours = arome.hours.filter(item => new Date(item.time) >= nextHour);
@@ -2538,7 +2540,7 @@ function bindChartTooltips() {
 function radarDataAgeLabel(timestamp) {
   const updatedAt = new Date(timestamp).getTime();
   if (!Number.isFinite(updatedAt)) return "Dernières datas · mise à jour inconnue";
-  const minutes = Math.max(0, Math.floor((Date.now() - updatedAt) / 60000));
+  const minutes = Math.max(0, Math.floor((appNow() - updatedAt) / 60000));
   if (minutes < 1) return "Dernières datas · à l’instant";
   if (minutes < 60) return "Dernières datas · il y a " + minutes + " min";
   const hours = Math.floor(minutes / 60);
@@ -2865,7 +2867,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const etaSeconds = radar.etaSeconds ?? firstPiafRain?.seconds ?? null;
   const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
   const rainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Number(item.nowcastPrecipitation ?? item.precipitation) || 0), 0) * 10) / 10;
-  const now = Date.now();
+  const now = appNow();
   const upcomingWind = (arome?.hours || []).filter(item => {
     const time = new Date(item.time).getTime();
     return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
@@ -3484,4 +3486,5 @@ if (window.location.hash === "#radar-nowcast") {
   }
 }
 renderAppVersion();
-refresh();
+if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
+else refresh();
