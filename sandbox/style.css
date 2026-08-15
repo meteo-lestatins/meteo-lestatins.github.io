@@ -431,7 +431,10 @@ button:hover { background: #eef7fb; }
 .forecast-horizontal-scroll > div { height: 1px; }
 .overview-canvas { min-width: 100%; }
 .overview-head, .overview-rain, .overview-x-axis { display: grid; grid-auto-columns: 88px; grid-auto-flow: column; }
-.overview-hour { height: 112px; padding: 10px 3px 2px; border-right: 1px solid #e2e7e9; text-align: center; background: #fbfcfc; }
+.overview-hour { height: 112px; position: relative; padding: 10px 3px 2px; border-right: 1px solid #e2e7e9; text-align: center; background: #fbfcfc; }
+.overview-hour.hres-storm-hour { padding-top: 24px; }
+.overview-storm-source { position: absolute; top: 3px; left: 3px; right: 3px; z-index: 4; overflow: hidden; padding: 2px 3px; border: 1px solid #e6b84a; border-radius: 5px; color: #714d00; background: #fff5ca; font-size: 8px; font-weight: 850; line-height: 1.1; white-space: nowrap; text-overflow: ellipsis; cursor: help; }
+.overview-hour.hres-storm-hour .weather-icon { height: 39px; }
 .overview-hour .weather-icon { height: 50px; padding-top: 1px; position: relative; display: grid; place-items: center; font-size: 29px; line-height: 46px; }
 .overview-hour .weather-icon img { display: block; width: 46px; height: 46px; position: relative; z-index: 1; object-fit: contain; }
 .overview-hour .layered-weather-icon { width: 54px; height: 48px; position: relative; display: block; }
