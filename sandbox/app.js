@@ -1358,12 +1358,16 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
   const targetDay = Date.parse(dateKey + "T12:00:00Z");
   const currentDay = Date.parse(todayDateKey() + "T12:00:00Z");
   const horizonDays = Math.max(0, Math.round((targetDay - currentDay) / 86400000));
-  const nearLevel = horizonDays === 0 ? 3 : horizonDays <= 2 ? 2 : 1;
+  // À l'échelle quotidienne, la veille fait déjà partie de l'échéance proche :
+  // un signal explicite ne doit pas être présenté comme un simple 1/5.
+  const nearLevel = horizonDays <= 1 ? 3 : horizonDays === 2 ? 2 : 1;
   const baseLevel = sources.length >= 2 ? nearLevel + 2 : nearLevel;
   const evolution = weekForecastEvolution().get(dateKey) || null;
   const instabilityPenalty = Number(evolution?.stormChangedCount) >= 2 ? 2 : Number(evolution?.stormChangedCount) === 1 ? 1 : 0;
   return {
-    level: Math.max(0, Math.min(5, baseLevel - instabilityPenalty)),
+    // La stabilité nuance la convergence de plusieurs sources, sans faire
+    // descendre une source individuelle sous son plancher temporel.
+    level: Math.max(nearLevel, Math.min(5, baseLevel - instabilityPenalty)),
     baseLevel,
     instabilityPenalty,
     horizonDays,
