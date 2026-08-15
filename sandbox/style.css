@@ -729,7 +729,7 @@ button:hover { background: #eef7fb; }
   .three-hour-summary { overflow-x: auto; }
   .three-hour-actions { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
   header { min-height: 0; padding: 16px 16px 10px; }
-  header p { margin-bottom: 10px; font-size: 10px; }
+  header .header-subtitle { margin-bottom: 10px; font-size: 10px; }
   h1 { font-size: 31px; }
   .progress { padding-inline: 16px; display: block; }
   .progress span { display: block; min-width: 0; margin-top: 6px; text-align: left; }
@@ -786,6 +786,10 @@ button:hover { background: #eef7fb; }
 }
 
 @media (max-width: 600px) {
+  .now-value[data-mobile-label], .now-averse-period[data-mobile-label] { font-size: 0; }
+  .now-value[data-mobile-label]::after { content: attr(data-mobile-label); font-size: 10px; }
+  .now-averse-period[data-mobile-label] { margin-inline: 1px; padding-inline: 1px; }
+  .now-averse-period[data-mobile-label]::after { content: attr(data-mobile-label); font-size: 7px; }
   .three-hour-summary { overflow-x: visible; }
   .three-hour-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .three-hour-action { min-height: 76px; padding: 6px 4px; }
