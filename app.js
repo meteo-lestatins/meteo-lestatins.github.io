@@ -39,7 +39,7 @@ let weekActiveDayTimer = 0;
 let latestWeekEvolutionHistory = [];
 let dashboardCacheHydrated = false;
 let weekCacheHydrated = false;
-let activeNowcastMapRadius = 80;
+let activeNowcastMapRadius = 60;
 let nowcastMapRadiusManuallySelected = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
@@ -359,7 +359,7 @@ function shortEtaLabel(minutes) {
 function renderApproachingCellsAlert(radar) {
   const banner = $("cell-approach-alert");
   const approaching = (radar?.cells || [])
-    .filter(cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0)) < 80)
+    .filter(cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0)) < 60)
     .map((cell, index) => {
     const distance = Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
     const point15 = cell.track?.points?.find(point => point.minutes === 15);
@@ -2564,7 +2564,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const scale = width === 360
       ? (width - 32) / (mapRadiusKm * 2)
       : (height - 32) / (mapRadiusKm * 2.02);
-    const rings = [20, 40, 80].filter(distance => distance <= mapRadiusKm).map(distance => {
+    const rings = [20, 40, 60].filter(distance => distance <= mapRadiusKm).map(distance => {
       const radius = distance * scale;
       const labelX = targetX;
       const labelY = targetY - radius;
@@ -2722,7 +2722,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const milestones = '';
   const targetX = x(0).toFixed(1);
   const targetY = y(0).toFixed(1);
-  const rangeRings = [20, 40, 80].filter(distance => distance * scale <= Math.min(width / 2 - paddingX, height / 2 - paddingY)).map(distance => {
+  const rangeRings = [20, 40, 60].filter(distance => distance * scale <= Math.min(width / 2 - paddingX, height / 2 - paddingY)).map(distance => {
     const radius = distance * scale;
     const labelX = x(0);
     const labelY = y(0) - radius;
@@ -2830,7 +2830,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
       window.L.marker([place.latitude, place.longitude], { icon, interactive: false, keyboard: false }).addTo(placeLayer);
     });
   };
-  placeContext = mapRadiusKm === 80 ? regionalPlaceFallback : localPlaceFallback;
+  placeContext = mapRadiusKm === 60 ? regionalPlaceFallback : localPlaceFallback;
   renderPlaceLabels();
   const fitToContainer = () => {
     if (!nowcastLeafletMap || container.clientWidth < 1 || container.clientHeight < 1) return;
@@ -2997,7 +2997,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
   const stormPassageLevel = Math.max(rawStormPassageLevel, orangeVigilanceActive ? 1 : 0, closeStormCells.length ? 2 : 0);
   if (!nowcastMapRadiusManuallySelected) {
-    activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 80;
+    activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
   }
   const currentObservation = new Date(radar.observedAt || 0).getTime();
   const previousObservation = new Date(cellPassageSnapshot?.observedAt || 0).getTime();
@@ -3028,7 +3028,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const remaining = rounded % 60;
     return hours + " h" + (remaining ? " " + remaining : "");
   };
-  const nearbyCells = cells.filter(cell => cellDistance(cell) < 80);
+  const nearbyCells = cells.filter(cell => cellDistance(cell) < 60);
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const hazardIcons = {
     hail: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 14a4 4 0 0 1 .2-8A6 6 0 0 1 17 7a3.5 3.5 0 1 1 .5 7H5Z"></path><circle cx="8" cy="18" r="1.5"></circle><circle cx="13" cy="19" r="1.5"></circle><circle cx="18" cy="17.5" r="1.5"></circle></svg>',
@@ -3220,12 +3220,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       });
     });
   }
-  const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 80 ? ' active' : '') + '" type="button" data-nowcast-radius="80" aria-pressed="' + (activeNowcastMapRadius === 80) + '">80 km</button></div>';
+  const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 60 ? ' active' : '') + '" type="button" data-nowcast-radius="60" aria-pressed="' + (activeNowcastMapRadius === 60) + '">60 km</button></div>';
   element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius) + '</div>' + cellsPanel + '</div>';
   initializeNowcastMapBackground(activeNowcastMapRadius);
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
-    activeNowcastMapRadius = Number(event.currentTarget.dataset.nowcastRadius) === 20 ? 20 : 80;
+    activeNowcastMapRadius = Number(event.currentTarget.dataset.nowcastRadius) === 20 ? 20 : 60;
     renderRadarNowcast(radar, piaf, arome, lightning, vigilance);
   }));
   const showCellDetails = button => {
