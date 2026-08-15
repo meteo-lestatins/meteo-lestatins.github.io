@@ -60,6 +60,7 @@ const metricOpacities = { temperature: 100, rain: 100, wind: 0, gust: 0, cloudin
 const metricOffsets = { temperature: 0, rain: 0, wind: 0, gust: 0, cloudiness: 0 };
 const possibleDrizzleThreshold = .01;
 const measurableRainThreshold = .05;
+const ecmwfWeekLabel = "ECMWF IFS HRES 9 km";
 // Échelle commune des pictogrammes de pluie. Elle exprime une quantité
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
@@ -130,7 +131,7 @@ function renderWeekApiLinks() {
   if (!container) return;
   container.innerHTML = sourceLink("arome", "https://portail-api.meteofrance.fr/web/fr/api/ARPEGE", "ARPEGE")
     + sourceLink("ensemble", "https://portail-api.meteofrance.fr/web/fr/api/ARPEGE", "PE-ARPEGE")
-    + sourceLink("openMeteo", "https://open-meteo.com/en/docs", "ECMWF / Open-Meteo");
+    + sourceLink("openMeteo", "https://open-meteo.com/en/docs/ecmwf-api", ecmwfWeekLabel);
   refreshSourceIndicators();
 }
 
@@ -1090,7 +1091,7 @@ function refreshActiveOpenMeteoWeek() {
   const confidenceByDate = new Map((latestWeekForecast?.days || []).map(day => [day.date, day.confidence || null]));
   latestWeekForecast = {
     fetchedAt: latestWeekForecast?.fetchedAt || Date.now(),
-    model: "ECMWF via Open-Meteo",
+    model: ecmwfWeekLabel + " via Open-Meteo",
     days: includeCurrentDashboardDay(normalizeOpenMeteoDays(latestOpenMeteoWeekRaw.daily, latestOpenMeteoWeekRaw.hourly))
       .map(day => ({ ...day, confidence: confidenceByDate.get(day.date) || null }))
   };
@@ -1373,7 +1374,7 @@ function renderWeekForecast() {
     const windSummary = conciseWindSummary([wind], [gust], day.gustPeriod ? [day.gustPeriod] : [], day.windPeriod ? [day.windPeriod] : [], [day.windDirection]);
     return { sky: skySummary, rain: rainSummary, wind: windSummary };
   };
-  const controls = (date, hasMeteoFrance, selected) => '<div class="week-day-source-selector" aria-label="Prévision affichée pour ' + escapeText(date) + '"><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="meteofrance" aria-pressed="' + (selected === "meteofrance") + '"' + (hasMeteoFrance ? '' : ' disabled title="Prévision Météo-France limitée à 4 jours"') + '>Météo-France</button><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="openmeteo" aria-pressed="' + (selected === "openmeteo") + '">Open-Meteo</button><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="synthesis" aria-pressed="' + (selected === "synthesis") + '"' + (hasMeteoFrance ? '' : ' disabled title="Synthèse proposée sur les 4 premiers jours"') + '>Synthèse</button></div>';
+  const controls = (date, hasMeteoFrance, selected) => '<div class="week-day-source-selector" aria-label="Prévision affichée pour ' + escapeText(date) + '"><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="meteofrance" aria-pressed="' + (selected === "meteofrance") + '"' + (hasMeteoFrance ? '' : ' disabled title="Prévision Météo-France limitée à 4 jours"') + '>Météo-France</button><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="openmeteo" aria-pressed="' + (selected === "openmeteo") + '">ECMWF HRES</button><button type="button" data-week-date="' + escapeText(date) + '" data-week-source="synthesis" aria-pressed="' + (selected === "synthesis") + '"' + (hasMeteoFrance ? '' : ' disabled title="Synthèse proposée sur les 4 premiers jours"') + '>Synthèse</button></div>';
   const weekDayHeading = (date, dateKey, ...days) => {
     if (dateKey !== todayDateKey()) {
       return '<div class="week-day-head"><strong>' + escapeText(weekDayFormat.format(date)) + '</strong><time datetime="' + escapeText(dateKey) + '">' + escapeText(shortDateFormat.format(date)) + '</time></div>';
@@ -1431,7 +1432,7 @@ function renderWeekForecast() {
     const confidenceMarkup = confidence ? '<div class="week-confidence ' + confidence.level + '" title="' + escapeText(confidenceTitle) + '"><span>Confiance</span><strong>' + confidence.label + '</strong></div>' : '<div class="week-confidence unavailable"><span>Confiance</span><strong>' + confidenceMissingLabel + '</strong></div>';
     const probabilitySummary = rainProbabilitySummary([day.precipitationProbabilityMax]);
     const summaries = modelDaySummaries(day, probabilitySummary);
-    const sourceLabel = sourceKey === "meteofrance" ? "Météo-France" : "Open-Meteo";
+    const sourceLabel = sourceKey === "meteofrance" ? "Météo-France" : ecmwfWeekLabel;
     const cloudPresentation = cloudCoverPresentation(day);
     const rainMarkup = rainMetricRow([dailyRain], escapeText(precipitationTotal), [], sourceKey === "openmeteo" ? showersLevel : 0, probabilitySummary, summaries.rain);
     const cloudPeriods = [
@@ -1462,7 +1463,7 @@ function renderWeekForecast() {
     const synthesisCloud = mean([ecmwf.cloudCoverMean ?? ecmwf.cloudCover, arpege.cloudCoverMean ?? arpege.cloudCover]) ?? 50;
     const synthesisStorm = Number(ecmwf.weatherCode) >= 95 || Number(arpege.weatherCode) >= 95;
     const icon = displayIcon({ time: arpege.time, cloudCover: synthesisCloud, rain: Math.max(synthesisStorm ? .5 : 0, dailyRainIconAmount(agreement.rainIconAmount)), rainLevel: rainPictogramStep(agreement.rainIconAmount) });
-    const stormModels = [Number(ecmwf.weatherCode) >= 95 ? "Open-Meteo" : "", Number(arpege.weatherCode) >= 95 ? "Météo-France" : ""].filter(Boolean);
+    const stormModels = [Number(ecmwf.weatherCode) >= 95 ? "ECMWF HRES" : "", Number(arpege.weatherCode) >= 95 ? "Météo-France" : ""].filter(Boolean);
     const stormLabel = stormModels.length === 2 ? "Risque partagé" : stormModels.length ? stormModels[0] + " seulement" : "possible";
     const showerLabel = (Number(ecmwf.showersSum) || 0) >= .1 ? "oui" : Number(ecmwf.weatherCode) >= 80 ? "probable" : "non";
     const windDirections = [ecmwf.windDirection, arpege.windDirection].map(Number).filter(Number.isFinite);
@@ -1539,7 +1540,7 @@ function renderWeekForecast() {
     const windMarkup = windMetricGroup(windValues, windDirectionMarkup + escapeText(range(windValues, " km/h")), gustValues, escapeText(range(gustValues, " km/h")), agreement.windSummary, windHoverLabel, gustHoverLabel);
     const stormDescription = stormModels.length === 2 ? "Orage possible selon les deux modèles."
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
-    const stormHoverLabel = "Orage · Open-Meteo " + (Number(ecmwf.weatherCode) >= 95 ? "possible" : "non prévu") + " · Météo-France " + (Number(arpege.weatherCode) >= 95 ? "possible" : "non prévu");
+    const stormHoverLabel = "Orage · ECMWF HRES " + (Number(ecmwf.weatherCode) >= 95 ? "possible" : "non prévu") + " · Météo-France " + (Number(arpege.weatherCode) >= 95 ? "possible" : "non prévu");
     const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", stormDescription);
     const convergenceTone = statusTone(modelAgreementScore);
     const convergenceTitle = "Convergence des modèles : " + convergenceLabel.toLowerCase() + " · " + Math.round(modelAgreementScore * 100) + "/100";
@@ -1673,6 +1674,7 @@ async function ensureWeekForecast() {
     url.searchParams.set("longitude", String(point.lon));
     url.searchParams.set("timezone", "Europe/Paris");
     url.searchParams.set("forecast_days", "8");
+    url.searchParams.set("models", "ecmwf_ifs");
     url.searchParams.set("wind_speed_unit", "kmh");
     url.searchParams.set("hourly", "temperature_2m,apparent_temperature,precipitation,rain,showers,precipitation_probability,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m");
     url.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,precipitation_probability_max,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset");
@@ -1686,7 +1688,7 @@ async function ensureWeekForecast() {
     ensembleUrl.searchParams.set("hourly", "temperature_2m_spread,precipitation_spread,wind_speed_10m_spread");
     const forecastRequest = latestOpenMeteoWeekRaw ? Promise.resolve(null) : json(url.toString()).then(value => {
       latestOpenMeteoWeekRaw = { daily: value.daily, hourly: value.hourly };
-      latestWeekForecast = { fetchedAt: Date.now(), model: "ECMWF via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(value.daily, value.hourly)) };
+      latestWeekForecast = { fetchedAt: Date.now(), model: ecmwfWeekLabel + " via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(value.daily, value.hourly)) };
       scheduleActiveWeekDayUpdate();
       renderWeekForecast();
       return value;
@@ -1699,7 +1701,7 @@ async function ensureWeekForecast() {
     if (!latestWeekForecast?.days?.length) {
       if (forecastResult.status === "fulfilled") {
         latestOpenMeteoWeekRaw = { daily: forecastResult.value.daily, hourly: forecastResult.value.hourly };
-        latestWeekForecast = { fetchedAt: Date.now(), model: "ECMWF via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(forecastResult.value.daily, forecastResult.value.hourly)) };
+        latestWeekForecast = { fetchedAt: Date.now(), model: ecmwfWeekLabel + " via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(forecastResult.value.daily, forecastResult.value.hourly)) };
         scheduleActiveWeekDayUpdate();
       }
       else weekForecastErrors.openmeteo = "Impossible de charger ECMWF : " + forecastResult.reason.message;

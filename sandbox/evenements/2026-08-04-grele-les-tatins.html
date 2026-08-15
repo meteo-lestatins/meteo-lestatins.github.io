@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8fafb">
+  <meta name="description" content="Relecture documentée de l’orage de grêle observé aux Tatins le 4 août 2026 vers 16 h 40.">
+  <link rel="stylesheet" href="../style.css?v=96">
+  <link rel="stylesheet" href="evenements.css?v=1">
+  <title>Orage de grêle du 4 août 2026 · Météo les Tatins</title>
+</head>
+<body class="event-page">
+<main>
+  <header class="site-header">
+    <div>
+      <h1><a href="../index.html">Météo les Tatins</a></h1>
+      <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="../index.html#radar-nowcast">nowcasting</a></p>
+    </div>
+    <div class="header-meta">
+      <a class="header-events-link" href="../evenements.html">Événements</a>
+      <a class="app-version" href="../changelog.html" title="Consulter les changements des versions">v2.106</a>
+    </div>
+  </header>
+
+  <section class="event-player" aria-labelledby="event-title">
+    <div class="event-player-heading">
+      <div>
+        <p class="archive-kicker">RELECTURE HISTORIQUE · 4 AOÛT 2026</p>
+        <h2 id="event-title">Orage de grêle aux Tatins</h2>
+      </div>
+      <output id="selected-time" for="day-position">16 h 40</output>
+    </div>
+    <div class="day-slider-wrap">
+      <div class="day-track" aria-hidden="true">
+        <span class="hail-window"></span>
+        <span class="day-cursor" id="day-cursor"></span>
+      </div>
+      <input id="day-position" type="range" min="0" max="1439" step="1" value="1000" aria-label="Heure de la journée du 4 août 2026">
+      <div class="day-labels" aria-hidden="true"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>
+    </div>
+    <div class="event-legend">
+      <span><i class="hail-legend" aria-hidden="true"></i>Grêle observée aux Tatins · environ 16 h 40–17 h 10</span>
+      <span id="event-state">Pendant l’épisode observé</span>
+    </div>
+  </section>
+
+  <div class="historical-notice"><strong>Archive, pas météo en direct.</strong> L’affichage ci-dessous évolue avec l’heure sélectionnée.</div>
+
+  <section class="three-hour-overview event-overview" aria-labelledby="three-hour-title">
+    <div class="section-heading">
+      <h2 id="three-hour-title">À cet instant</h2>
+      <span class="source-chip">données archivées</span>
+    </div>
+    <div id="event-summary" class="event-summary" aria-live="polite"></div>
+  </section>
+
+  <section class="event-nowcast" aria-labelledby="nowcast-title">
+    <div class="section-heading page-section-heading">
+      <h2 id="nowcast-title">Activité électrique autour des Tatins</h2>
+      <span class="source-chip">EUMETSAT · Lightning Imager</span>
+    </div>
+    <div class="event-nowcast-grid">
+      <div class="event-map-wrap">
+        <canvas id="lightning-map" width="720" height="520" role="img" aria-label="Éclairs détectés durant les trente minutes précédant l’heure choisie"></canvas>
+        <span class="map-north" aria-hidden="true">N ↑</span>
+      </div>
+      <div id="lightning-detail" class="lightning-detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="forecast-section event-hourly" aria-labelledby="hourly-title">
+    <div class="section-heading page-section-heading">
+      <h2 id="hourly-title">Conditions horaires archivées</h2>
+      <span class="source-chip">Open-Meteo · archive de prévision</span>
+    </div>
+    <div id="hourly-strip" class="hourly-strip" aria-live="polite"></div>
+  </section>
+
+  <section class="event-method" aria-labelledby="method-title">
+    <h2 id="method-title">Ce que montre cette relecture</h2>
+    <div class="method-grid">
+      <p><strong>Observé aux Tatins</strong><span>Grêlons de 3 à 4 cm pendant environ 30 minutes, à partir de 16 h 40. Horaire approximatif communiqué directement.</span></p>
+      <p><strong>Détecté autour des Tatins</strong><span>Éclairs géolocalisés par le satellite MTG Lightning Imager. Leur distance aux Tatins est calculée à partir des coordonnées publiées.</span></p>
+      <p><strong>Archivé comme prévision</strong><span>Conditions horaires Open-Meteo. Les paquets AROME du réseau de 12 UTC sont conservés pour la future reconstitution.</span></p>
+    </div>
+    <p class="excluded-source"><strong>Glandage n’est pas Les Tatins.</strong> Les mesures de cette station voisine ne sont pas utilisées ici pour reconstituer la pluie ou la grêle aux Tatins.</p>
+  </section>
+</main>
+<script src="event-player.js?v=1"></script>
+</body>
+</html>
