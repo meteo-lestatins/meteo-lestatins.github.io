@@ -575,6 +575,17 @@ function displayIcon(item) {
   return '<span class="weather-variant-icon" role="img" aria-label="' + escapeText(label) + '"><img class="weather-cloud-layer" src="' + base + '" alt="">' + rainMarkup + '</span>';
 }
 
+function hresStormPictogram(item, periodLabel = "", extraClass = "") {
+  if (!item || Number(item.weatherCode) < 95) return "";
+  const probability = Number(item?.probability ?? item?.precipitationProbabilityMax);
+  const precipitation = Number(item?.precipitation ?? item?.precipitationSum);
+  const detail = "Orage possible — source " + ecmwfWeekLabel + " via Open-Meteo · maille 9 km, centre sélectionné à 4,8 km des Tatins"
+    + (periodLabel ? " · " + periodLabel : "")
+    + (Number.isFinite(probability) ? " · probabilité " + Math.round(probability) + " %" : "")
+    + (precipitation > 0 ? " · précipitations " + precipitation.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm" : "");
+  return '<span class="hres-storm-pictogram chart-point' + (extraClass ? " " + extraClass : "") + '" tabindex="0" role="img" aria-label="Orage possible selon ECMWF HRES" data-tooltip="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><svg viewBox="0 0 48 48" aria-hidden="true"><path class="hres-storm-cloud" d="M10 29.5a7 7 0 0 1 .8-14A10.8 10.8 0 0 1 32 13a7.7 7.7 0 0 1 6.3 3.3 6.8 6.8 0 0 1 1.4 13.2H10Z"/><path class="hres-storm-bolt" d="m24 22-7 11h6l-2.8 12L35 27h-6.5l3-5H24Z"/></svg></span>';
+}
+
 function cloudiness(item) {
   return Math.round(Math.max(0, Math.min(100, item.cloudCover)));
 }
@@ -1417,6 +1428,8 @@ function renderWeekForecast() {
       ? Math.max(0, Math.min(100, reportedCloud))
       : code === 0 ? 0 : code === 1 ? 20 : code === 2 ? 55 : code === 3 || code === 45 || code === 48 || code >= 51 && code <= 77 ? 90 : code >= 80 ? 60 : 50;
     const icon = displayIcon({ time: day.time, cloudCover: iconCloud, rain: iconRain, rainLevel: rainPictogramStep(dailyRain) });
+    const hresDay = (latestEcmwfHresForecast?.days || []).find(item => item.date === day.date) || null;
+    const hresStormMarkup = hresStormPictogram(hresDay, activeDay ? "période restante aujourd’hui" : "journée du " + day.date, "week-hres-storm-source");
     const openMeteoShowerSignal = sourceKey === "openmeteo" && ((Number(day.showersSum) || 0) >= .1 || code >= 80 && code <= 82);
     const precipitationTotal = dailyRain > 0 && dailyRain < .1 ? "< 0,1 mm" : dailyRain === 0 && openMeteoShowerSignal ? "type averse" : number(dailyRain) + " mm";
     const windDirection = Number.isFinite(Number(day.windDirection)) ? '<span class="week-wind-arrow" style="transform:rotate(' + Number(day.windDirection) + 'deg)">↑</span>' : '';
@@ -1458,7 +1471,7 @@ function renderWeekForecast() {
     const stormPeriodLabel = activeDay ? "sur la période restante" : "sur la journée";
     const stormHoverLabel = "Orage · " + sourceLabel + " · " + (code >= 95 ? "possible " : "non prévu ") + stormPeriodLabel;
     const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", code >= 95 ? "Orage possible." : "Pas d’orage.");
-    return '<article class="week-day">' + weekDayHeading(date, day.date, day) + sourceControls + '<div class="week-day-overview"><div class="week-icon weather-icon">' + icon + '</div><div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(day.temperatureMax) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(day.temperatureMin) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + confidenceMarkup + '</article>';
+    return '<article class="week-day">' + weekDayHeading(date, day.date, day) + sourceControls + '<div class="week-day-overview"><div class="week-weather-pictograms"><div class="week-icon weather-icon">' + icon + '</div>' + hresStormMarkup + '</div><div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(day.temperatureMax) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(day.temperatureMin) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + confidenceMarkup + '</article>';
   };
   const renderSynthesisDay = (ecmwf, arpege, sourceControls) => {
     const agreement = weekModelAgreement(ecmwf, arpege);
@@ -1467,6 +1480,7 @@ function renderWeekForecast() {
     const openMeteoStorm = Number(ecmwf.weatherCode) >= 95;
     const meteoFranceStorm = Number(arpege.weatherCode) >= 95;
     const hresStorm = Number(hresDay?.weatherCode) >= 95;
+    const hresStormMarkup = hresStormPictogram(hresDay, arpege.date === todayDateKey() ? "période restante aujourd’hui" : "journée du " + arpege.date, "week-hres-storm-source");
     const date = new Date(arpege.time);
     const finite = values => values.map(Number).filter(Number.isFinite);
     const mean = values => { const valid = finite(values); return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null; };
@@ -1564,7 +1578,7 @@ function renderWeekForecast() {
     const evolutionTone = statusTone(evolutionDisplayScore);
     const evolutionMarkup = '<span class="week-footer-status ' + evolutionTone + '" title="' + escapeText(evolutionTitle) + '"><span>Évolution des prévisions</span><span role="img" aria-label="' + escapeText(evolutionLabel + " : " + evolutionTitle) + '">' + statusDots(evolutionDisplayScore) + '</span></span>';
     const footerMarkup = '<div class="week-synthesis-footer">' + convergenceMarkup + evolutionMarkup + confidenceMarkup + '</div>';
-    return '<article class="week-day week-consensus-day ' + verdictLevel + '">' + weekDayHeading(date, arpege.date, ecmwf, arpege) + sourceControls + '<div class="week-day-overview"><div class="week-icon weather-icon">' + icon + '</div><div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(mean([ecmwf.temperatureMax, arpege.temperatureMax])) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(mean([ecmwf.temperatureMin, arpege.temperatureMin])) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + footerMarkup + '</article>';
+    return '<article class="week-day week-consensus-day ' + verdictLevel + '">' + weekDayHeading(date, arpege.date, ecmwf, arpege) + sourceControls + '<div class="week-day-overview"><div class="week-weather-pictograms"><div class="week-icon weather-icon">' + icon + '</div>' + hresStormMarkup + '</div><div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(mean([ecmwf.temperatureMax, arpege.temperatureMax])) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(mean([ecmwf.temperatureMin, arpege.temperatureMin])) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + footerMarkup + '</article>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -1731,7 +1745,12 @@ async function ensureWeekForecast() {
         }))
       };
       renderWeekForecast();
-      renderActiveForecast();
+      try {
+        renderActiveForecast();
+      } catch (error) {
+        if (!window.METEO_REPLAY) throw error;
+        document.documentElement.dataset.replayForecastError = error?.stack || error?.message || String(error);
+      }
       return value;
     });
     const [forecastResult, meteoFranceResult, ensembleResult] = await Promise.allSettled([
@@ -1909,7 +1928,7 @@ function precedingHourEndKey(time) {
 function renderActiveForecast() {
   const data = latestForecastData;
   if (!data) return;
-  const meteoFrance = withHourlyNowcast(data.arome, piafHourlyRain(data.piaf));
+  const meteoFrance = withHourlyNowcast(data.arome, data.piaf ? piafHourlyRain(data.piaf) : null);
   const openMeteo = withHourlyNowcast(data.openMeteo, openMeteoHourlyRain(data.openMeteo));
   if (activeForecastSource === "comparison") {
     renderComparisonForecast(meteoFrance, openMeteo);
@@ -2244,15 +2263,12 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const iconRain = iconRainAmountFor(item);
     const hresHour = hresHours[index];
     const hresStorm = Number(hresHour?.weatherCode) >= 95;
-    const hresStormDetail = "Orage possible — source " + ecmwfWeekLabel + " via Open-Meteo · maille 9 km, centre sélectionné à 4,8 km des Tatins"
-      + (Number.isFinite(Number(hresHour?.probability)) ? " · probabilité " + Math.round(Number(hresHour.probability)) + " %" : "")
-      + (Number(hresHour?.precipitation) > 0 ? " · précipitations " + Number(hresHour.precipitation).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm" : "");
-    const hresStormMarkup = hresStorm ? '<span class="overview-storm-source chart-point" tabindex="0" role="img" aria-label="Orage possible selon ECMWF HRES" data-tooltip="' + escapeText(hresStormDetail) + '" title="' + escapeText(hresStormDetail) + '">⛈️</span>' : '';
+    const hresStormMarkup = hresStormPictogram(hresHour, forecastWeekdayLabel(date) + " " + forecastHourLabel(date), "overview-storm-source");
     const iconClass = "weather-icon" + (isNight(date) ? " night-icon" : " day-icon") + (iconRain >= measurableRainThreshold ? " precipitation-icon" : "");
     const headerWind = '<div class="wind"><span class="wind-arrow" style="transform:rotate(' + item.windDirection + 'deg)">↑</span> ' + item.windSpeed + ' km/h</div><div class="gust">' + (item.windGust > item.windSpeed + 8 ? item.windGust + ' km/h' : '&nbsp;') + '</div>';
     const eclipsePeakSlot = isEclipsePeakSlot(date);
     const pictogram = eclipsePeakSlot ? '<svg class="timeline-eclipse-icon" viewBox="0 0 48 48" role="img" aria-label="Éclipse solaire partielle à 94,7 %"><circle class="eclipse-sun" cx="24" cy="24" r="14"/><circle class="eclipse-moon" cx="22.6" cy="25.4" r="14.25"/></svg>' : displayIcon({ ...item, rain: iconRain });
-    return '<div class="overview-hour' + (hresStorm ? ' hres-storm-hour' : '') + '" style="' + daylightStyle(date) + '">' + hresStormMarkup + '<div class="' + iconClass + (eclipsePeakSlot ? ' eclipse-weather-icon' : '') + '" title="' + (eclipsePeakSlot ? 'Éclipse solaire · maximum vers 20 h 23' : cloud + '% de nébulosité · ' + iconRain.toFixed(2) + ' mm/h moyen') + '">' + pictogram + '</div>' + headerWind + '</div>';
+    return '<div class="overview-hour' + (hresStorm ? ' hres-storm-hour' : '') + '" style="' + daylightStyle(date) + '"><div class="overview-weather-pictograms"><div class="' + iconClass + (eclipsePeakSlot ? ' eclipse-weather-icon' : '') + '" title="' + (eclipsePeakSlot ? 'Éclipse solaire · maximum vers 20 h 23' : cloud + '% de nébulosité · ' + iconRain.toFixed(2) + ' mm/h moyen') + '">' + pictogram + '</div>' + hresStormMarkup + '</div>' + headerWind + '</div>';
   }).join("");
   const overviewXAxis = hours.map((item, index) => {
     const date = new Date(item.time);
@@ -2793,7 +2809,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + (trackPoints ? '<polyline class="storm-track' + (primaryProjection ? ' projected' : '') + '" points="' + trackPoints + '"></polyline>' : '') + milestones +
     '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g>' +
     '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
-    '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span><span><i class="legend-lightning">ϟ</i> foudre</span></div></div>';
+    '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span>' + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
 }
 
 function initializeNowcastMapBackground(mapRadiusKm) {
@@ -3103,8 +3119,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const rainLevel = rainSynthesisStep(intenseRainRisk, rain);
     const hailLevel = probabilityStep(hailRisk);
     const lightningLevel = lightningIntensityStep(flashes);
-    const weightedLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
-    const level = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedLevel))) : 0;
+    const weightedLevel = window.METEO_REPLAY
+      ? rainLevel * .6 + hailLevel * .4
+      : rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
+    const level = rainLevel || hailLevel || (!window.METEO_REPLAY && lightningLevel) ? Math.max(1, Math.min(5, Math.round(weightedLevel))) : 0;
     return { cell, passage, rain, intenseRainRisk, hailRisk, flashes, rainLevel, hailLevel, lightningLevel, level };
   };
   // Le premier indicateur décrit uniquement la probabilité de passage. Le
@@ -3170,7 +3188,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
     const hazards = hazardMetric("hail", riskTone(hailRisk), "Grêle : risque " + hailRisk + " %", hailPictogram)
       + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""), rainPictogram)
-      + hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram);
+      + (window.METEO_REPLAY ? "" : hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram));
     const detailsId = "cell-details-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
     const details = [
       detailMetric("Distance du centre", cellCenterDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"),
