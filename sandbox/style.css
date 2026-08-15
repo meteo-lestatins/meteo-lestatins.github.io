@@ -231,12 +231,15 @@ button:hover { background: #eef7fb; }
 .week-source-message { min-height: 180px; display: grid; place-items: center; padding: 20px; border: 1px dashed #cbd8de; border-radius: 11px; color: #657780; background: #fff; text-align: center; }
 .week-loading { grid-column: 1 / -1; margin: 80px 0; color: #52636c; text-align: center; }
 .week-day { overflow: hidden; border: 1px solid #ccd9df; border-radius: 11px; color: #1e3a50; background: #fff; box-shadow: 0 2px 7px rgba(34, 65, 84, .06); }
-.week-day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 11px 8px; border-bottom: 1px solid #e0e8ec; background: #f4f8fa; }
+.week-day-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 11px 8px; border-bottom: 1px solid #e0e8ec; background: #f4f8fa; }
 .week-day-head-active { justify-content: flex-start; gap: 4px; }
 .week-day-head strong { font-size: 14px; text-transform: capitalize; }
 .week-day-head .week-active-start { text-transform: none; }
 .week-day-head time { color: #637681; font-size: 11px; }
 .week-day-head time.week-active-start { color: inherit; font-size: 14px; font-weight: 700; }
+.week-day-date-stack { display: grid; justify-items: center; gap: 1px; }
+.week-day-date-stack .week-synthesis-storm-source { width: 30px; height: 30px; margin: -1px 0 -5px; }
+.week-day-date-stack .week-synthesis-storm-source svg { width: 28px; height: 28px; }
 .week-icon { height: 68px; display: grid; place-items: center; padding: 6px 0 0; }
 .week-icon > img, .week-icon .layered-weather-icon, .week-icon .weather-variant-icon { width: 58px; height: 58px; }
 .week-icon .layered-weather-icon { position: relative; display: block; }
