@@ -1,4 +1,4 @@
-const cacheName = "meteo-sandbox-b20260815125349767";
+const cacheName = "meteo-sandbox-b20260815133307700";
 const shell = ["/sandbox/about.html", "/sandbox/architecture.svg", "/sandbox/echelle-kilometrique.css?v=8", "/sandbox/echelle-kilometrique.js?v=13", "/sandbox/runtime-config.js?v=2.107", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=133", "/sandbox/app.js?v=172", "/sandbox/manifest.webmanifest", "/sandbox/evenements.html", "/sandbox/evenements/2026-08-04-grele-les-tatins.html", "/sandbox/evenements/evenements.css?v=2", "/sandbox/evenements/event-player.js?v=3", "/sandbox/evenements/data/2026-08-04-grele-les-tatins.json", "/sandbox/evenements/data/2026-08-04-grele-les-tatins-radar.json", "/sandbox/vendor/leaflet/leaflet.css", "/sandbox/vendor/leaflet/leaflet.js"];
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));

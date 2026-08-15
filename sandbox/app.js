@@ -3094,11 +3094,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     return Number(hour.weatherCode) >= 95 && time >= stormForecastStart.getTime() && time <= stormForecastEnd;
   });
   const stormForecastSourceCount = Number(meteoFranceStormForecastActive) + Number(openMeteoStormForecastActive);
-  // Les niveaux 1 et 2 correspondent au nombre de sources prévisionnelles,
-  // puis 3, 4 et 5 restent réservés au nowcasting de passage des cellules.
+  // Les sources prévisionnelles imposent un plancher de 1 ou 2. Toute
+  // probabilité de passage nowcasting supérieure à zéro utilise également
+  // l'échelle complète de 1 à 5, indépendamment de l'intensité affichée.
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  const nowcastStormPassageLevel = rawStormPassageLevel >= 3 ? rawStormPassageLevel : 0;
-  const stormPassageLevel = Math.max(nowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
   if (!nowcastMapRadiusManuallySelected) {
     activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
   }
@@ -3175,6 +3174,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const relevantStormIntensity = passageCandidates[0] || null;
   const relevantStormCell = relevantStormIntensity?.cell || null;
   const otherPassageCells = passageCandidates.slice(1);
+  const nowcastStormPassageLevel = rawStormPassageLevel;
+  const stormPassageLevel = Math.max(nowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
   const rainTrend = piafRainTrend(threeHours);
   const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
   const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
@@ -3187,7 +3188,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const previousMaximumPassageRisk = snapshotPassages.length ? Math.max(0, ...snapshotPassages) : maximumPassageRisk;
   const maximumPassageChange = Math.round(maximumPassageRisk - previousMaximumPassageRisk);
   const previousRawStormPassageLevel = probabilityStep(previousMaximumPassageRisk);
-  const previousNowcastStormPassageLevel = previousRawStormPassageLevel >= 3 ? previousRawStormPassageLevel : 0;
+  const previousNowcastStormPassageLevel = previousRawStormPassageLevel;
   const savedStormPassageLevel = Number(previousDisplayedLevelSnapshot?.displayedLevel);
   const previousStormPassageLevel = Number.isFinite(savedStormPassageLevel)
     ? savedStormPassageLevel
