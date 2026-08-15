@@ -4,12 +4,16 @@
   const hailEnd = Date.parse("2026-08-04T17:10:00+02:00");
   const minute = 60_000;
   const state = { minuteOfDay: 1000, data: null, applyDashboardPayload: null };
-  const dataPromise = fetch("data/2026-08-04-grele-les-tatins.json", { cache: "no-store" })
-    .then(response => {
-      if (!response.ok) throw new Error("Archive de l’événement indisponible");
-      return response.json();
-    })
-    .then(data => (state.data = data));
+  const dataPromise = Promise.all([
+    fetch("data/2026-08-04-grele-les-tatins.json", { cache: "no-store" }),
+    fetch("data/2026-08-04-grele-les-tatins-radar.json", { cache: "no-store" })
+  ]).then(async responses => {
+    if (responses.some(response => !response.ok)) throw new Error("Archive de l’événement indisponible");
+    const [data, radar] = await Promise.all(responses.map(response => response.json()));
+    state.data = data;
+    state.radar = radar;
+    return data;
+  });
 
   const currentTime = () => dayStart + state.minuteOfDay * minute;
   const isoLocal = timestamp => {
@@ -23,12 +27,6 @@
     timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit"
   }).format(new Date(timestamp)).replace(":", " h ");
   const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
-  const flashesBetween = (from, to, radius = 120) => (state.data?.lightning?.flashes || [])
-    .filter(flash => Date.parse(flash.t) > from && Date.parse(flash.t) <= to && Number(flash.d) <= radius);
-  const centroid = flashes => flashes.length ? {
-    eastKm: flashes.reduce((sum, flash) => sum + Number(flash.x), 0) / flashes.length,
-    northKm: flashes.reduce((sum, flash) => sum + Number(flash.y), 0) / flashes.length
-  } : null;
 
   function forecastHours(data) {
     return (data.hourly?.samples || []).map(sample => ({
@@ -89,120 +87,32 @@
     })));
   }
 
-  function lightningPayload(timestamp) {
-    const recent = flashesBetween(timestamp - 10 * minute, timestamp, 120);
-    const counts = Object.fromEntries([20, 40, 80, 120].map(radius => [radius, recent.filter(flash => Number(flash.d) <= radius).length]));
+  function radarPayload(timestamp) {
+    const frames = state.radar?.frames || [];
+    const frame = [...frames].reverse().find(item => Date.parse(item.observedAt) <= timestamp)
+      || frames[0]
+      || null;
+    const inArchiveWindow = frame && Math.abs(timestamp - Date.parse(frame.observedAt)) <= 10 * minute;
+    const cells = inArchiveWindow ? frame.cells : [];
     return {
       fetchedAt: new Date().toISOString(),
-      observedFrom: new Date(timestamp - 10 * minute).toISOString(),
-      observedAt: new Date(timestamp).toISOString(),
-      source: "EUMETSAT MTG Lightning Imager · archive réelle",
-      radiusKm: 120,
-      flashCount: recent.length,
-      counts,
-      nearestKm: recent.length ? Math.min(...recent.map(flash => Number(flash.d))) : null,
-      risk: recent.length ? (counts[20] ? 99 : counts[40] ? 76 : counts[80] ? 42 : 18) : 0,
-      flashes: recent.map(flash => ({
-        time: flash.t,
-        eastKm: Number(flash.x),
-        northKm: Number(flash.y),
-        distanceKm: Number(flash.d)
-      }))
-    };
-  }
-
-  function connectedClusters(flashes, maximumGapKm = 12, minimumFlashes = 3) {
-    const remaining = new Set(flashes.map((_, index) => index));
-    const clusters = [];
-    while (remaining.size) {
-      const seed = remaining.values().next().value;
-      remaining.delete(seed);
-      const indexes = [seed];
-      for (let cursor = 0; cursor < indexes.length; cursor += 1) {
-        const current = flashes[indexes[cursor]];
-        [...remaining].forEach(index => {
-          const candidate = flashes[index];
-          if (Math.hypot(Number(candidate.x) - Number(current.x), Number(candidate.y) - Number(current.y)) <= maximumGapKm) {
-            remaining.delete(index);
-            indexes.push(index);
-          }
-        });
-      }
-      if (indexes.length >= minimumFlashes) clusters.push(indexes.map(index => flashes[index]));
-    }
-    return clusters;
-  }
-
-  function electricalCells(timestamp) {
-    const recentClusters = connectedClusters(flashesBetween(timestamp - 10 * minute, timestamp, 80));
-    const previousClusters = connectedClusters(flashesBetween(timestamp - 20 * minute, timestamp - 10 * minute, 80));
-    const previousCentres = previousClusters.map(flashes => ({ flashes, ...centroid(flashes) }));
-    return recentClusters.map(flashes => {
-      const centre = centroid(flashes);
-      const spread = Math.sqrt(flashes.reduce((sum, flash) => sum + (Number(flash.x) - centre.eastKm) ** 2 + (Number(flash.y) - centre.northKm) ** 2, 0) / flashes.length);
-      const radiusKm = clamp(spread * 1.35, 4, 14);
-      const previous = previousCentres
-        .map(candidate => ({ ...candidate, gap: Math.hypot(candidate.eastKm - centre.eastKm, candidate.northKm - centre.northKm) }))
-        .filter(candidate => candidate.gap <= 30)
-        .sort((left, right) => left.gap - right.gap)[0] || null;
-      const velocityEast = previous ? (centre.eastKm - previous.eastKm) / 10 : 0;
-      const velocityNorth = previous ? (centre.northKm - previous.northKm) / 10 : 0;
-      const speedKmh = Math.hypot(velocityEast, velocityNorth) * 60;
-      const points = [0, 15, 30, 45, 60].map(minutesAhead => ({
-        minutes: minutesAhead,
-        eastKm: centre.eastKm + velocityEast * minutesAhead,
-        northKm: centre.northKm + velocityNorth * minutesAhead,
-        uncertaintyKm: radiusKm + minutesAhead * (previous ? .08 : .2)
-      }));
-      const closest = Math.min(...points.map(point => Math.hypot(point.eastKm, point.northKm)));
-      const passage = closest - radiusKm > 60 ? 0 : clamp(Math.round(100 - Math.max(0, closest - radiusKm) * 2), 5, 95);
-      return {
-        eastKm: centre.eastKm,
-        northKm: centre.northKm,
-        radiusKm,
-        areaKm2: Math.PI * radiusKm ** 2,
-        trackedSince: new Date(timestamp - (previous ? 20 : 10) * minute).toISOString(),
-        source: "Cellule électrique LI EUMETSAT",
-        flashCount: flashes.length,
-        etaMinutes: null,
-        risks: {
-          passage,
-          storm: clamp(Math.round(25 + flashes.length * 4), 30, 100),
-          hail: 0,
-          intenseRain: 0
-        },
-        track: {
-          points,
-          speedKmh,
-          confidence: previous ? clamp(45 + flashes.length * 3, 50, 90) : 30
-        }
-      };
-    }).sort((left, right) => Number(right.risks.passage) - Number(left.risks.passage) || Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))
-      .map((cell, index) => ({ ...cell, id: `LI-${String.fromCharCode(65 + index)}` }));
-  }
-
-  function radarPlaceholder(timestamp, lightning) {
-    const cells = electricalCells(timestamp);
-    return {
-      fetchedAt: new Date().toISOString(),
-      dataUpdatedAt: new Date(timestamp).toISOString(),
-      observedAt: new Date(timestamp).toISOString(),
-      source: "Cellules électriques reconstituées depuis l’archive réelle EUMETSAT LI · radar/PIAF non archivés",
+      dataUpdatedAt: inArchiveWindow ? frame.observedAt : new Date(timestamp).toISOString(),
+      observedAt: inArchiveWindow ? frame.observedAt : new Date(timestamp).toISOString(),
+      source: "Météo-France Open Data · archive radar Meteociel 5 min",
       frames: [],
-      quality: "unavailable",
-      currentPrecipitation: null,
-      nearestRainKm: null,
+      quality: inArchiveWindow ? "archive" : "outside-local-window",
+      currentPrecipitation: inArchiveWindow ? frame.currentPrecipitation : null,
+      nearestRainKm: inArchiveWindow ? frame.nearestRainKm : null,
       etaSeconds: null,
-      trend: "unknown",
+      trend: "stable",
       trendRatio: null,
       riskTrend: "stable",
       motion: null,
-      threat: cells[0] ? { id: cells[0].id } : null,
+      threat: inArchiveWindow && frame.threatId ? { id: frame.threatId } : null,
       cells,
       disappearedCells: [],
       mapRadiusKm: 60,
-      values: [],
-      lightningOnly: true
+      values: []
     };
   }
 
@@ -216,13 +126,12 @@
       minutely15: quarterHours(hours),
       days: forecastDays(hours)
     };
-    const lightning = lightningPayload(timestamp);
     return {
       status: "ready",
       data: {
         openMeteo,
-        lightning,
-        radar: radarPlaceholder(timestamp, lightning),
+        lightning: null,
+        radar: radarPayload(timestamp),
         piaf: null,
         arome: null,
         pearome: null,

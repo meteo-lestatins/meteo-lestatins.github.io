@@ -105,9 +105,10 @@ const meteoFranceLinks = () => sourceLink("arome", "https://portail-api.meteofra
   + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
   + sourceLink("pearome", "https://portail-api.meteofrance.fr/web/fr/api/AROME-PI", "AROME-PI");
 const openMeteoLink = () => sourceLink("openMeteo", "https://open-meteo.com/en/docs", "Open-Meteo");
-const radarLink = () => sourceLink("radar", "https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar", window.METEO_REPLAY ? "Radar non archivé" : "Radar v1");
+const ecmwfHresStormLink = () => sourceLink("openMeteo", "https://open-meteo.com/en/docs/ecmwf-api", "ECMWF HRES · Orage");
+const radarLink = () => sourceLink("radar", window.METEO_REPLAY ? "https://www.meteociel.com/observations-meteo/radarzoom.php?archive=1" : "https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "https://data.eumetsat.int/product/EO%3AEUM%3ADAT%3A0691", "EUMETSAT LI");
-const threeHourLinks = () => radarLink()
+const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
   + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
   + sourceLink("arome", "https://portail-api.meteofrance.fr/web/fr/api/AROME", "AROME")
   + lightningLink();
@@ -115,16 +116,16 @@ const threeHourLinks = () => radarLink()
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
   if ($("rain-api-links")) $("rain-api-links").innerHTML = activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF") + radarLink();
-  if ($("nowcast-api-links")) $("nowcast-api-links").innerHTML = radarLink() + lightningLink();
+  if ($("nowcast-api-links")) $("nowcast-api-links").innerHTML = radarLink() + (window.METEO_REPLAY ? "" : lightningLink());
   refreshSourceIndicators();
 }
 
 function renderForecastApiLinks() {
   const container = $("forecast-api-links");
   if (!container) return;
-  container.innerHTML = activeForecastSource === "openmeteo" ? openMeteoLink()
+  container.innerHTML = (activeForecastSource === "openmeteo" ? openMeteoLink()
     : activeForecastSource === "comparison" ? meteoFranceLinks() + openMeteoLink()
-    : meteoFranceLinks();
+    : meteoFranceLinks()) + ecmwfHresStormLink();
   refreshSourceIndicators();
 }
 
@@ -289,7 +290,8 @@ function bindForecastControlButtons() {
 
 function bindForecastLayout() {
   const renderRainSourceSelector = () => {
-    $("rain-source-selector").innerHTML = '<div class="forecast-source-selector" aria-label="Source des prévisions de précipitations"><button class="forecast-source-button' + (activeRainSource === "meteofrance" ? " active" : "") + '" type="button" data-rain-source="meteofrance" aria-pressed="' + (activeRainSource === "meteofrance") + '">Météo-France</button><button class="forecast-source-button' + (activeRainSource === "openmeteo" ? " active" : "") + '" type="button" data-rain-source="openmeteo" aria-pressed="' + (activeRainSource === "openmeteo") + '">Open-Meteo</button></div>';
+    const unavailable = window.METEO_REPLAY ? ' disabled title="PIAF non archivé pour cette date"' : '';
+    $("rain-source-selector").innerHTML = '<div class="forecast-source-selector" aria-label="Source des prévisions de précipitations"><button class="forecast-source-button' + (activeRainSource === "meteofrance" ? " active" : "") + '" type="button" data-rain-source="meteofrance" aria-pressed="' + (activeRainSource === "meteofrance") + '"' + unavailable + '>Météo-France</button><button class="forecast-source-button' + (activeRainSource === "openmeteo" ? " active" : "") + '" type="button" data-rain-source="openmeteo" aria-pressed="' + (activeRainSource === "openmeteo") + '">Open-Meteo</button></div>';
     renderRainApiLinks();
     $("rain-source-selector").querySelectorAll("[data-rain-source]").forEach(button => button.addEventListener("click", () => {
       activeRainSource = button.dataset.rainSource;
@@ -604,12 +606,12 @@ function dailyWeatherLabel(day) {
 function todayDateKey() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Europe/Paris"
-  }).formatToParts(new Date());
+  }).formatToParts(new Date(appNow()));
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
   return values.year + "-" + values.month + "-" + values.day;
 }
 
-function weekForecastStartKey(now = new Date()) {
+function weekForecastStartKey(now = new Date(appNow())) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
     hourCycle: "h23", timeZone: "Europe/Paris"
@@ -646,7 +648,7 @@ function forecastSharedPeriods(leftPeriods, rightPeriods) {
   return overlap;
 }
 
-function futureActiveWeekDay(day, now = new Date()) {
+function futureActiveWeekDay(day, now = new Date(appNow())) {
   if (!day || day.date !== todayDateKey()) return day;
   const forecastStart = weekForecastStartKey(now);
   return {
@@ -1384,7 +1386,7 @@ function renderWeekForecast() {
     if (dateKey !== todayDateKey()) {
       return '<div class="week-day-head"><strong>' + escapeText(weekDayFormat.format(date)) + '</strong><time datetime="' + escapeText(dateKey) + '">' + escapeText(shortDateFormat.format(date)) + '</time></div>';
     }
-    if (new Date().getHours() < 12) {
+    if (new Date(appNow()).getHours() < 12) {
       return '<div class="week-day-head week-day-head-active"><strong>Aujourd’hui</strong></div>';
     }
     const starts = days.map(day => day?.forecastStart).filter(Boolean).sort();
@@ -2245,7 +2247,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const hresStormDetail = "Orage possible — source " + ecmwfWeekLabel + " via Open-Meteo · maille 9 km, centre sélectionné à 4,8 km des Tatins"
       + (Number.isFinite(Number(hresHour?.probability)) ? " · probabilité " + Math.round(Number(hresHour.probability)) + " %" : "")
       + (Number(hresHour?.precipitation) > 0 ? " · précipitations " + Number(hresHour.precipitation).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm" : "");
-    const hresStormMarkup = hresStorm ? '<span class="overview-storm-source chart-point" tabindex="0" data-tooltip="' + escapeText(hresStormDetail) + '" title="' + escapeText(hresStormDetail) + '">⚡ ECMWF HRES</span>' : '';
+    const hresStormMarkup = hresStorm ? '<span class="overview-storm-source chart-point" tabindex="0" role="img" aria-label="Orage possible selon ECMWF HRES" data-tooltip="' + escapeText(hresStormDetail) + '" title="' + escapeText(hresStormDetail) + '">⛈️</span>' : '';
     const iconClass = "weather-icon" + (isNight(date) ? " night-icon" : " day-icon") + (iconRain >= measurableRainThreshold ? " precipitation-icon" : "");
     const headerWind = '<div class="wind"><span class="wind-arrow" style="transform:rotate(' + item.windDirection + 'deg)">↑</span> ' + item.windSpeed + ' km/h</div><div class="gust">' + (item.windGust > item.windSpeed + 8 ? item.windGust + ' km/h' : '&nbsp;') + '</div>';
     const eclipsePeakSlot = isEclipsePeakSlot(date);
@@ -3441,7 +3443,7 @@ function applyDashboardPayload(payload) {
     const pearomeStamp = data?.pearome?.fetchedAt || 0;
     const ensembleStamp = data?.ensemble?.fetchedAt || 0;
     const openMeteoStamp = data?.openMeteo?.fetchedAt || 0;
-    if (data?.arome && (aromeStamp !== lastAromeStamp || piafStamp !== lastPiafStamp || radarStamp !== lastRadarStamp || pearomeStamp !== lastPearomeStamp || ensembleStamp !== lastEnsembleStamp || openMeteoStamp !== lastOpenMeteoStamp)) {
+    if ((data?.arome || (window.METEO_REPLAY && data?.openMeteo)) && (aromeStamp !== lastAromeStamp || piafStamp !== lastPiafStamp || radarStamp !== lastRadarStamp || pearomeStamp !== lastPearomeStamp || ensembleStamp !== lastEnsembleStamp || openMeteoStamp !== lastOpenMeteoStamp)) {
       lastAromeStamp = aromeStamp;
       lastPiafStamp = piafStamp;
       lastRadarStamp = radarStamp;
