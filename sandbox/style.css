@@ -26,6 +26,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1; letter-spacing: -.03em; }
 .header-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 4px; }
 .app-version { color: #8a969c; font-size: 10px; font-weight: 700; line-height: 1; text-decoration: none; }
 .app-version:hover { color: #397a9e; text-decoration: underline; }
+.header-events-link { display: none !important; }
 small { color: #666; font-size: 13px; }
 small a, .title a { color: #397a9e; text-decoration: none; }
 small a:hover, .title a:hover { text-decoration: underline; }

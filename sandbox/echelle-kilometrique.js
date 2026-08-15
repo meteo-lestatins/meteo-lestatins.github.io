@@ -11,7 +11,7 @@ const sources = [
   { id: "arpege", label: "ARPEGE", detail: "Prolonge la prévision à 4 jours", sizeLabel: "4,0 × 5,6 km", color: "#d45555", originLongitude: -100, originLatitude: 80, longitudeStep: 0.05, latitudeStep: 0.05 },
   { id: "pearpege", label: "PE‑ARPEGE", detail: "Mesure l’incertitude à 4 jours", sizeLabel: "7,9 × 11,1 km", color: "#8b4ca3", originLongitude: -32, originLatitude: 72, longitudeStep: 0.1, latitudeStep: 0.1 },
   {
-    id: "ecmwf", label: "ECMWF IFS HRES", detail: "Complète la semaine et la synthèse · centre à 4,8 km", sizeLabel: "≈ 9 × 9 km", color: "#275dad",
+    id: "ecmwf", label: "ECMWF IFS HRES", detail: "Utilisé pour le signal d’orage", sizeLabel: "≈ 9 × 9 km", color: "#275dad",
     centerLatitude: 44.674866, centerLongitude: 5.546995, widthKm: 9, heightKm: 9
   }
 ];

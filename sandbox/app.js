@@ -586,7 +586,7 @@ function hresStormPictogram(item, periodLabel = "", extraClass = "") {
   if (!item || Number(item.weatherCode) < 95) return "";
   const probability = Number(item.probability ?? item.precipitationProbabilityMax);
   const precipitation = Number(item.precipitation ?? item.precipitationSum);
-  const detail = "Orage possible — source " + ecmwfWeekLabel + " via Open-Meteo · maille 9 km, centre sélectionné à 4,8 km des Tatins"
+  const detail = "Orage possible — source " + ecmwfWeekLabel + " · utilisé pour le signal d’orage · maille 9 km"
     + (periodLabel ? " · " + periodLabel : "")
     + (Number.isFinite(probability) ? " · probabilité " + Math.round(probability) + " %" : "")
     + (precipitation > 0 ? " · précipitations " + precipitation.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm" : "");
@@ -1124,7 +1124,7 @@ function refreshActiveOpenMeteoWeek() {
   const confidenceByDate = new Map((latestWeekForecast?.days || []).map(day => [day.date, day.confidence || null]));
   latestWeekForecast = {
     fetchedAt: latestWeekForecast?.fetchedAt || Date.now(),
-    model: "ECMWF via Open-Meteo",
+    model: "Open-Meteo",
     days: includeCurrentDashboardDay(normalizeOpenMeteoDays(latestOpenMeteoWeekRaw.daily, latestOpenMeteoWeekRaw.hourly))
       .map(day => ({ ...day, confidence: confidenceByDate.get(day.date) || null }))
   };
@@ -1617,7 +1617,7 @@ function renderWeekForecast() {
     const stormDescription = stormModels.length >= 2 ? "Orage possible selon " + stormModels.join(" et ") + "."
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
     const stormHoverLabel = "Orage · Open-Meteo " + (openMeteoStorm ? "possible" : "non prévu")
-      + " · " + ecmwfWeekLabel + " via Open-Meteo " + (hresStorm ? "possible" : "non prévu")
+      + " · " + ecmwfWeekLabel + " " + (hresStorm ? "possible" : "non prévu")
       + " · risque " + stormLevel + " sur 5"
       + (stormRisk.instabilityPenalty ? " · pénalité d’instabilité " + stormRisk.instabilityPenalty : "");
     const synthesisStormMarkup = synthesisStorm ? stormSignalPictogram(stormHoverLabel, "week-synthesis-storm-source") : "";
@@ -1771,7 +1771,7 @@ async function ensureWeekForecast() {
     ensembleUrl.searchParams.set("hourly", "temperature_2m_spread,precipitation_spread,wind_speed_10m_spread");
     const forecastRequest = latestOpenMeteoWeekRaw ? Promise.resolve(null) : json(url.toString()).then(value => {
       latestOpenMeteoWeekRaw = { daily: value.daily, hourly: value.hourly };
-      latestWeekForecast = { fetchedAt: Date.now(), model: "ECMWF via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(value.daily, value.hourly)) };
+      latestWeekForecast = { fetchedAt: Date.now(), model: "Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(value.daily, value.hourly)) };
       scheduleActiveWeekDayUpdate();
       renderWeekForecast();
       return value;
@@ -1824,7 +1824,7 @@ async function ensureWeekForecast() {
     if (!latestWeekForecast?.days?.length) {
       if (forecastResult.status === "fulfilled") {
         latestOpenMeteoWeekRaw = { daily: forecastResult.value.daily, hourly: forecastResult.value.hourly };
-        latestWeekForecast = { fetchedAt: Date.now(), model: "ECMWF via Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(forecastResult.value.daily, forecastResult.value.hourly)) };
+        latestWeekForecast = { fetchedAt: Date.now(), model: "Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(forecastResult.value.daily, forecastResult.value.hourly)) };
         scheduleActiveWeekDayUpdate();
       }
       else weekForecastErrors.openmeteo = "Impossible de charger ECMWF : " + forecastResult.reason.message;
@@ -2156,7 +2156,7 @@ function renderComparisonForecast(arome, openMeteo) {
     const hresHour = hresByTime.get(date.getTime()) || null;
     const stormSources = [
       Number(pair.openMeteo.weatherCode) >= 95 ? "Open-Meteo" : "",
-      Number(hresHour?.weatherCode) >= 95 ? ecmwfWeekLabel + " via Open-Meteo" : ""
+      Number(hresHour?.weatherCode) >= 95 ? ecmwfWeekLabel : ""
     ].filter(Boolean);
     const weeklyStormRisk = weekStormRisk(forecastDateKey(date));
     const stormDetail = "Orage possible · " + stormSources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date);
@@ -3156,6 +3156,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && currentObservation - previousObservation <= 45 * 60000
       ? cellPassageSnapshot
       : null;
+  const previousDisplayedLevelSnapshot = cellPassageSnapshot
+    && Number.isFinite(currentObservation)
+    && Number.isFinite(previousObservation)
+    && currentObservation >= previousObservation
+    && currentObservation - previousObservation <= 45 * 60000
+      ? cellPassageSnapshot
+      : null;
   const passageTrendFor = cell => {
     let trend = cell?.passageTrend;
     if (!trend && previousPassageSnapshot && Object.prototype.hasOwnProperty.call(previousPassageSnapshot.values, cell?.id)) {
@@ -3223,10 +3230,20 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       ];
   const previousMaximumPassageRisk = snapshotPassages.length ? Math.max(0, ...snapshotPassages) : maximumPassageRisk;
   const maximumPassageChange = Math.round(maximumPassageRisk - previousMaximumPassageRisk);
+  const previousRawStormPassageLevel = probabilityStep(previousMaximumPassageRisk);
+  const previousNowcastStormPassageLevel = previousRawStormPassageLevel >= 3 ? previousRawStormPassageLevel : 0;
+  const savedStormPassageLevel = Number(previousDisplayedLevelSnapshot?.displayedLevel);
+  const previousStormPassageLevel = Number.isFinite(savedStormPassageLevel)
+    ? savedStormPassageLevel
+    : Math.max(previousNowcastStormPassageLevel, orangeVigilanceActive ? 1 : 0);
+  const stormPassageLevelChange = stormPassageLevel - previousStormPassageLevel;
+  const stormTrendUsesDisplayedLevel = stormPassageLevelChange !== 0;
+  const stormTrendChange = stormTrendUsesDisplayedLevel ? stormPassageLevelChange : maximumPassageChange;
   const stormTrend = {
-    label: maximumPassageChange > 0 ? "croissant" : maximumPassageChange < 0 ? "decroissant" : "stable",
-    change: maximumPassageChange,
-    previous: previousMaximumPassageRisk
+    label: stormTrendChange > 0 ? "croissant" : stormTrendChange < 0 ? "decroissant" : "stable",
+    change: stormTrendChange,
+    previous: stormTrendUsesDisplayedLevel ? previousStormPassageLevel : previousMaximumPassageRisk,
+    basis: stormTrendUsesDisplayedLevel ? "displayed-level" : "passage-probability"
   };
   const passageTrendMarkup = cell => {
     const trend = passageTrendFor(cell);
@@ -3309,7 +3326,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   if (radar.observedAt && cellPassageSnapshot?.observedAt !== radar.observedAt) {
     cellPassageSnapshot = {
       observedAt: radar.observedAt,
-      values: Object.fromEntries(cells.map(cell => [cell.id, Math.round(Number(cell.risks?.passage) || 0)]))
+      values: Object.fromEntries(cells.map(cell => [cell.id, Math.round(Number(cell.risks?.passage) || 0)])),
+      displayedLevel: stormPassageLevel
     };
     try {
       localStorage.setItem("meteo-cell-passage-snapshot", JSON.stringify(cellPassageSnapshot));
@@ -3337,11 +3355,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
   const stormTrendWording = stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
-  const stormTrendChange = Number(stormTrend.change);
-  const stormTrendDetail = "Probabilité de passage " + stormTrendWording
-    + (Number.isFinite(stormTrendChange) && stormTrendChange !== 0 ? " de " + Math.abs(Math.round(stormTrendChange)) + " point" + (Math.abs(Math.round(stormTrendChange)) > 1 ? "s" : "") : "")
-    + " · maximum global " + previousMaximumPassageRisk + " % → " + maximumPassageRisk + " %"
-    + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
+  const stormTrendDetail = stormTrendUsesDisplayedLevel
+    ? "Risque orageux " + stormTrendWording
+      + " · indicateur " + previousStormPassageLevel + " sur 5 → " + stormPassageLevel + " sur 5"
+      + (hresStormForecastActive && stormPassageLevel >= 2 && previousStormPassageLevel < 2 ? " · prévision ECMWF entrée dans les 3 prochaines heures" : "")
+    : "Probabilité de passage " + stormTrendWording
+      + (Number.isFinite(stormTrendChange) && stormTrendChange !== 0 ? " de " + Math.abs(Math.round(stormTrendChange)) + " point" + (Math.abs(Math.round(stormTrendChange)) > 1 ? "s" : "") : "")
+      + " · maximum global " + previousMaximumPassageRisk + " % → " + maximumPassageRisk + " %"
+      + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
   const rainDetail = "Pluie · cumul PIAF prévu sur 3 h : " + rainAmount.toFixed(1) + " mm · " + rainTrend.detail;
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
