@@ -1904,7 +1904,7 @@ function renderActiveRain() {
     if (data.piaf) renderPiaf(data.piaf, data.radar);
   }
   refreshSourceIndicators();
-  renderRadarNowcast(data.radar, data.piaf, data.arome, data.lightning);
+  renderRadarNowcast(data.radar, data.piaf, data.arome, data.lightning, data.vigilance);
 }
 
 function renderComparisonForecast(arome, openMeteo) {
@@ -2843,7 +2843,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   requestAnimationFrame(fitToContainer);
 }
 
-function renderRadarNowcast(radar, piaf, arome, lightning) {
+function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const element = $("radar-nowcast");
   const summaryElement = $("three-hour-summary");
   if (!radar) {
@@ -2964,10 +2964,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     const passageDetail = stormDetails?.passage || detail;
     const intensityDetail = stormDetails?.intensity || detail;
     const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
+    const showStormIntensity = stormDetails?.showIntensity ?? stormPassageLevel > 0;
     const metric = stormLayout
       ? nowcastMetricPictogram(kind, stormPassageLevel, passageDetail)
         + (displayedTrend ? trendMarkup(displayedTrend, passageDetail) : '')
-        + (stormPassageLevel > 0 ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
+        + (showStormIntensity ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
@@ -2978,6 +2979,23 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
   const cellCenterDistance = cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
   // La distance utile est celle du bord le plus proche, pas celle du centre.
   const cellDistance = cell => Math.max(0, cellCenterDistance(cell) - Math.max(0, Number(cell.radiusKm || 0)));
+  const closeStormCells = cells.filter(cell => cellDistance(cell) < 5);
+  const vigilanceNow = Date.now();
+  const vigilancePeriodActive = period =>
+    (!period.start || new Date(period.start).getTime() <= vigilanceNow)
+    && (!period.end || vigilanceNow < new Date(period.end).getTime());
+  const orangeVigilanceActive = (vigilance?.alerts || []).some(alert => {
+    if (alert.label !== "Orages") return false;
+    const timeline = Array.isArray(alert.timeline) ? alert.timeline : [];
+    return timeline.length
+      ? timeline.some(period => Number(period.colorId) >= 3 && vigilancePeriodActive(period))
+      : Number(alert.colorId) >= 3 && vigilancePeriodActive(alert);
+  });
+  // Le calcul historique par probabilité de passage reste la base. La
+  // La vigilance orange pour orages et la proximité du bord d'une cellule
+  // n'agissent que comme des planchers de prudence sur le premier indicateur.
+  const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
+  const stormPassageLevel = Math.max(rawStormPassageLevel, orangeVigilanceActive ? 1 : 0, closeStormCells.length ? 2 : 0);
   if (!nowcastMapRadiusManuallySelected) {
     activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 80;
   }
@@ -3153,6 +3171,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     }
   }
   const stormLevel = relevantStormIntensity?.level || 0;
+  const stormPassageFloorDetail = [
+    orangeVigilanceActive ? "vigilance Orages orange ou rouge active : minimum 1" : "",
+    closeStormCells.length
+      ? "bord de cellule à moins de 5 km (" + closeStormCells.map(cell => cell.id + " à " + cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km").join(", ") + ") : minimum 2"
+      : ""
+  ].filter(Boolean).join(" · ");
   const otherPassageDetail = otherPassageCells.length
     ? " · autres cellules : " + otherPassageCells.map(item => item.cell.id + " " + item.passage + " %").join(", ")
     : "";
@@ -3160,8 +3184,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
     ? "Orage · cellule retenue " + relevantStormCell.id + " · probabilité de passage " + maximumPassageRisk + " % · intensité " + stormLevel + " sur 5" + otherPassageDetail
     : "Aucune cellule pluvio-convective susceptible de passer";
   const stormPassageDetail = relevantStormCell
-    ? "Probabilité de passage maximale : " + maximumPassageRisk + " % · cellule " + relevantStormCell.id + " · niveau " + probabilityStep(maximumPassageRisk) + " sur 5" + otherPassageDetail
-    : "Aucune cellule susceptible de passer · niveau 0 sur 5";
+    ? "Probabilité de passage maximale : " + maximumPassageRisk + " % · cellule " + relevantStormCell.id + " · niveau calculé " + rawStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "") + otherPassageDetail
+    : "Probabilité de passage maximale : " + maximumPassageRisk + " % · niveau calculé " + rawStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "");
   const stormIntensityDetail = relevantStormCell
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
@@ -3176,7 +3200,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainAmount.toFixed(1) + ' mm', rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
-    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', probabilityStep(maximumPassageRisk), { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail })
+    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', stormPassageLevel, { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail, showIntensity: Boolean(relevantStormCell) })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
   if (summaryElement) {
@@ -3202,7 +3226,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning) {
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
     activeNowcastMapRadius = Number(event.currentTarget.dataset.nowcastRadius) === 20 ? 20 : 80;
-    renderRadarNowcast(radar, piaf, arome, lightning);
+    renderRadarNowcast(radar, piaf, arome, lightning, vigilance);
   }));
   const showCellDetails = button => {
     const card = button.closest(".nowcast-cell-card");
