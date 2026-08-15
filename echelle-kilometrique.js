@@ -9,7 +9,11 @@ const sources = [
   { id: "arome", label: "AROME", detail: "Prévoit les prochaines 48 h", sizeLabel: "0,8 × 1,1 km", color: "#008b74", originLongitude: -12, originLatitude: 55.4, longitudeStep: 0.01, latitudeStep: 0.01 },
   { id: "pearome", label: "PE‑AROME", detail: "Calcule les probabilités à 48 h", sizeLabel: "2,0 × 2,8 km", color: "#d18b00", originLongitude: -12, originLatitude: 55.4, longitudeStep: 0.025, latitudeStep: 0.025 },
   { id: "arpege", label: "ARPEGE", detail: "Prolonge la prévision à 4 jours", sizeLabel: "4,0 × 5,6 km", color: "#d45555", originLongitude: -100, originLatitude: 80, longitudeStep: 0.05, latitudeStep: 0.05 },
-  { id: "pearpege", label: "PE‑ARPEGE", detail: "Mesure l’incertitude à 4 jours", sizeLabel: "7,9 × 11,1 km", color: "#8b4ca3", originLongitude: -32, originLatitude: 72, longitudeStep: 0.1, latitudeStep: 0.1 }
+  { id: "pearpege", label: "PE‑ARPEGE", detail: "Mesure l’incertitude à 4 jours", sizeLabel: "7,9 × 11,1 km", color: "#8b4ca3", originLongitude: -32, originLatitude: 72, longitudeStep: 0.1, latitudeStep: 0.1 },
+  {
+    id: "ecmwf", label: "ECMWF IFS HRES", detail: "Utilisé pour le signal d’orage", sizeLabel: "≈ 9 × 9 km", color: "#275dad",
+    centerLatitude: 44.674866, centerLongitude: 5.546995, widthKm: 9, heightKm: 9
+  }
 ];
 
 const map = L.map("scale-map", {
@@ -60,8 +64,23 @@ function wcsPolygon(source, eastIndex, northIndex) {
   ];
 }
 
+function kilometrePolygon(source, eastIndex, northIndex) {
+  const latitudeStep = source.heightKm / 111.32;
+  const longitudeStep = source.widthKm / (111.32 * Math.cos(source.centerLatitude * Math.PI / 180));
+  const centerLatitude = source.centerLatitude + northIndex * latitudeStep;
+  const centerLongitude = source.centerLongitude + eastIndex * longitudeStep;
+  return [
+    [centerLatitude - latitudeStep / 2, centerLongitude - longitudeStep / 2],
+    [centerLatitude - latitudeStep / 2, centerLongitude + longitudeStep / 2],
+    [centerLatitude + latitudeStep / 2, centerLongitude + longitudeStep / 2],
+    [centerLatitude + latitudeStep / 2, centerLongitude - longitudeStep / 2]
+  ];
+}
+
 function cellPolygon(source, eastIndex, northIndex) {
-  return source.corners ? radarPolygon(source, eastIndex, northIndex) : wcsPolygon(source, eastIndex, northIndex);
+  return source.corners ? radarPolygon(source, eastIndex, northIndex)
+    : Number.isFinite(source.centerLatitude) ? kilometrePolygon(source, eastIndex, northIndex)
+    : wcsPolygon(source, eastIndex, northIndex);
 }
 
 function sourceLayer(source) {
