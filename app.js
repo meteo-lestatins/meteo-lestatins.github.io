@@ -1373,13 +1373,19 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
     const sourceEvolution = model ? evolution?.stormByModel?.[model] : null;
     const comparisons = Number(sourceEvolution?.transitionCount) || 0;
     const changes = Number(sourceEvolution?.changedCount) || 0;
-    const level = !comparisons ? 3 : Math.max(3, 5 - changes);
+    const stabilityLevel = !comparisons ? 3 : Math.max(3, 5 - changes);
+    const temporalCeiling = horizonDays >= 4 ? 3 : horizonDays >= 2 ? 4 : 5;
+    const level = Math.min(stabilityLevel, temporalCeiling);
     const stabilityLabel = !comparisons
       ? "historique encore insuffisant : minimum 3 sur 5"
+      : temporalCeiling < stabilityLevel
+        ? (changes
+          ? changes + " changement" + (changes > 1 ? "s" : "") + " récent" + (changes > 1 ? "s" : "")
+          : "signal stable dans les prévisions récentes") + ", plafonné à " + level + " sur 5 par l’échéance"
       : changes
         ? changes + " changement" + (changes > 1 ? "s" : "") + " récent" + (changes > 1 ? "s" : "") + " : " + level + " sur 5"
         : "signal stable dans les prévisions récentes : 5 sur 5";
-    return { level, baseLevel: 5, instabilityPenalty: Math.min(2, changes), horizonDays, sources, individual: true, stabilityLabel, stormChangedCount: changes, stormTransitionCount: comparisons };
+    return { level, baseLevel: 5, instabilityPenalty: Math.min(2, changes), horizonDays, sources, individual: true, stabilityLabel, stormChangedCount: changes, stormTransitionCount: comparisons, temporalCeiling };
   }
   // À l'échelle quotidienne, la veille fait déjà partie de l'échéance proche :
   // un signal explicite ne doit pas être présenté comme un simple 1/5.
@@ -1545,9 +1551,10 @@ function renderWeekForecast() {
     const stormRisk = weekStormRisk(day.date, { includeOpenMeteo: sourceKey === "openmeteo", includeMeteoFrance: sourceKey === "meteofrance", individual: true });
     const stormLevel = stormRisk.level;
     const stormPeriodLabel = activeDay ? "sur la période restante" : "sur la journée";
-    const stormHoverLabel = "Orage · " + sourceLabel + " · " + (stormActive ? "possible " : "non prévu ") + stormPeriodLabel
+    const stormLikelihood = stormLevel >= 5 ? "très probable" : stormLevel >= 4 ? "probable" : "possible";
+    const stormHoverLabel = "Orage · " + sourceLabel + " · " + (stormActive ? stormLikelihood + " " : "non prévu ") + stormPeriodLabel
       + (stormLevel ? " · risque " + stormLevel + " sur 5 · " + stormRisk.stabilityLabel : "");
-    const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", stormActive ? "Orage possible." : "Pas d’orage.");
+    const stormMarkup = metricRow("storm", stormHoverLabel, [stormLevel], value => value, "", stormActive ? "Orage " + stormLikelihood + "." : "Pas d’orage.");
     const sourceStormMarkup = stormActive ? stormSignalPictogram(stormHoverLabel, "week-source-storm-source") : "";
     const sourceWeatherMarkup = stormActive ? '<div class="week-weather-pictograms"><div class="week-icon weather-icon">' + icon + '</div>' + sourceStormMarkup + '</div>' : '<div class="week-icon weather-icon">' + icon + '</div>';
     return '<article class="week-day' + (stormActive ? ' week-source-storm-day' : '') + '">' + weekDayHeading(date, day.date, [day]) + sourceControls + '<div class="week-day-overview">' + sourceWeatherMarkup + '<div class="week-temperatures"><span class="week-temperature"><small>Max.</small><strong>' + number(day.temperatureMax) + '°</strong></span><span class="week-temperature"><small>Min.</small><b>' + number(day.temperatureMin) + '°</b></span></div></div><dl>' + cloudMarkup + rainMarkup + windMarkup + stormMarkup + '</dl>' + confidenceMarkup + '</article>';
