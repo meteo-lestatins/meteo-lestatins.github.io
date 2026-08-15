@@ -246,7 +246,9 @@ button:hover { background: #eef7fb; }
 .week-icon .layered-weather-icon .layered-cloud { width: var(--cloud-size, 31px); height: var(--cloud-size, 31px); right: var(--cloud-right, 5px); bottom: 4px; z-index: 2; opacity: 1; filter: grayscale(1) brightness(.78) contrast(1.15) drop-shadow(0 1px 1px rgba(70, 80, 88, .3)); }
 .week-day-overview { min-height: 92px; display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 14px; padding: 7px 14px 9px; }
 .week-consensus-day .week-day-overview, .week-source-storm-day .week-day-overview { grid-template-columns: 118px minmax(0, 1fr); gap: 10px; }
-.week-weather-pictograms { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.week-weather-pictograms { width: 74px; height: 68px; position: relative; display: grid; place-items: center; margin: 0 auto; }
+.week-weather-pictograms .hres-storm-pictogram { width: 34px; height: 42px; position: absolute; top: 9px; right: 2px; z-index: 5; }
+.week-weather-pictograms .hres-storm-pictogram svg { width: 32px; height: 40px; }
 .week-day-overview .week-icon { height: 76px; padding: 0; }
 .week-day-overview .week-icon > img, .week-day-overview .week-icon .layered-weather-icon, .week-day-overview .week-icon .weather-variant-icon { width: 68px; height: 68px; }
 .week-day-overview .week-temperatures { justify-content: flex-start; gap: 24px; padding: 0; }
@@ -434,12 +436,13 @@ button:hover { background: #eef7fb; }
 .overview-canvas { min-width: 100%; }
 .overview-head, .overview-rain, .overview-x-axis { display: grid; grid-auto-columns: 88px; grid-auto-flow: column; }
 .overview-hour { height: 112px; position: relative; padding: 10px 3px 2px; border-right: 1px solid #e2e7e9; text-align: center; background: #fbfcfc; }
-.overview-weather-pictograms { height: 50px; display: flex; align-items: center; justify-content: center; gap: 3px; }
+.overview-weather-pictograms { width: 54px; height: 50px; position: relative; display: grid; place-items: center; margin: 0 auto; }
 .hres-storm-pictogram { width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; cursor: help; filter: drop-shadow(0 1px 1px rgba(93, 67, 5, .28)); }
 .hres-storm-pictogram svg { width: 36px; height: 36px; overflow: visible; }
+.storm-signal-cloud { fill: #dfe8ed; stroke: #b8c8d0; stroke-width: .7; }
 .hres-storm-bolt { fill: #f0a000; stroke: #7a4b00; stroke-width: .7; stroke-linejoin: round; }
-.overview-storm-source { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; }
-.overview-storm-source svg { width: 29px; height: 29px; }
+.overview-storm-source { width: 29px; height: 36px; position: absolute; top: 7px; right: 0; z-index: 5; }
+.overview-storm-source svg { width: 28px; height: 34px; }
 .comparison-hour-content { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; }
 .comparison-hour-content time { flex: 0 0 auto; }
 .comparison-storm-source { width: 29px; height: 34px; flex-basis: 29px; }

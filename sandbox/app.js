@@ -575,8 +575,11 @@ function displayIcon(item) {
   return '<span class="weather-variant-icon" role="img" aria-label="' + escapeText(label) + '"><img class="weather-cloud-layer" src="' + base + '" alt="">' + rainMarkup + '</span>';
 }
 
-function stormSignalPictogram(detail, extraClass = "") {
-  return '<span class="hres-storm-pictogram chart-point' + (extraClass ? " " + extraClass : "") + '" tabindex="0" role="img" aria-label="Orage possible" data-tooltip="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="hres-storm-bolt" d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/></svg></span>';
+function stormSignalPictogram(detail, extraClass = "", withCloud = false) {
+  const symbol = withCloud
+    ? '<path class="storm-signal-cloud" d="M4.8 15.5a3.7 3.7 0 0 1 .4-7.4A5.7 5.7 0 0 1 16.4 6.8a4 4 0 0 1 3.3 1.7 3.6 3.6 0 0 1 .7 7H4.8Z"/><path class="hres-storm-bolt" d="m13.2 10.4-3.8 6h3.2l-1.5 6.5 8-9.8h-3.5l1.7-2.7h-4.1Z"/>'
+    : '<path class="hres-storm-bolt" d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>';
+  return '<span class="hres-storm-pictogram chart-point' + (extraClass ? " " + extraClass : "") + '" tabindex="0" role="img" aria-label="Orage possible" data-tooltip="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + symbol + '</svg></span>';
 }
 
 function hresStormPictogram(item, periodLabel = "", extraClass = "") {
@@ -1751,6 +1754,15 @@ async function ensureWeekForecast() {
       renderWeekForecast();
       try {
         renderActiveForecast();
+        if (latestForecastData?.radar) {
+          renderRadarNowcast(
+            latestForecastData.radar,
+            latestForecastData.piaf,
+            latestForecastData.arome || (window.METEO_REPLAY ? latestForecastData.openMeteo : null),
+            latestForecastData.lightning,
+            latestForecastData.vigilance
+          );
+        }
       } catch (error) {
         if (!window.METEO_REPLAY) throw error;
         document.documentElement.dataset.replayForecastError = error?.stack || error?.message || String(error);
@@ -2102,7 +2114,7 @@ function renderComparisonForecast(arome, openMeteo) {
       Number(hresHour?.weatherCode) >= 95 ? ecmwfWeekLabel + " via Open-Meteo" : ""
     ].filter(Boolean);
     const stormDetail = "Orage possible · " + stormSources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date);
-    const stormMarkup = stormSources.length ? stormSignalPictogram(stormDetail, "comparison-storm-source") : "";
+    const stormMarkup = stormSources.length ? stormSignalPictogram(stormDetail, "comparison-storm-source", true) : "";
     const detail = levelLabel(score) + ' (' + score + '%)\nTempérature : ' + item.temperature.toFixed(1) + ' / ' + pair.openMeteo.temperature.toFixed(1) + ' °C\nVent : ' + Math.round(item.windSpeed) + ' / ' + Math.round(pair.openMeteo.windSpeed) + ' km/h\n' + dateTimeFormat.format(date);
     return '<div class="comparison-hour chart-point" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time>' + stormMarkup + '</div></div>';
   }).join("");
@@ -3060,7 +3072,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const cellCenterDistance = cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
   // La distance utile est celle du bord le plus proche, pas celle du centre.
   const cellDistance = cell => Math.max(0, cellCenterDistance(cell) - Math.max(0, Number(cell.radiusKm || 0)));
-  const closeStormCells = cells.filter(cell => cellDistance(cell) < 5);
   const vigilanceNow = Date.now();
   const vigilancePeriodActive = period =>
     (!period.start || new Date(period.start).getTime() <= vigilanceNow)
@@ -3072,11 +3083,19 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       ? timeline.some(period => Number(period.colorId) >= 3 && vigilancePeriodActive(period))
       : Number(alert.colorId) >= 3 && vigilancePeriodActive(alert);
   });
-  // Le calcul historique par probabilité de passage reste la base. La
-  // La vigilance orange pour orages et la proximité du bord d'une cellule
-  // n'agissent que comme des planchers de prudence sur le premier indicateur.
+  const hresForecastStart = new Date(vigilanceNow);
+  hresForecastStart.setMinutes(0, 0, 0);
+  const hresForecastEnd = hresForecastStart.getTime() + 3 * 60 * 60 * 1000;
+  const hresStormForecastHours = (latestEcmwfHresForecast?.hours || []).filter(hour => {
+    const time = new Date(hour.time).getTime();
+    return Number(hour.weatherCode) >= 95 && time >= hresForecastStart.getTime() && time <= hresForecastEnd;
+  });
+  const hresStormForecastActive = hresStormForecastHours.length > 0;
+  // L'échelle réserve 1 à la vigilance Orages, 2 à la prévision ECMWF HRES,
+  // puis 3, 4 et 5 aux probabilités de passage issues du nowcasting.
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  const stormPassageLevel = Math.max(rawStormPassageLevel, orangeVigilanceActive ? 1 : 0, closeStormCells.length ? 2 : 0);
+  const nowcastStormPassageLevel = rawStormPassageLevel >= 3 ? rawStormPassageLevel : 0;
+  const stormPassageLevel = Math.max(nowcastStormPassageLevel, hresStormForecastActive ? 2 : 0, orangeVigilanceActive ? 1 : 0);
   if (!nowcastMapRadiusManuallySelected) {
     activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
   }
@@ -3254,8 +3273,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormLevel = relevantStormIntensity?.level || 0;
   const stormPassageFloorDetail = [
     orangeVigilanceActive ? "vigilance Orages orange ou rouge active : minimum 1" : "",
-    closeStormCells.length
-      ? "bord de cellule à moins de 5 km (" + closeStormCells.map(cell => cell.id + " à " + cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km").join(", ") + ") : minimum 2"
+    hresStormForecastActive
+      ? "ECMWF IFS HRES 9 km prévoit un orage dans les 3 h : minimum 2"
       : ""
   ].filter(Boolean).join(" · ");
   const otherPassageDetail = otherPassageCells.length
@@ -3265,8 +3284,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? "Orage · cellule retenue " + relevantStormCell.id + " · probabilité de passage " + maximumPassageRisk + " % · intensité " + stormLevel + " sur 5" + otherPassageDetail
     : "Aucune cellule pluvio-convective susceptible de passer";
   const stormPassageDetail = relevantStormCell
-    ? "Probabilité de passage maximale : " + maximumPassageRisk + " % · cellule " + relevantStormCell.id + " · niveau calculé " + rawStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "") + otherPassageDetail
-    : "Probabilité de passage maximale : " + maximumPassageRisk + " % · niveau calculé " + rawStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "");
+    ? "Probabilité de passage maximale : " + maximumPassageRisk + " % · cellule " + relevantStormCell.id + " · niveau nowcasting " + nowcastStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "") + otherPassageDetail
+    : "Probabilité de passage maximale : " + maximumPassageRisk + " % · niveau nowcasting " + nowcastStormPassageLevel + " sur 5 · niveau affiché " + stormPassageLevel + " sur 5" + (stormPassageFloorDetail ? " · " + stormPassageFloorDetail : "");
   const stormIntensityDetail = relevantStormCell
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
