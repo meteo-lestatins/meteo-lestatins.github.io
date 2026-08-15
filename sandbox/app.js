@@ -1350,7 +1350,7 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeHres = true } 
   const openMeteoDay = (latestWeekForecast?.days || []).find(day => day.date === dateKey) || null;
   const hresDay = (latestEcmwfHresForecast?.days || []).find(day => day.date === dateKey) || null;
   const sources = [
-    includeOpenMeteo && Number(openMeteoDay?.weatherCode) >= 95 ? "prévision semaine" : "",
+    includeOpenMeteo && Number(openMeteoDay?.weatherCode) >= 95 ? "Open-Meteo" : "",
     includeHres && Number(hresDay?.weatherCode) >= 95 ? ecmwfWeekLabel : ""
   ].filter(Boolean);
   if (!sources.length) return { level: 0, baseLevel: 0, instabilityPenalty: 0, horizonDays: null, sources };
@@ -1538,7 +1538,7 @@ function renderWeekForecast() {
     const synthesisCloud = mean([ecmwf.cloudCoverMean ?? ecmwf.cloudCover, arpege.cloudCoverMean ?? arpege.cloudCover]) ?? 50;
     const synthesisStorm = openMeteoStorm || meteoFranceStorm || hresStorm;
     const icon = displayIcon({ time: arpege.time, cloudCover: synthesisCloud, rain: Math.max(synthesisStorm ? .5 : 0, dailyRainIconAmount(agreement.rainIconAmount)), rainLevel: rainPictogramStep(agreement.rainIconAmount) });
-    const stormModels = [openMeteoStorm ? "prévision semaine" : "", hresStorm ? ecmwfWeekLabel : ""].filter(Boolean);
+    const stormModels = [openMeteoStorm ? "Open-Meteo" : "", hresStorm ? ecmwfWeekLabel : ""].filter(Boolean);
     const stormLabel = stormModels.length >= 2 ? "Risque partagé" : stormModels.length ? stormModels[0] + " seulement" : "possible";
     const showerLabel = (Number(ecmwf.showersSum) || 0) >= .1 ? "oui" : Number(ecmwf.weatherCode) >= 80 ? "probable" : "non";
     const windDirections = [ecmwf.windDirection, arpege.windDirection].map(Number).filter(Number.isFinite);
@@ -1616,7 +1616,7 @@ function renderWeekForecast() {
     const windMarkup = windMetricGroup(windValues, windDirectionMarkup + escapeText(range(windValues, " km/h")), gustValues, escapeText(range(gustValues, " km/h")), agreement.windSummary, windHoverLabel, gustHoverLabel);
     const stormDescription = stormModels.length >= 2 ? "Orage possible selon " + stormModels.join(" et ") + "."
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
-    const stormHoverLabel = "Orage · prévision semaine " + (openMeteoStorm ? "possible" : "non prévue")
+    const stormHoverLabel = "Orage · Open-Meteo " + (openMeteoStorm ? "possible" : "non prévu")
       + " · " + ecmwfWeekLabel + " " + (hresStorm ? "possible" : "non prévu")
       + " · risque " + stormLevel + " sur 5"
       + (stormRisk.instabilityPenalty ? " · pénalité d’instabilité " + stormRisk.instabilityPenalty : "");
@@ -2155,7 +2155,7 @@ function renderComparisonForecast(arome, openMeteo) {
     const date = new Date(item.time);
     const hresHour = hresByTime.get(date.getTime()) || null;
     const stormSources = [
-      Number(pair.openMeteo.weatherCode) >= 95 ? "prévision semaine" : "",
+      Number(pair.openMeteo.weatherCode) >= 95 ? "Open-Meteo" : "",
       Number(hresHour?.weatherCode) >= 95 ? ecmwfWeekLabel : ""
     ].filter(Boolean);
     const weeklyStormRisk = weekStormRisk(forecastDateKey(date));
