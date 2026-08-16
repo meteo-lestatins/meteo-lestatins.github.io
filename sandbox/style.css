@@ -448,8 +448,10 @@ button:hover { background: #eef7fb; }
 .overview-storm-source svg { width: 28px; height: 34px; }
 .comparison-hour-content { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; }
 .comparison-hour-content time { flex: 0 0 auto; }
-.comparison-storm-source { width: 29px; height: 34px; flex-basis: 29px; }
-.comparison-storm-source svg { width: 28px; height: 28px; }
+.comparison-storm-layer { pointer-events: none; }
+.comparison-storm-marker { cursor: help; outline: none; pointer-events: auto; filter: drop-shadow(0 1px 1px rgba(93, 67, 5, .28)); }
+.comparison-storm-hit { fill: rgba(255, 255, 255, .72); stroke: rgba(184, 200, 208, .65); stroke-width: .7; }
+.comparison-storm-marker:focus-visible .comparison-storm-hit { fill: rgba(255, 247, 216, .95); stroke: #d69a24; stroke-width: 1.5; }
 .overview-hour .weather-icon { height: 50px; padding-top: 1px; position: relative; display: grid; place-items: center; font-size: 29px; line-height: 46px; }
 .overview-hour .weather-icon img { display: block; width: 46px; height: 46px; position: relative; z-index: 1; object-fit: contain; }
 .overview-hour .layered-weather-icon { width: 54px; height: 48px; position: relative; display: block; }

@@ -2134,10 +2134,24 @@ function renderComparisonForecast(arome, openMeteo) {
     const blue = Math.round(66 + (104 - 66) * ratio);
     return 'rgba(' + red + ',' + green + ',' + blue + ',' + alpha + ')';
   };
+  const stormSlots = hours.map((pair, index) => {
+    const date = new Date(pair.meteoFrance.time);
+    const sources = [
+      Number(pair.openMeteo.weatherCode) >= 95 ? "Open-Meteo" : "",
+      pair.meteoFrance.stormSignal ? "Météo-France" : ""
+    ].filter(Boolean);
+    const weeklyRisk = weekStormRisk(forecastDateKey(date));
+    return {
+      index,
+      active: sources.length > 0 && weeklyRisk.level > 3,
+      detail: "Orage possible · " + sources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date) + " · risque semaine " + weeklyRisk.level + " sur 5"
+    };
+  });
+  const hasStormMarkers = stormSlots.some(slot => slot.active);
   const temperatureValues = hours.map(pair => average(pair, "temperature"));
   const temperatureMin = Math.min(...hours.map(pair => Math.min(pair.meteoFrance.temperature, pair.openMeteo.temperature)));
   const temperatureMax = Math.max(...hours.map(pair => Math.max(pair.meteoFrance.temperature, pair.openMeteo.temperature)));
-  const curveTop = 24;
+  const curveTop = hasStormMarkers ? 54 : 24;
   const curveBottom = 230;
   const temperaturePad = Math.max(1, (temperatureMax - temperatureMin) * .12);
   const temperatureY = value => curveBottom - (value - (temperatureMin - temperaturePad)) * (curveBottom - curveTop) / Math.max(1, temperatureMax - temperatureMin + temperaturePad * 2);
@@ -2197,23 +2211,19 @@ function renderComparisonForecast(arome, openMeteo) {
     const detail = dateTimeFormat.format(new Date(pair.meteoFrance.time)) + '\nRafales : ' + Math.round(gustValues[index]) + ' km/h';
     return '<g class="comparison-data-point chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><circle class="gust" cx="' + x(index) + '" cy="' + windY(gustValues[index]) + '" r="3"/></g>';
   }).join("");
+  const stormMarkers = stormSlots.filter(slot => slot.active).map(slot =>
+    '<g class="comparison-storm-marker chart-point" transform="translate(' + (x(slot.index) - 12) + ' 7)" tabindex="0" role="img" aria-label="Orage possible" data-tooltip="' + escapeText(slot.detail) + '"><rect class="comparison-storm-hit" x="-4" y="-3" width="32" height="34" rx="7"/><path class="storm-signal-cloud" d="M4.8 15.5a3.7 3.7 0 0 1 .4-7.4A5.7 5.7 0 0 1 16.4 6.8a4 4 0 0 1 3.3 1.7 3.6 3.6 0 0 1 .7 7H4.8Z"/><path class="storm-signal-bolt" d="m13.2 10.4-3.8 6h3.2l-1.5 6.5 8-9.8h-3.5l1.7-2.7h-4.1Z"/></g>'
+  ).join("");
   const headers = hours.map((pair, index) => {
     const item = pair.meteoFrance;
     const score = agreement(pair);
     const date = new Date(item.time);
-    const stormSources = [
-      Number(pair.openMeteo.weatherCode) >= 95 ? "Open-Meteo" : "",
-      pair.meteoFrance.stormSignal ? "Météo-France" : ""
-    ].filter(Boolean);
-    const weeklyStormRisk = weekStormRisk(forecastDateKey(date));
-    const stormDetail = "Orage possible · " + stormSources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date);
-    const stormMarkup = stormSources.length && weeklyStormRisk.level > 3 ? stormSignalPictogram(stormDetail + " · risque semaine " + weeklyStormRisk.level + " sur 5", "comparison-storm-source", true) : "";
     const detail = levelLabel(score) + ' (' + score + '%)\nTempérature : ' + item.temperature.toFixed(1) + ' / ' + pair.openMeteo.temperature.toFixed(1) + ' °C\nVent : ' + Math.round(item.windSpeed) + ' / ' + Math.round(pair.openMeteo.windSpeed) + ' km/h\n' + dateTimeFormat.format(date);
-    return '<div class="comparison-hour chart-point" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time>' + stormMarkup + '</div></div>';
+    return '<div class="comparison-hour chart-point" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time></div></div>';
   }).join("");
   $("forecast-controls").innerHTML = forecastSourceControlsMarkup();
   bindForecastControlButtons();
-  overview.innerHTML = '<div class="overview-graph-layout">' + forecastMetricControlsMarkup() + '<section class="comparison-panel"><div class="overview-scroll"><div class="comparison-canvas" style="width:' + width + 'px"><div class="comparison-head">' + headers + '</div><svg class="comparison-chart" viewBox="0 0 ' + width + ' ' + height + '" aria-label="Synthèse de comparaison des prévisions sur 48 heures">' + agreementWash + '<g class="comparison-grid">' + hours.map((_, index) => '<line x1="' + (index * cell) + '" x2="' + (index * cell) + '" y1="0" y2="' + height + '"/>').join("") + '</g><g class="metric-layer metric-layer-temperature">' + uncertainty("temperature", temperatureY, "temperature") + temperatureSegments + comparisonTemperaturePoints + '</g><g class="metric-layer metric-layer-wind">' + uncertainty("windSpeed", windY, "wind") + windSegments + comparisonWindPoints + '</g><g class="metric-layer metric-layer-gust">' + uncertainty("windGust", windY, "gust") + gustSegments + comparisonGustPoints + '</g><g class="metric-layer metric-layer-rain"><line class="comparison-rain-baseline" x1="0" x2="' + width + '" y1="298" y2="298"/>' + rainBars + '</g></svg></div></div></section></div><div class="comparison-confidence-legend" aria-label="Légende de l’accord entre modèles"><span>Accord faible</span><i aria-hidden="true"></i><span>Accord fort</span></div>';
+  overview.innerHTML = '<div class="overview-graph-layout">' + forecastMetricControlsMarkup() + '<section class="comparison-panel"><div class="overview-scroll"><div class="comparison-canvas" style="width:' + width + 'px"><div class="comparison-head">' + headers + '</div><svg class="comparison-chart" viewBox="0 0 ' + width + ' ' + height + '" aria-label="Synthèse de comparaison des prévisions sur 48 heures">' + agreementWash + '<g class="comparison-grid">' + hours.map((_, index) => '<line x1="' + (index * cell) + '" x2="' + (index * cell) + '" y1="0" y2="' + height + '"/>').join("") + '</g><g class="metric-layer metric-layer-temperature">' + uncertainty("temperature", temperatureY, "temperature") + temperatureSegments + comparisonTemperaturePoints + '</g><g class="metric-layer metric-layer-wind">' + uncertainty("windSpeed", windY, "wind") + windSegments + comparisonWindPoints + '</g><g class="metric-layer metric-layer-gust">' + uncertainty("windGust", windY, "gust") + gustSegments + comparisonGustPoints + '</g><g class="metric-layer metric-layer-rain"><line class="comparison-rain-baseline" x1="0" x2="' + width + '" y1="298" y2="298"/>' + rainBars + '</g><g class="comparison-storm-layer">' + stormMarkers + '</g></svg></div></div></section></div><div class="comparison-confidence-legend" aria-label="Légende de l’accord entre modèles"><span>Accord faible</span><i aria-hidden="true"></i><span>Accord fort</span></div>';
   bindForecastControlButtons();
   panels.innerHTML = "";
   document.querySelector(".forecast-section").style.setProperty("--overview-left-axis-width", "0px");
