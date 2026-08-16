@@ -670,6 +670,24 @@ function forecastSharedPeriods(leftPeriods, rightPeriods) {
   return overlap;
 }
 
+function forecastRainPeriods(leftPeriods, rightPeriods) {
+  const shared = forecastSharedPeriods(leftPeriods, rightPeriods);
+  if (shared.length) return shared;
+  const left = [...new Set((leftPeriods || []).filter(period => forecastPeriodOrder.includes(period)))];
+  const right = [...new Set((rightPeriods || []).filter(period => forecastPeriodOrder.includes(period)))];
+  if (!left.length || !right.length) return [];
+  const closestGap = Math.min(...left.flatMap(leftPeriod => right.map(rightPeriod =>
+    Math.abs(forecastPeriodOrder.indexOf(leftPeriod) - forecastPeriodOrder.indexOf(rightPeriod))
+  )));
+  const combined = [...new Set([...left, ...right])].sort((first, second) => forecastPeriodOrder.indexOf(first) - forecastPeriodOrder.indexOf(second));
+  // ARPEGE distingue seulement après-midi/soir tandis qu'Open-Meteo ajoute
+  // une fin de journée solaire. Quand le désaccord reste dans cette zone,
+  // « en fin de journée » exprime le meilleur compromis entre les modèles.
+  const lateDayPeriods = new Set(["afternoon", "late_afternoon", "evening"]);
+  if (combined.every(period => lateDayPeriods.has(period))) return ["late_afternoon"];
+  return closestGap <= 1 ? combined : [];
+}
+
 function futureActiveWeekDay(day, now = new Date(appNow())) {
   if (!day || day.date !== todayDateKey()) return day;
   const forecastStart = weekForecastStartKey(now);
@@ -1230,7 +1248,7 @@ function weekModelAgreement(ecmwf, arpege) {
   const windValues = [value(ecmwf.windSpeedMax), value(arpege.windSpeedMax)].filter(Number.isFinite);
   const gustValues = [value(ecmwf.windGustMax), value(arpege.windGustMax)].filter(Number.isFinite);
   const rainAmountMean = rainProfiles.reduce((sum, profile) => sum + profile.amount, 0) / rainProfiles.length;
-  const rainPeriods = forecastSharedPeriods(ecmwf.rainPeriods, arpege.rainPeriods);
+  const rainPeriods = forecastRainPeriods(ecmwf.rainPeriods, arpege.rainPeriods);
   const gustPeriods = forecastSharedPeriods(ecmwf.gustPeriod ? [ecmwf.gustPeriod] : [], arpege.gustPeriod ? [arpege.gustPeriod] : []);
   const windPeriods = forecastSharedPeriods(ecmwf.windPeriod ? [ecmwf.windPeriod] : [], arpege.windPeriod ? [arpege.windPeriod] : []);
   const skySummary = conciseSkySummary([ecmwf, arpege]);
@@ -1386,6 +1404,18 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
         ? changes + " changement" + (changes > 1 ? "s" : "") + " récent" + (changes > 1 ? "s" : "") + " : " + level + " sur 5"
         : "signal stable dans les prévisions récentes : 5 sur 5";
     return { level, baseLevel: 5, instabilityPenalty: Math.min(2, changes), horizonDays, sources, individual: true, stabilityLabel, stormChangedCount: changes, stormTransitionCount: comparisons, temporalCeiling };
+  }
+  if (sources.length >= 2) {
+    const openMeteoLevel = weekStormRisk(dateKey, { includeOpenMeteo: true, includeMeteoFrance: false, individual: true }).level;
+    const meteoFranceLevel = weekStormRisk(dateKey, { includeOpenMeteo: false, includeMeteoFrance: true, individual: true }).level;
+    return {
+      level: Math.floor((openMeteoLevel + meteoFranceLevel) / 2),
+      baseLevel: 5,
+      instabilityPenalty: 0,
+      horizonDays,
+      sources,
+      individualLevels: { openMeteo: openMeteoLevel, meteoFrance: meteoFranceLevel }
+    };
   }
   // À l'échelle quotidienne, la veille fait déjà partie de l'échéance proche :
   // un signal explicite ne doit pas être présenté comme un simple 1/5.
@@ -1653,7 +1683,9 @@ function renderWeekForecast() {
     const stormHoverLabel = "Orage · Open-Meteo " + (openMeteoStorm ? "possible" : "non prévu")
       + " · Météo-France " + (meteoFranceStorm ? "possible" : "non prévu")
       + " · risque " + stormLevel + " sur 5"
-      + (stormRisk.instabilityPenalty ? " · pénalité d’instabilité " + stormRisk.instabilityPenalty : "");
+      + (stormRisk.individualLevels
+        ? " · moyenne basse d’Open-Meteo " + stormRisk.individualLevels.openMeteo + "/5 et Météo-France " + stormRisk.individualLevels.meteoFrance + "/5"
+        : stormRisk.instabilityPenalty ? " · pénalité d’instabilité " + stormRisk.instabilityPenalty : "");
     const synthesisStormMarkup = synthesisStorm ? stormSignalPictogram(stormHoverLabel, "week-synthesis-storm-source") : "";
     const synthesisWeatherMarkup = synthesisStorm
       ? '<div class="week-weather-pictograms"><div class="week-icon weather-icon">' + icon + '</div>' + synthesisStormMarkup + '</div>'
