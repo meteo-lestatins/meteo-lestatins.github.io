@@ -89,30 +89,32 @@ function refreshSourceIndicators() {
     const key = link.dataset.sourceStatus;
     const state = sourceSyncState(key);
     link.dataset.sync = state;
-    link.title = sourceSyncTitle(key);
-    link.setAttribute("aria-label", link.textContent.trim() + " — " + link.title);
+    const label = link.textContent.trim();
+    link.title = "Voir " + label + " dans About · " + sourceSyncTitle(key);
+    link.setAttribute("aria-label", label + " — " + link.title);
   });
 }
 
-function sourceLink(key, href, label) {
+function sourceLink(key, section, label) {
   const state = sourceSyncState(key);
-  return '<a class="source-link" data-source-status="' + key + '" data-sync="' + state + '" href="' + href + '" target="_blank" rel="noreferrer" title="' + escapeText(sourceSyncTitle(key)) + '">' + label + '</a>';
+  const href = (window.METEO_REPLAY ? "../" : "") + "about.html#" + section;
+  return '<a class="source-link" data-source-status="' + key + '" data-sync="' + state + '" href="' + href + '" title="Voir ' + escapeText(label) + ' dans About · ' + escapeText(sourceSyncTitle(key)) + '">' + label + '</a>';
 }
 
-const meteoFranceLinks = () => sourceLink("arome", "https://portail-api.meteofrance.fr/web/fr/api/AROME", "AROME")
-  + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
-  + sourceLink("pearome", "https://portail-api.meteofrance.fr/web/fr/api/AROME-PI", "AROME-PI");
-const openMeteoLink = () => sourceLink("openMeteo", "https://open-meteo.com/en/docs", "Open-Meteo");
-const radarLink = () => sourceLink("radar", window.METEO_REPLAY ? "https://www.meteociel.com/observations-meteo/radarzoom.php?archive=1" : "https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
-const lightningLink = () => sourceLink("lightning", "https://data.eumetsat.int/product/EO%3AEUM%3ADAT%3A0691", "EUMETSAT LI");
+const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
+  + sourceLink("piaf", "api-piaf", "PIAF")
+  + sourceLink("pearome", "api-pe-arome", "AROME-PI");
+const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
+const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
+const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
 const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
-  + sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF")
-  + sourceLink("arome", "https://portail-api.meteofrance.fr/web/fr/api/AROME", "AROME")
+  + sourceLink("piaf", "api-piaf", "PIAF")
+  + sourceLink("arome", "api-arome", "AROME")
   + lightningLink();
 
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
-  if ($("rain-api-links")) $("rain-api-links").innerHTML = activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF") + radarLink();
+  if ($("rain-api-links")) $("rain-api-links").innerHTML = activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "api-piaf", "PIAF") + radarLink();
   if ($("nowcast-api-links")) $("nowcast-api-links").innerHTML = radarLink() + (window.METEO_REPLAY ? "" : lightningLink());
   refreshSourceIndicators();
 }
@@ -129,9 +131,9 @@ function renderForecastApiLinks() {
 function renderWeekApiLinks() {
   const container = $("week-api-links");
   if (!container) return;
-  container.innerHTML = sourceLink("arome", "https://portail-api.meteofrance.fr/web/fr/api/ARPEGE", "ARPEGE")
-    + sourceLink("ensemble", "https://portail-api.meteofrance.fr/web/fr/api/ARPEGE", "PE-ARPEGE")
-    + sourceLink("openMeteo", "https://open-meteo.com/en/docs", "Open-Meteo");
+  container.innerHTML = sourceLink("arome", "api-arpege", "ARPEGE")
+    + sourceLink("ensemble", "api-pe-arpege", "PE-ARPEGE")
+    + sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
   refreshSourceIndicators();
 }
 
@@ -2074,7 +2076,7 @@ function renderActiveRain() {
     }));
     if (values.length) renderPiaf({ values, source: "openmeteo" });
   } else {
-    if ($("rain-api-links")) $("rain-api-links").innerHTML = sourceLink("piaf", "https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations", "PIAF") + radarLink();
+    if ($("rain-api-links")) $("rain-api-links").innerHTML = sourceLink("piaf", "api-piaf", "PIAF") + radarLink();
     if (data.piaf) renderPiaf(data.piaf, data.radar);
   }
   refreshSourceIndicators();
