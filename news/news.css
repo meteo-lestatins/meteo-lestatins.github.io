@@ -1,0 +1,30 @@
+.news-page { color: #242424; background: #fff; }
+.site-header h1 a { color: inherit; text-decoration: none; }
+.news-header-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; margin-top: 0; }
+.news-header-meta nav { min-height: 38px; display: flex; align-items: center; gap: 7px; color: #a0a8ac; font-size: 19px; font-weight: 750; line-height: 1; }
+.news-header-meta nav a { color: #6f7f87; text-decoration: none; }
+.news-header-meta nav a[aria-current="page"] { color: #397a9e; }
+.news-header-meta nav a:hover, .news-header-meta nav a:focus-visible { color: #397a9e; text-decoration: underline; }
+.news-main { width: min(900px, 100%); margin: 0 auto; padding: 28px; overflow: visible; }
+.news-article { min-height: 180px; padding: 26px 30px 34px; border: 1px solid #d7e3e8; border-radius: 10px; background: #fff; box-shadow: 0 5px 20px rgba(40, 70, 85, .07); }
+.news-article > :first-child { margin-top: 0; }
+.news-article > :last-child { margin-bottom: 0; }
+.news-article h1, .news-article h2, .news-article h3 { margin: 1.4em 0 .55em; color: #173f57; line-height: 1.2; letter-spacing: -.015em; }
+.news-article h1 { font-size: 29px; }
+.news-article h2 { font-size: 22px; }
+.news-article h3 { font-size: 18px; }
+.news-article p, .news-article li { font-size: 15px; line-height: 1.65; }
+.news-article ul, .news-article ol { padding-left: 24px; }
+.news-article blockquote { margin: 18px 0; padding: 10px 16px; border-left: 4px solid #d29319; color: #53636b; background: #fff9ec; }
+.news-article a { color: #23769a; font-weight: 700; text-underline-offset: 2px; }
+.news-article code { padding: 2px 5px; border-radius: 4px; background: #eef3f5; font: .9em ui-monospace, SFMono-Regular, Consolas, monospace; }
+.news-article pre { padding: 14px; overflow: auto; border-radius: 7px; background: #edf2f4; }
+.news-article pre code { padding: 0; background: transparent; }
+.news-loading, .news-empty { color: #6f7f87; }
+@media (max-width: 760px) {
+  .news-header-meta { gap: 7px; }
+  .news-header-meta nav { min-height: 31px; font-size: 17px; }
+  .news-main { padding: 16px; }
+  .news-article { padding: 20px 18px 26px; }
+  .news-article h1 { font-size: 25px; }
+}

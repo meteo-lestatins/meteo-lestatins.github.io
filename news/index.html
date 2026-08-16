@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="../style.css?v=100">
+  <link rel="stylesheet" href="news.css?v=1">
+  <title>News · Météo les Tatins</title>
+</head>
+<body class="news-page">
+  <header class="site-header">
+    <div>
+      <h1><a href="../index.html">Météo les Tatins</a></h1>
+      <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="../index.html#radar-nowcast">nowcasting</a></p>
+    </div>
+    <div class="news-header-meta">
+      <nav aria-label="Pages d’information"><a aria-current="page" href="./">News</a><span aria-hidden="true">|</span><a href="../about.html">About</a></nav>
+      <a id="news-version" class="app-version" href="../changelog.html" title="Consulter les changements des versions" hidden></a>
+    </div>
+  </header>
+  <main class="news-main">
+    <article id="news-article" class="news-article" aria-live="polite">
+      <p class="news-loading">Chargement des news…</p>
+    </article>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="../analytics.js?v=1"></script>
+  <script src="news.js?v=1" defer></script>
+</body>
+</html>

@@ -3669,11 +3669,21 @@ function scheduleRefresh(delay) {
   refreshTimer = setTimeout(refresh, delay);
 }
 
+function renderNewsBanner(news) {
+  const banner = $("news-alert");
+  const message = $("news-alert-message");
+  if (!banner || !message) return;
+  const visible = news?.active === true && Boolean(String(news.banner || "").trim());
+  message.textContent = visible ? news.banner.trim() : "";
+  banner.hidden = !visible;
+}
+
 async function renderAppVersion() {
   let releaseNumber = "";
   try {
     const config = await json("api/config");
     releaseNumber = String(runtimeConfig.releaseNumber || config.releaseNumber || "");
+    renderNewsBanner(config.news);
   } catch {}
   if (!/^\d+\.\d{3}$/.test(releaseNumber)) {
     try {
@@ -3682,11 +3692,14 @@ async function renderAppVersion() {
       releaseNumber = versions.at(-1)?.[1] || "";
     } catch {}
   }
-  if (!/^\d+\.\d{3}$/.test(releaseNumber)) return;
-  const version = $("app-version");
-  if (runtimeConfig.changelogUrl) version.href = runtimeConfig.changelogUrl;
-  version.textContent = "v" + releaseNumber;
-  version.hidden = false;
+  if (/^\d+\.\d{3}$/.test(releaseNumber)) {
+    const version = $("app-version");
+    if (runtimeConfig.changelogUrl) version.href = runtimeConfig.changelogUrl;
+    version.textContent = "v" + releaseNumber;
+    version.hidden = false;
+  }
+  clearTimeout(renderAppVersion.timer);
+  renderAppVersion.timer = setTimeout(renderAppVersion, 60000);
 }
 
 function bindHeaderNowcastLink() {
