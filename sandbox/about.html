@@ -14,7 +14,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.119</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.120</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -78,7 +78,7 @@
 <p>Dans la vue d’un <strong>modèle individuel</strong>, l’échéance n’intervient pas. Un signal resté stable dans les prévisions récentes vaut <strong>5/5</strong>. Chaque changement récent retire un point, sans jamais descendre sous <strong>3/5</strong>. En l’absence d’un historique suffisant, le niveau reste également à <strong>3/5</strong>.</p>
 <p>La <strong>synthèse</strong> conserve une graduation distincte fondée sur le nombre de sources, l’échéance et la stabilité :</p>
 <div class="technical-table-scroll"><table><thead><tr><th>Échéance du jour concerné</th><th>Une source</th><th>Deux sources</th></tr></thead><tbody><tr><td>De 3 à 6 jours</td><td>1/5</td><td>3/5</td></tr><tr><td>À deux jours</td><td>2/5</td><td>4/5</td></tr><tr><td>Aujourd’hui ou demain</td><td>3/5</td><td>5/5</td></tr></tbody></table></div>
-<p>L’historique récent des prévisions module ensuite la convergence de la synthèse : un changement du signal orage retire un point et des apparitions ou disparitions répétées en retirent deux. Dans les vues propres à chaque source, l’éclair matérialise directement son signal. Dans la synthèse 48 h, il n’est affiché que lorsque le risque hebdomadaire est strictement supérieur à 3/5.</p>
+<p>L’historique récent des prévisions module ensuite la convergence de la synthèse : un changement du signal orage retire un point et des apparitions ou disparitions répétées en retirent deux. Dans les vues propres à chaque source, l’éclair matérialise directement son signal. Dans la synthèse 48 h, il est affiché dès que le risque hebdomadaire atteint 3/5.</p>
 <h3>Risques de pluie intense et de grêle</h3>
 <p>Ces deux risques sont des estimations calculées par le site à partir du radar, et non des probabilités fournies directement par Météo-France.</p>
 <ul><li><strong>Pluie intense :</strong> le score dépend à 90 % de l’intensité maximale relevée dans la cellule, avec une progression rapide autour de 12 mm/h, et à 10 % de sa probabilité de passage aux Tatins. Il décrit donc surtout la puissance de la cellule ; une cellule très pluvieuse qui passe à côté peut conserver un score élevé.</li><li><strong>Grêle :</strong> le score combine l’intensité radar au-delà de 18 mm/h et 18 % de l’indice convectif. Il est volontairement plafonné à 65 %, car la pluie seule ne permet pas de détecter sûrement la grêle.</li></ul>

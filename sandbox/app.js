@@ -2145,7 +2145,9 @@ function renderComparisonForecast(arome, openMeteo) {
     const weeklyRisk = weekStormRisk(forecastDateKey(date));
     return {
       index,
-      active: sources.length > 0 && weeklyRisk.level > 3,
+      // À 48 h, un signal explicite à 3/5 doit rester visible : 3/5 est le
+      // plancher normal d'une prévision proche ou encore sans historique.
+      active: sources.length > 0 && weeklyRisk.level >= 3,
       detail: "Orage possible · " + sources.join(" · ") + " · " + forecastWeekdayLabel(date) + " " + forecastHourLabel(date) + " · risque semaine " + weeklyRisk.level + " sur 5"
     };
   });
