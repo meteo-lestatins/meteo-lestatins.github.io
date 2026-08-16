@@ -14,7 +14,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.117</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v2.118</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -28,24 +28,24 @@
     </section>
     <div class="technical-details" aria-label="Informations techniques"><section class="technical-chapter">
 <h2>Détails techniques des API</h2>
-<h3>Radar v1 Météo-France</h3>
+<h3 id="api-radar"><a href="https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar">Radar v1 Météo-France</a></h3>
 <ul><li>Catalogue : <code>DPRadar/v1/mosaiques/METROPOLE/observations/LAME_D_EAU</code>.</li><li>Produit demandé : lame d’eau nationale avec une maille de 500 m.</li><li>Format lu : HDF5.</li><li>La projection du fichier est convertie vers la longitude et la latitude avec <code>proj4</code>.</li><li>Les valeurs de gain, décalage, absence de donnée et valeur indétectable sont appliquées avant analyse.</li><li>Le serveur extrait uniquement la zone utile autour des Tatins.</li><li>Les pixels significatifs sont regroupés en composantes connexes pour identifier des cellules pluvio-orageuses.</li><li>Pour chaque cellule sont estimés le centre pondéré par l’intensité, la surface, le rayon, la pluie moyenne et la pluie maximale.</li><li>Deux images successives servent à estimer le déplacement, extrapolé jusqu’à 60 minutes.</li></ul>
 <p>Le risque de passage, le potentiel orageux, la pluie intense et la grêle sont des indicateurs locaux dérivés. Ce ne sont pas des bulletins officiels.</p>
-<h3>PIAF Météo-France</h3>
+<h3 id="api-piaf"><a href="https://portail-api.meteofrance.fr/web/fr/api/PrevisionImmediatePrecipitations">PIAF Météo-France</a></h3>
 <ul><li>Service Météo-France : WCS 2.0.1.</li><li>Le serveur lit <code>GetCapabilities</code> et choisit la couverture <code>PT5M</code> la plus récente disponible. Le taux de précipitation PIAF, exprimé sur une heure, est intégré sur cinq minutes (<code>÷ 12</code>) avant le calcul des cumuls.</li><li>Une valeur ponctuelle est demandée aux coordonnées des Tatins avec <code>GetCoverage</code>.</li><li>Trente-six échéances espacées de cinq minutes sont récupérées, de +5 min à +3 h.</li><li>Les valeurs XML/GML sont converties en cumuls de précipitations en millimètres.</li><li>Quatre requêtes peuvent être traitées simultanément afin de ne pas saturer l’API.</li><li>Les probabilités PE-AROME disponibles sont associées aux intervalles PIAF.</li></ul>
-<h3>AROME Météo-France</h3>
+<h3 id="api-arome"><a href="https://portail-api.meteofrance.fr/web/fr/api/AROME">AROME Météo-France</a></h3>
 <ul><li>Service Météo-France : WCS 2.0.1.</li><li>Le dernier cycle cohérent possédant tous les champs nécessaires est sélectionné.</li><li>Champs utilisés : température à 2 m, précipitations, vent U/V à 10 m, rafales, nébulosité totale et densité moyenne de foudre prévue sur trois heures.</li><li>Température, pluie et signal de foudre sont récupérés à l’heure.</li><li>La densité de foudre est convertie en éclairs pour 100 km² par heure. Un signal orageux est retenu à partir de 0,01 lorsque le cumul de pluie AROME sur la même fenêtre de trois heures atteint également 0,1 mm ; les traces positives inférieures ne suffisent plus à afficher un éclair.</li><li>Vent, rafales et nuages sont échantillonnés toutes les trois heures puis interpolés pour l’affichage horaire.</li><li>Conversions principales : kelvins vers degrés Celsius, mètres par seconde vers kilomètres par heure et fraction nuageuse vers pourcentage.</li><li>Les composantes U/V sont converties en vitesse et direction du vent.</li><li>Résultat : prévision déterministe normalisée sur 48 heures, avec un signal orageux dérivé des champs de foudre et de précipitations AROME.</li></ul>
-<h3>PE-AROME Météo-France</h3>
+<h3 id="api-pe-arome"><a href="https://portail-api.meteofrance.fr/web/fr/api/AROME-PI">PE-AROME Météo-France</a></h3>
 <ul><li>Ensemble Météo-France comportant jusqu’à 25 membres.</li><li>Chaque membre possède son propre service WCS.</li><li>Les membres permettent d’estimer la probabilité de précipitations et la dispersion des scénarios.</li><li>La probabilité de pluie est échantillonnée toutes les trois heures avec un seuil de 0,1 mm.</li><li>Les intervalles d’incertitude de température, vent, rafales et nuages sont calculés sur des points espacés de six heures.</li><li>L’acquisition est progressive : son avancement est conservé pour éviter de recommencer tous les membres.</li></ul>
-<h3>ARPEGE Météo-France</h3>
+<h3 id="api-arpege"><a href="https://portail-api.meteofrance.fr/web/fr/api/ARPEGE">ARPEGE Météo-France</a></h3>
 <ul><li>Service déterministe Météo-France WCS 2.0.1.</li><li>Les échéances disponibles sont déterminées par <code>GetCapabilities</code> et <code>DescribeCoverage</code>.</li><li>Champs utilisés : température, vent U/V, rafales, nuages, précipitations, énergie convective disponible maximale et précipitations convectives.</li><li>Au-delà de la portée d’AROME, le signal orageux est retenu lorsque l’énergie convective et les précipitations convectives prévues sont simultanément significatives.</li><li>Les résultats alimentent les quatre jours suivant la prévision AROME.</li><li>Les mêmes conversions d’unités et contrôles de cohérence qu’AROME sont appliqués</li></ul>
-<h3>PE-ARPEGE Météo-France</h3>
+<h3 id="api-pe-arpege"><a href="https://portail-api.meteofrance.fr/web/fr/api/ARPEGE">PE-ARPEGE Météo-France</a></h3>
 <ul><li>Ensemble Météo-France comportant jusqu’à 35 membres.</li><li>Les précipitations sont téléchargées sous forme de GeoTIFF.</li><li>Le serveur repère dans chaque grille le pixel contenant les coordonnées des Tatins.</li><li>Une date n’est retenue que si au moins 20 membres sont disponibles.</li><li>Les membres servent à calculer les probabilités et intervalles de confiance sur quatre jours.</li><li>Cette acquisition plus lourde fonctionne en arrière-plan et peut être désactivée par la configuration serveur.</li></ul>
-<h3>Vigilance Météo-France</h3>
+<h3 id="api-vigilance"><a href="https://vigilance.meteofrance.fr/">Vigilance Météo-France</a></h3>
 <ul><li>API <code>DPVigilance/v1/cartevigilance/encours</code> au format JSON.</li><li>Les phénomènes, périodes et couleurs du département configuré sont extraits pour l’alerte affichée sur le site.</li></ul>
-<h3>EUMETSAT MTG Lightning Imager</h3>
+<h3 id="api-eumetsat-li"><a href="https://data.eumetsat.int/product/EO%3AEUM%3ADAT%3A0691">EUMETSAT MTG Lightning Imager</a></h3>
 <ul><li>Collection utilisée : <code>EO:EUM:DAT:0691</code>.</li><li>Authentification OAuth 2.0 par <code>client_credentials</code>.</li><li>Le catalogue fournit le produit récent et son lien NetCDF4.</li><li>NetCDF4 reposant sur HDF5, le fichier est lu avec <code>h5wasm</code>.</li><li>Les éclairs sont filtrés dans un rayon local, puis convertis en distance et position par rapport aux Tatins.</li><li>Ces observations corroborent l’activité électrique des cellules suivies par le radar.</li></ul>
-<h3>Open-Meteo</h3>
+<h3 id="api-open-meteo"><a href="https://open-meteo.com/en/docs">Open-Meteo</a></h3>
 <ul><li>API JSON sans clé.</li><li>Données demandées : température, précipitations, probabilité de pluie, code météo, nébulosité, vent, rafales, lever et coucher du soleil.</li><li>Les codes météo 95 à 99 fournissent le signal orageux Open-Meteo utilisé dans les frises et la synthèse.</li><li>Pas de temps utilisés : 15 minutes, horaire et quotidien.</li><li>Fuseau demandé : <code>Europe/Paris</code>.</li><li>Cette source sert de comparaison et de repli.</li></ul>
 <h3>Cache et fréquence d’actualisation</h3>
 <div class="technical-table-scroll"><table><thead><tr><th>Donnée</th><th>Durée cible du cache serveur</th></tr></thead><tbody><tr><td>PIAF</td><td>4 min</td></tr><tr><td>Radar</td><td>4 min</td></tr><tr><td>Foudre EUMETSAT</td><td>5 min</td></tr><tr><td>AROME</td><td>60 min</td></tr><tr><td>PE-AROME, probabilités</td><td>3 h</td></tr><tr><td>PE-AROME, ensemble</td><td>6 h</td></tr><tr><td>Vigilance</td><td>30 min</td></tr><tr><td>Open-Meteo</td><td>30 min</td></tr><tr><td>ARPEGE et PE-ARPEGE</td><td>6 h</td></tr></tbody></table></div>
