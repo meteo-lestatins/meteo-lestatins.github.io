@@ -3223,11 +3223,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && currentObservation - previousObservation <= 45 * 60000
       ? cellPassageSnapshot
       : null;
-  const previousDisplayedLevelSnapshot = cellPassageSnapshot
-    && Number.isFinite(currentObservation)
-    && Number.isFinite(previousObservation)
-    && currentObservation >= previousObservation
-    && currentObservation - previousObservation <= 45 * 60000
+  const sameObservationSnapshot = cellPassageSnapshot
+    && radar.observedAt === cellPassageSnapshot.observedAt
       ? cellPassageSnapshot
       : null;
   const passageTrendFor = cell => {
@@ -3288,6 +3285,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const otherPassageCells = passageCandidates.slice(1);
   const nowcastStormPassageLevel = rawStormPassageLevel;
   const stormPassageLevel = Math.max(nowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
+  const previousDisplayedLevelSnapshot = cellPassageSnapshot
+    && Number.isFinite(currentObservation)
+    && Number.isFinite(previousObservation)
+    && (currentObservation > previousObservation
+      || (currentObservation === previousObservation
+        && Number(cellPassageSnapshot.displayedLevel) !== stormPassageLevel))
+    && currentObservation - previousObservation <= 45 * 60000
+      ? cellPassageSnapshot
+      : null;
   const rainTrend = piafRainTrend(threeHours);
   const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
   const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
@@ -3308,12 +3314,49 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormPassageLevelChange = stormPassageLevel - previousStormPassageLevel;
   const stormTrendUsesDisplayedLevel = stormPassageLevelChange !== 0;
   const stormTrendChange = stormTrendUsesDisplayedLevel ? stormPassageLevelChange : maximumPassageChange;
-  const stormTrend = {
+  const calculatedStormTrend = {
     label: stormTrendChange > 0 ? "croissant" : stormTrendChange < 0 ? "decroissant" : "stable",
     change: stormTrendChange,
     previous: stormTrendUsesDisplayedLevel ? previousStormPassageLevel : previousMaximumPassageRisk,
     basis: stormTrendUsesDisplayedLevel ? "displayed-level" : "passage-probability"
   };
+  const previousPendingDecline = previousPassageSnapshot?.pendingDecline;
+  const declineFromCertainPassage = calculatedStormTrend.label === "decroissant"
+    && previousMaximumPassageRisk >= 100
+    && maximumPassageRisk > 0;
+  const confirmedPendingDecline = previousPendingDecline
+    && maximumPassageRisk > 0
+    && maximumPassageRisk <= Number(previousPendingDecline.currentRisk);
+  let pendingDecline = null;
+  let guardedStormTrend = calculatedStormTrend;
+  if (confirmedPendingDecline) {
+    const fromRisk = Number(previousPendingDecline.fromRisk);
+    guardedStormTrend = {
+      label: "decroissant",
+      change: maximumPassageRisk - fromRisk,
+      previous: fromRisk,
+      basis: "passage-probability",
+      confirmed: true
+    };
+  } else if (declineFromCertainPassage) {
+    pendingDecline = { fromRisk: previousMaximumPassageRisk, currentRisk: maximumPassageRisk };
+    guardedStormTrend = {
+      label: "stable",
+      change: 0,
+      previous: previousMaximumPassageRisk,
+      basis: "passage-probability",
+      pendingConfirmation: true
+    };
+  }
+  // Plusieurs rendus peuvent avoir lieu entre deux images radar. Conserver la
+  // tendance calculée au premier rendu évite qu'une hausse vers 5/5 soit
+  // aussitôt comparée à elle-même et remplacée par une flèche horizontale.
+  const savedStormTrend = sameObservationSnapshot?.displayedLevel === stormPassageLevel
+    && ["croissant", "decroissant", "stable"].includes(sameObservationSnapshot?.trend?.label)
+      ? sameObservationSnapshot.trend
+      : null;
+  const stormTrend = savedStormTrend || guardedStormTrend;
+  if (savedStormTrend) pendingDecline = sameObservationSnapshot.pendingDecline || null;
   const passageTrendMarkup = cell => {
     const trend = passageTrendFor(cell);
     if (!trend) return "";
@@ -3396,7 +3439,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     cellPassageSnapshot = {
       observedAt: radar.observedAt,
       values: Object.fromEntries(cells.map(cell => [cell.id, Math.round(Number(cell.risks?.passage) || 0)])),
-      displayedLevel: stormPassageLevel
+      displayedLevel: stormPassageLevel,
+      trend: stormTrend,
+      pendingDecline
     };
     try {
       localStorage.setItem("meteo-cell-passage-snapshot", JSON.stringify(cellPassageSnapshot));
@@ -3423,14 +3468,19 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormIntensityDetail = relevantStormCell
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
-  const stormTrendWording = stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
-  const stormTrendDetail = stormTrendUsesDisplayedLevel
+  const stormTrendWording = stormTrend.pendingConfirmation
+    ? "stable, éloignement à confirmer"
+    : stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
+  const effectiveStormTrendUsesDisplayedLevel = stormTrend.basis === "displayed-level";
+  const effectivePreviousStormValue = Number(stormTrend.previous);
+  const effectiveStormTrendChange = Number(stormTrend.change);
+  const stormTrendDetail = effectiveStormTrendUsesDisplayedLevel
     ? "Risque orageux " + stormTrendWording
-      + " · indicateur " + previousStormPassageLevel + " sur 5 → " + stormPassageLevel + " sur 5"
-      + (stormForecastSourceCount > previousStormPassageLevel && stormPassageLevel <= 2 ? " · nouveau signal orageux entré dans les 3 prochaines heures" : "")
+      + " · indicateur " + effectivePreviousStormValue + " sur 5 → " + stormPassageLevel + " sur 5"
+      + (stormForecastSourceCount > effectivePreviousStormValue && stormPassageLevel <= 2 ? " · nouveau signal orageux entré dans les 3 prochaines heures" : "")
     : "Probabilité de passage " + stormTrendWording
-      + (Number.isFinite(stormTrendChange) && stormTrendChange !== 0 ? " de " + Math.abs(Math.round(stormTrendChange)) + " point" + (Math.abs(Math.round(stormTrendChange)) > 1 ? "s" : "") : "")
-      + " · maximum global " + previousMaximumPassageRisk + " % → " + maximumPassageRisk + " %"
+      + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
+      + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
   const radarOverPoint = threeHours.some(item => item.radarCellOverPoint);
   const rainDetail = "Pluie · cumul PIAF prévu sur 3 h amendé par le radar : " + rainAmount.toFixed(1) + " mm"
