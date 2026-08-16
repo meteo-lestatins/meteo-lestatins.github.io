@@ -677,7 +677,6 @@ function futureActiveWeekDay(day, now = new Date(appNow())) {
     ...day,
     time: forecastStart,
     forecastStart,
-    rainPeriods: [],
     windPeriod: null,
     gustPeriod: null,
     cloudCoverMorningMean: null,
@@ -692,7 +691,8 @@ function futureActiveWeekDay(day, now = new Date(appNow())) {
 function rainProbabilitySummary(values) {
   const valid = (Array.isArray(values) ? values : [values]).map(item => {
     const named = item && typeof item === "object";
-    const value = Number(named ? item.value ?? item.probability : item);
+    const rawValue = named ? item.value ?? item.probability : item;
+    const value = rawValue == null || rawValue === "" ? NaN : Number(rawValue);
     return { value, name: named ? String(item.name || "") : "" };
   }).filter(item => Number.isFinite(item.value)).sort((left, right) => left.value - right.value);
   if (!valid.length) return { text: "À confirmer", detail: "probabilité à confirmer", average: null, kind: "unknown" };
@@ -733,7 +733,7 @@ function conciseRainSummary(amount, probabilities, periods, showers = false, sto
     : rain < 15 ? "en quantité modérée"
     : rain < 30 ? "en forte quantité" : "en très forte quantité";
   const plural = showers;
-  const likelihood = plural ? {
+  const likelihood = probability.kind === "unknown" && rain > 0 ? "" : plural ? {
     "Prévue": "", "Très probable": "très probables", "Probable": "probables", "Possible": "possibles", "Envisagée": "envisagées", "Peu probable": "peu probables", "Très peu probable": "très peu probables", "Incertain": "incertaines", "À confirmer": "à confirmer"
   }[probability.text] : {
     "Prévue": "", "Très probable": "très probable", "Probable": "probable", "Possible": "possible", "Envisagée": "envisagée", "Peu probable": "peu probable", "Très peu probable": "très peu probable", "Incertain": "incertaine", "À confirmer": "à confirmer"
@@ -1137,7 +1137,7 @@ function scheduleActiveWeekDayUpdate() {
 }
 
 function weekModelAgreement(ecmwf, arpege) {
-  const value = item => Number.isFinite(Number(item)) ? Number(item) : null;
+  const value = item => item == null || item === "" ? null : Number.isFinite(Number(item)) ? Number(item) : null;
   const difference = (left, right) => left != null && right != null ? Math.abs(left - right) : null;
   const temperatureMax = difference(value(ecmwf.temperatureMax), value(arpege.temperatureMax));
   const temperatureMin = difference(value(ecmwf.temperatureMin), value(arpege.temperatureMin));
@@ -1148,8 +1148,8 @@ function weekModelAgreement(ecmwf, arpege) {
   const wet = item => (value(item.precipitationSum) || 0) >= .2 || (value(item.precipitationProbabilityMax) || 0) >= 45;
   const storm = item => Boolean(item?.stormSignal) || Number(item?.weatherCode) >= 95;
   const rainProfiles = [
-    { name: "Open-Meteo", item: ecmwf, amount: Math.max(0, value(ecmwf.precipitationSum) || 0), probability: Math.max(0, value(ecmwf.precipitationProbabilityMax) || 0) },
-    { name: "Météo-France", item: arpege, amount: Math.max(0, value(arpege.precipitationSum) || 0), probability: Math.max(0, value(arpege.precipitationProbabilityMax) || 0) }
+    { name: "Open-Meteo", item: ecmwf, amount: Math.max(0, value(ecmwf.precipitationSum) || 0), probability: value(ecmwf.precipitationProbabilityMax) },
+    { name: "Météo-France", item: arpege, amount: Math.max(0, value(arpege.precipitationSum) || 0), probability: value(arpege.precipitationProbabilityMax) }
   ].map(profile => ({ ...profile, wet: wet(profile.item), storm: storm(profile.item) }));
   const wetProfiles = rainProfiles.filter(profile => profile.wet);
   const strongestRain = rainProfiles.reduce((strongest, profile) => profile.amount > strongest.amount ? profile : strongest, rainProfiles[0]);
