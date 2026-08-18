@@ -656,6 +656,7 @@ function forecastPeriodText(periods) {
   if (selected.length === forecastPeriodOrder.length) return "toute la journée";
   const dayPeriods = ["morning", "afternoon", "evening"];
   if (dayPeriods.every(period => selected.includes(period)) && selected.every(period => dayPeriods.includes(period) || period === "late_afternoon")) return "toute la journée";
+  if (!selected.includes("night") && selected.includes("morning") && selected.includes("afternoon") && selected.some(period => period === "late_afternoon" || period === "evening")) return "toute la journée";
   if (selected.join(",") === "night,morning") return "entre la nuit et la matinée";
   if (selected.join(",") === "morning,afternoon") return "du matin à l’après-midi";
   if (selected.join(",") === "afternoon,evening") return "de l’après-midi au soir";
@@ -1649,8 +1650,12 @@ function renderWeekForecast() {
       return (valid.length > 1 && Math.abs(valid[0] - valid[1]) >= .05 ? format(Math.min(...valid)) + " – " + format(Math.max(...valid)) : format(valid[0])) + " mm";
     };
     const rainValues = finite([ecmwf.precipitationSum, arpege.precipitationSum]);
-    const windValues = [ecmwf.windSpeedMax, arpege.windSpeedMax];
-    const gustValues = [ecmwf.windGustMax, arpege.windGustMax];
+    const rawWindValues = finite([ecmwf.windSpeedMax, arpege.windSpeedMax]);
+    const rawGustValues = finite([ecmwf.windGustMax, arpege.windGustMax]);
+    const synthesisWindValue = mean(rawWindValues);
+    const synthesisGustValue = mean(rawGustValues);
+    const windValues = finite([synthesisWindValue]);
+    const gustValues = finite([synthesisGustValue]);
     const cloudValues = [ecmwf.cloudCoverMean ?? ecmwf.cloudCover, arpege.cloudCoverMean ?? arpege.cloudCover];
     const riskValues = [
       { value: ecmwf.precipitationProbabilityMax, name: "Open-Meteo" },
@@ -1668,10 +1673,12 @@ function renderWeekForecast() {
       + (synthesisCloudPeriods.length ? " · synthèse " + synthesisCloudPeriods.join(" · ") : "");
     const windPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.windPeriod ? [ecmwf.windPeriod] : [], arpege.windPeriod ? [arpege.windPeriod] : []));
     const gustPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.gustPeriod ? [ecmwf.gustPeriod] : [], arpege.gustPeriod ? [arpege.gustPeriod] : []));
-    const windHoverLabel = "Vent maximal · synthèse " + range(windValues, " km/h")
+    const windHoverLabel = "Vent · synthèse " + range(windValues, " km/h")
+      + (rawWindValues.length > 1 ? " · plage " + range(rawWindValues, " km/h") : "")
       + (windDirection == null ? "" : " · direction " + Math.round(windDirection) + "°")
       + (windPeriodSummary ? " · surtout " + windPeriodSummary : "");
     const gustHoverLabel = "Rafales · synthèse " + range(gustValues, " km/h")
+      + (rawGustValues.length > 1 ? " · plage " + range(rawGustValues, " km/h") : "")
       + (gustPeriodSummary ? " · surtout " + gustPeriodSummary : "");
     const cloudMarkup = cloudMetricRow(cloudPresentation, cloudHoverLabel, agreement.skySummary);
     const rainMarkup = rainMetricRow(rainValues, escapeText(rainRange(rainValues)), [], showerLevel, agreement.rainProbability, agreement.rainSummary);
