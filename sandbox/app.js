@@ -653,8 +653,9 @@ function forecastPeriodKey(hour) {
 function forecastPeriodText(periods) {
   const selected = [...new Set((periods || []).filter(period => forecastPeriodOrder.includes(period)))].sort((left, right) => forecastPeriodOrder.indexOf(left) - forecastPeriodOrder.indexOf(right));
   if (!selected.length) return "";
-  if (selected.length === forecastPeriodOrder.length) return "tout au long de la journée";
-  if (selected.join(",") === "morning,afternoon,evening") return "du matin au soir";
+  if (selected.length === forecastPeriodOrder.length) return "toute la journée";
+  const dayPeriods = ["morning", "afternoon", "evening"];
+  if (dayPeriods.every(period => selected.includes(period)) && selected.every(period => dayPeriods.includes(period) || period === "late_afternoon")) return "toute la journée";
   if (selected.join(",") === "night,morning") return "entre la nuit et la matinée";
   if (selected.join(",") === "morning,afternoon") return "du matin à l’après-midi";
   if (selected.join(",") === "afternoon,evening") return "de l’après-midi au soir";
@@ -1665,18 +1666,13 @@ function renderWeekForecast() {
     ].filter(Boolean);
     const cloudHoverLabel = "Nébulosité · Open-Meteo " + dailyCloudRangeText(ecmwf) + " · Météo-France " + dailyCloudRangeText(arpege)
       + (synthesisCloudPeriods.length ? " · synthèse " + synthesisCloudPeriods.join(" · ") : "");
-    const windPeriods = [
-      ecmwf.windPeriod ? "Open-Meteo " + forecastPeriodText([ecmwf.windPeriod]) : "",
-      arpege.windPeriod ? "Météo-France " + forecastPeriodText([arpege.windPeriod]) : ""
-    ].filter(Boolean);
-    const windHoverLabel = "Vent maximal · Open-Meteo " + number(ecmwf.windSpeedMax) + " km/h · Météo-France " + number(arpege.windSpeedMax) + " km/h"
-      + (windPeriods.length ? " · période caractéristique : " + windPeriods.join(" · ") : "");
-    const gustPeriods = [
-      ecmwf.gustPeriod ? "Open-Meteo " + forecastPeriodText([ecmwf.gustPeriod]) : "",
-      arpege.gustPeriod ? "Météo-France " + forecastPeriodText([arpege.gustPeriod]) : ""
-    ].filter(Boolean);
-    const gustHoverLabel = "Rafales · Open-Meteo " + number(ecmwf.windGustMax) + " km/h · Météo-France " + number(arpege.windGustMax) + " km/h"
-      + (gustPeriods.length ? " · maximum : " + gustPeriods.join(" · ") : "");
+    const windPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.windPeriod ? [ecmwf.windPeriod] : [], arpege.windPeriod ? [arpege.windPeriod] : []));
+    const gustPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.gustPeriod ? [ecmwf.gustPeriod] : [], arpege.gustPeriod ? [arpege.gustPeriod] : []));
+    const windHoverLabel = "Vent maximal · synthèse " + range(windValues, " km/h")
+      + (windDirection == null ? "" : " · direction " + Math.round(windDirection) + "°")
+      + (windPeriodSummary ? " · surtout " + windPeriodSummary : "");
+    const gustHoverLabel = "Rafales · synthèse " + range(gustValues, " km/h")
+      + (gustPeriodSummary ? " · surtout " + gustPeriodSummary : "");
     const cloudMarkup = cloudMetricRow(cloudPresentation, cloudHoverLabel, agreement.skySummary);
     const rainMarkup = rainMetricRow(rainValues, escapeText(rainRange(rainValues)), [], showerLevel, agreement.rainProbability, agreement.rainSummary);
     const windMarkup = windMetricGroup(windValues, windDirectionMarkup + escapeText(range(windValues, " km/h")), gustValues, escapeText(range(gustValues, " km/h")), agreement.windSummary, windHoverLabel, gustHoverLabel);
