@@ -2952,6 +2952,20 @@ function nowcastEtaCellOutsideMap(cell, radiusKm = 20) {
     && radarCellEdgeDistance(cell) >= radiusKm;
 }
 
+function nowcastCellHasEtaProjection(cell) {
+  if (cell?.etaMinutes == null) return false;
+  const etaMinutes = Number(cell.etaMinutes);
+  return Number.isFinite(etaMinutes)
+    && etaMinutes >= 0
+    && etaMinutes <= 180
+    && Array.isArray(cell.track?.points)
+    && cell.track.points.length > 1;
+}
+
+function nowcastEtaProjectionCells(cells) {
+  return (cells || []).filter(nowcastCellHasEtaProjection);
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
   if (shapeRuns.length) {
@@ -3004,16 +3018,12 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
-  const approachProjections = radarCells
-    .filter(cell => Number(cell.risks?.passage) > 0 && (cell.track?.points || []).length > 1)
-    .map(cell => ({ id: cell.id, points: cell.track.points }));
+  const etaProjectionCells = nowcastEtaProjectionCells(radarCells);
+  const approachProjections = etaProjectionCells.map(cell => ({ id: cell.id, points: cell.track.points }));
   const projectionsById = new Map(approachProjections.map(projection => [projection.id, projection]));
   const primaryProjection = projectionsById.get(threat.id);
   const primaryPoints = primaryProjection?.points || points;
-  const secondaryTrackPoints = radarCells.flatMap(cell => {
-    if (cell.id === threat.id) return [];
-    return projectionsById.get(cell.id)?.points || cell.track?.points || [];
-  });
+  const secondaryTrackPoints = etaProjectionCells.flatMap(cell => cell.id === threat.id ? [] : cell.track.points);
   const extentPoints = [{ eastKm: 0, northKm: 0, uncertaintyKm: 3 }, ...radarCells, ...secondaryTrackPoints, ...(primaryPoints.length ? primaryPoints : [threat])];
   const paddingX = width === 360 ? 20 : 16;
   const paddingY = width === 360 ? 20 : 16;
@@ -3139,8 +3149,14 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     };
     return chevron(18);
   };
-  const cone = coneFor(primaryPoints, 'storm-cone' + (primaryProjection ? ' projected' : ''), 'storm-probability-primary', '#2b91c6', threat);
-  const secondaryCones = '';
+  const cones = etaProjectionCells.map((cell, index) => coneFor(
+    cell.track.points,
+    'storm-cone projected' + (cell.id === threat.id ? ' primary' : ' secondary'),
+    'storm-probability-eta-' + index,
+    '#2b91c6',
+    cell
+  )).join('');
+  const directionChevrons = radarCells.map(cell => directionChevronsFor(cell.track?.points || [], cell)).join('');
   const mapProbabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const mapRainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
   const mapRainSynthesisStep = (probability, intensity) => {
@@ -3229,12 +3245,13 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const distanceLink = '';
   const scaleBarKm = scale * 20 > 150 ? 10 : 20;
   const scaleBarWidth = scaleBarKm * scale;
-  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Trajectoire prévue de la cellule ' + escapeText(threat.id) + ' sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
+  const coneLegend = etaProjectionCells.length ? '<span><i class="legend-cone"></i> trajectoire avec ETA</span>' : '';
+  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
-    distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + directionChevronsFor(primaryPoints, threat) + milestones +
+    distanceLink + cones + secondaryTracks + cells + lightningMarks + directionChevrons + milestones +
     '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g>' +
     '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
-    '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span>' + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
+    '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span>' + coneLegend + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
 }
 
 function initializeNowcastMapBackground(mapRadiusKm) {
