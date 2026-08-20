@@ -41,6 +41,7 @@ let dashboardCacheHydrated = false;
 let weekCacheHydrated = false;
 let activeNowcastMapRadius = 60;
 let nowcastMapRadiusManuallySelected = false;
+let nowcastMapAutoExpanded = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
 let nowcastMapRequest = 0;
@@ -2898,6 +2899,35 @@ function radarCellShapeRuns(cell) {
   });
 }
 
+function nowcastMapCoverage(cells, radiusKm = 20) {
+  const minimum = -radiusKm;
+  const maximum = radiusKm;
+  const visibleAreaKm2 = radiusKm * radiusKm * 4;
+  const areaKm2 = (cells || []).reduce((total, cell) => {
+    if (radarCellEdgeDistance(cell) >= radiusKm) return total;
+    const shapeRuns = radarCellShapeRuns(cell);
+    if (!shapeRuns.length) return total + Math.min(visibleAreaKm2, Math.max(0, Number(cell.areaKm2) || 0));
+    return total + shapeRuns.reduce((cellTotal, run) => {
+      const west = Math.max(minimum, Number(run.westKm));
+      const east = Math.min(maximum, Number(run.eastKm));
+      const south = Math.max(minimum, Number(run.southKm));
+      const north = Math.min(maximum, Number(run.northKm));
+      return cellTotal + Math.max(0, east - west) * Math.max(0, north - south);
+    }, 0);
+  }, 0);
+  return Math.max(0, Math.min(1, areaKm2 / visibleAreaKm2));
+}
+
+function nowcastMapIsSaturated(cells) {
+  const visibleCells = (cells || []).filter(cell => radarCellEdgeDistance(cell) < 20);
+  const coverage = nowcastMapCoverage(visibleCells, 20);
+  const coverageThreshold = nowcastMapAutoExpanded ? .2 : .32;
+  const crowdedCoverageThreshold = nowcastMapAutoExpanded ? .12 : .18;
+  return coverage >= coverageThreshold
+    || visibleCells.length >= 4 && coverage >= crowdedCoverageThreshold
+    || visibleCells.length >= 6;
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
   if (shapeRuns.length) {
@@ -3456,8 +3486,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   // probabilité de passage nowcasting supérieure à zéro utilise également
   // l'échelle complète de 1 à 5, indépendamment de l'intensité affichée.
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  if (!nowcastMapRadiusManuallySelected) {
-    activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
+  const twentyKmSaturated = nowcastMapIsSaturated(cells);
+  if (twentyKmSaturated) {
+    if (activeNowcastMapRadius === 20) nowcastMapRadiusManuallySelected = false;
+    activeNowcastMapRadius = 60;
+    nowcastMapAutoExpanded = true;
+  } else {
+    nowcastMapAutoExpanded = false;
+    if (!nowcastMapRadiusManuallySelected) {
+      activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
+    }
   }
   const currentObservation = new Date(radar.observedAt || 0).getTime();
   const previousObservation = new Date(cellPassageSnapshot?.observedAt || 0).getTime();
