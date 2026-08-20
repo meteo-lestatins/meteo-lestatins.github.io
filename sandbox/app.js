@@ -39,8 +39,18 @@ let weekActiveDayTimer = 0;
 let latestWeekEvolutionHistory = [];
 let dashboardCacheHydrated = false;
 let weekCacheHydrated = false;
-let activeNowcastMapRadius = 60;
-let nowcastMapRadiusManuallySelected = false;
+const nowcastMapRadiusSessionKey = "meteo-nowcast-map-radius";
+function savedNowcastMapRadius() {
+  try {
+    const value = Number(sessionStorage.getItem(nowcastMapRadiusSessionKey));
+    return value === 20 || value === 60 ? value : null;
+  } catch {
+    return null;
+  }
+}
+const initialNowcastMapRadius = savedNowcastMapRadius();
+let activeNowcastMapRadius = initialNowcastMapRadius || 60;
+let nowcastMapRadiusManuallySelected = initialNowcastMapRadius !== null;
 let nowcastMapAutoExpanded = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
@@ -3988,6 +3998,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
     activeNowcastMapRadius = Number(event.currentTarget.dataset.nowcastRadius) === 20 ? 20 : 60;
+    try {
+      sessionStorage.setItem(nowcastMapRadiusSessionKey, String(activeNowcastMapRadius));
+    } catch {}
     renderRadarNowcast(radar, piaf, arome, lightning, vigilance);
   }));
   const showCellDetails = button => {
@@ -4307,8 +4320,25 @@ function bindHeaderNowcastLink() {
   });
 }
 
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || window.METEO_REPLAY) return;
+  let reloadPending = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloadPending) return;
+    reloadPending = true;
+    window.location.reload();
+  });
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register(new URL("service-worker.js", document.baseURI), { updateViaCache: "none" })
+      .then(registration => registration.update())
+      .catch(error => console.warn("Service worker indisponible", error));
+  }, { once: true });
+}
+
 bindForecastLayout();
 bindHeaderNowcastLink();
+registerServiceWorker();
 if (window.location.hash === "#radar-nowcast") {
   const nowcastDetails = $("nowcast-details");
   if (nowcastDetails) {

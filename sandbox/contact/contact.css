@@ -27,6 +27,9 @@
 .contact-actions button { min-width: 118px; min-height: 44px; padding: 10px 18px; border-radius: 6px; color: #fff; background: #1476a8; font-size: 14px; font-weight: 800; }
 .contact-actions button:disabled { cursor: not-allowed; color: #77858c; background: #e1e7ea; }
 .contact-actions p { margin: 0; color: #6b7980; font-size: 12px; line-height: 1.4; }
+.contact-actions p[data-state="sending"] { color: #397a9e; }
+.contact-actions p[data-state="success"] { color: #287432; font-weight: 750; }
+.contact-actions p[data-state="error"] { color: #a23a27; font-weight: 750; }
 
 @media (max-width: 760px) {
   .contact-page .site-header { padding: 16px 16px 10px; }
