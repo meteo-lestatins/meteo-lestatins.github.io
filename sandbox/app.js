@@ -629,7 +629,7 @@ function stormSignalPictogram(detail, extraClass = "", withCloud = false) {
   const symbol = withCloud
     ? '<path class="storm-signal-cloud" d="M4.8 15.5a3.7 3.7 0 0 1 .4-7.4A5.7 5.7 0 0 1 16.4 6.8a4 4 0 0 1 3.3 1.7 3.6 3.6 0 0 1 .7 7H4.8Z"/><path class="storm-signal-bolt" d="m13.2 10.4-3.8 6h3.2l-1.5 6.5 8-9.8h-3.5l1.7-2.7h-4.1Z"/>'
     : '<path class="storm-signal-bolt" d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>';
-  return '<span class="storm-signal-pictogram chart-point' + (extraClass ? " " + extraClass : "") + '" tabindex="0" role="img" aria-label="Orage possible" data-tooltip="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + symbol + '</svg></span>';
+  return '<span class="storm-signal-pictogram chart-point' + (extraClass ? " " + extraClass : "") + '" tabindex="0" role="img" aria-label="Orage possible" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + symbol + '</svg></span>';
 }
 
 function forecastStormPictogram(sourceLabel, item, periodLabel = "", extraClass = "") {
@@ -2736,13 +2736,13 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
       const detail = metricTooltip(label, value, format, item, interval);
       const top = y(interval.high);
       const bottom = y(Math.max(0, interval.low));
-      return '<g class="chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><path class="uncertainty-bar" d="M' + x(index) + ' ' + top + 'V' + bottom + 'M' + (x(index) - 5) + ' ' + top + 'H' + (x(index) + 5) + 'M' + (x(index) - 5) + ' ' + bottom + 'H' + (x(index) + 5) + '"/><circle cx="' + x(index) + '" cy="' + y(value) + '" r="5"/><title>' + escapeText(detail) + '</title></g>';
+      return '<g class="chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><path class="uncertainty-bar" d="M' + x(index) + ' ' + top + 'V' + bottom + 'M' + (x(index) - 5) + ' ' + top + 'H' + (x(index) + 5) + 'M' + (x(index) - 5) + ' ' + bottom + 'H' + (x(index) + 5) + '"/><circle cx="' + x(index) + '" cy="' + y(value) + '" r="5"/></g>';
     }).join("");
     const secondaryCurve = secondary ? '<polyline class="series-secondary" points="' + secondary.values.map((value, index) => x(index) + "," + y(value)).join(" ") + '"/>' : "";
     const secondaryDots = secondary ? secondary.values.map((value, index) => {
       const item = hours[index];
       const detail = metricTooltip(secondary.label, value, secondary.format, item);
-      return '<g class="chart-point secondary-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><circle cx="' + x(index) + '" cy="' + y(value) + '" r="4"/><title>' + escapeText(detail) + '</title></g>';
+      return '<g class="chart-point secondary-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><circle cx="' + x(index) + '" cy="' + y(value) + '" r="4"/></g>';
     }).join("") : "";
     const bars = kind === "bars" ? values.map((value, index) => '<rect class="precipitation-bar" x="' + (index * cell + 12) + '" y="' + y(value) + '" width="' + (cell - 24) + '" height="' + (plotBottom - y(value)) + '"/>').join("") : "";
     return '<section class="metric-panel ' + key + '"><div class="metric-title"><strong>' + label + '</strong></div><div class="chart-body"><div class="chart-axis" aria-hidden="true"><div class="chart-axis-head"></div><svg viewBox="0 0 54 ' + chartHeight + '">' + axis + '</svg></div><div class="chart-scroll"><div class="chart-wrap" style="width:' + width + 'px"><div class="chart-hours">' + timeHeadings + '</div><svg class="metric-chart ' + key + '" viewBox="0 0 ' + width + ' ' + chartHeight + '" aria-label="' + label + '"><g class="chart-grid">' + grid + '</g>' + bars + (kind === "bars" ? "" : '<polyline class="series-main" points="' + endCurve + '"/>') + secondaryCurve + '<g class="chart-dots">' + dots + secondaryDots + '</g></svg></div></div></div></section>';
@@ -2783,7 +2783,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
       const interval = intervals[index];
       const detail = tooltip(metric.label, value, index, interval);
       const error = metric.key === "rain" ? "" : '<path class="unified-error" stroke="' + colors[metric.key] + '" d="M' + x(index) + ' ' + y(interval.high) + 'V' + y(interval.low) + 'M' + (x(index) - 4) + ' ' + y(interval.high) + 'H' + (x(index) + 4) + 'M' + (x(index) - 4) + ' ' + y(interval.low) + 'H' + (x(index) + 4) + '"/>';
-      return '<g class="chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '">' + error + '<circle cx="' + x(index) + '" cy="' + y(value) + '" r="4" fill="' + colors[metric.key] + '"/><title>' + escapeText(detail) + '</title></g>';
+      return '<g class="chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '">' + error + '<circle cx="' + x(index) + '" cy="' + y(value) + '" r="4" fill="' + colors[metric.key] + '"/></g>';
     }).join("");
     if (metric.kind === "bars") {
       const bars = metric.values.map((value, index) => '<rect class="unified-rain-bar" x="' + (index * cell + 12) + '" y="' + y(value) + '" width="' + (cell - 24) + '" height="' + (bottom - y(value)) + '"/>').join("");
@@ -2986,7 +2986,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     });
     const conePath = left.concat(right.reverse()).map((point, index) => (index ? 'L' : 'M') + point[0].toFixed(1) + ' ' + point[1].toFixed(1)).join(' ') + 'Z';
     const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="' + edgeStartX.toFixed(1) + '" y1="' + edgeStartY.toFixed(1) + '" x2="' + endX.toFixed(1) + '" y2="' + endY.toFixed(1) + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + centerOpacity.toFixed(3) + '"></stop><stop offset=".55" stop-color="' + color + '" stop-opacity="' + sideOpacity.toFixed(3) + '"></stop><stop offset="1" stop-color="' + color + '" stop-opacity="' + edgeOpacity.toFixed(3) + '"></stop></linearGradient>';
-    return '<defs>' + gradient + '</defs><path class="' + className + ' chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + conePath + '" style="fill:url(#' + gradientId + ');stroke:none"><title>' + escapeText(title) + '</title></path>';
+    return '<defs>' + gradient + '</defs><path class="' + className + ' chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + conePath + '" style="fill:url(#' + gradientId + ');stroke:none"></path>';
   };
   const directionChevronsFor = track => {
     const visibleTrack = visibleTrackFor(track, threat);
@@ -3798,17 +3798,8 @@ function renderPiaf(piaf, radar = null) {
       const cell = event.cell;
       slotIntervals.forEach((interval, slotIndex) => {
         if (event.eventEnd <= interval.start || event.eventStart >= interval.end) return;
-        const item = values[slotIndex];
-        const precipitation = precipitationFor(item);
         const etaRain = nowcastEtaRainAmount([event], interval.start, interval.end);
-        const detail = "Cellule " + cell.id
-          + "\n" + event.etaLabel + shortEtaLabel(event.etaMinutes)
-          + "\nPrésence estimée : " + hourFormat.format(new Date(event.eventStart)) + "–" + hourFormat.format(new Date(event.eventEnd))
-          + "\nPassage : " + event.passage + " %"
-          + "\nSurcharge nowcasting sur ce créneau : " + etaRain.toFixed(2) + " mm"
-          + "\nCumul prévu sur ce créneau : " + precipitation.toFixed(2) + " mm"
-          + (Number.isFinite(Number(item.radarPrecipitation)) ? "\nPIAF : " + Number(item.precipitation || 0).toFixed(2) + " mm · radar extrapolé : " + Number(item.radarPrecipitation).toFixed(2) + " mm" : "");
-        const entry = { id: cell.id, passage: event.passage, etaMinutes: event.etaMinutes, etaBasis: cell.etaBasis, etaRain, detail };
+        const entry = { id: cell.id, passage: event.passage, etaMinutes: event.etaMinutes, etaBasis: cell.etaBasis, etaRain, eventStart: event.eventStart, eventEnd: event.eventEnd };
         if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
         cellEtaSlots.get(slotIndex).push(entry);
       });
@@ -3857,8 +3848,15 @@ function renderPiaf(piaf, radar = null) {
     const height = etaRain > 0 ? Math.min(100, Math.max(4, etaRain / fullScaleRain * 100)) : 4;
     const alpha = Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
     const label = etaRain >= .05 ? etaRain.toFixed(etaRain < 1 ? 2 : 1) + " mm" : "";
-    const detail = "Synthèse PIAF + Nowcasting\nSurcharge nowcasting : " + etaRain.toFixed(2) + " mm\nPassage max : " + passage + " %\n\n" + entries.map(entry => entry.detail).join("\n\n");
-    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span><span class="now-cell-overlay-label">' + escapeText(label) + '</span></button>';
+    const etaWindowStart = Math.min(...entries.map(entry => entry.eventStart));
+    const etaWindowEnd = Math.max(...entries.map(entry => entry.eventEnd));
+    const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
+    const detail = "Nowcasting · +" + etaRain.toFixed(2) + " mm"
+      + "\nPassage max : " + passage + " %"
+      + "\n" + etaLabels.join(" · ")
+      + "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd))
+      + "\nClic : ouvrir la carte";
+    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span><span class="now-cell-overlay-label">' + escapeText(label) + '</span></button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
