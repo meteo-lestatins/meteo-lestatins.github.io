@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="../style.css?v=104">
+  <link rel="stylesheet" href="contact.css?v=2">
+  <title>Contact · Météo les Tatins</title>
+</head>
+<body class="contact-page">
+  <header class="site-header">
+    <div>
+      <h1><a href="../index.html">Météo les Tatins</a></h1>
+      <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="../index.html#radar-nowcast">nowcasting</a></p>
+    </div>
+    <nav class="contact-header-nav" aria-label="Pages d’information">
+      <a href="../news/">News</a><span aria-hidden="true">|</span><a href="../about.html">About</a><span aria-hidden="true">|</span><a aria-current="page" href="./">Contact</a>
+    </nav>
+  </header>
+
+  <main class="contact-main">
+    <div class="contact-heading">
+      <h2>Me contacter</h2>
+      <p class="contact-subtitle">Une question, un signalement ou une suggestion</p>
+    </div>
+
+    <form class="contact-form" aria-describedby="contact-privacy contact-status">
+      <div class="contact-field">
+        <label for="contact-name">Nom <span>facultatif</span></label>
+        <input id="contact-name" name="name" type="text" autocomplete="name" maxlength="100">
+      </div>
+
+      <div class="contact-field">
+        <label for="contact-email">Votre adresse e-mail</label>
+        <input id="contact-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" required>
+      </div>
+
+      <div class="contact-field contact-field-wide">
+        <label for="contact-subject">Sujet</label>
+        <input id="contact-subject" name="subject" type="text" maxlength="160" required>
+      </div>
+
+      <div class="contact-field contact-field-wide">
+        <label for="contact-message">Message</label>
+        <textarea id="contact-message" name="message" rows="9" maxlength="5000" required></textarea>
+      </div>
+
+      <div class="contact-honeypot" aria-hidden="true">
+        <label for="contact-company">Société</label>
+        <input id="contact-company" name="company" type="text" tabindex="-1" autocomplete="off">
+      </div>
+
+      <aside id="contact-privacy" class="contact-privacy" aria-label="Confidentialité">
+        <strong>Confidentialité</strong>
+        <p>Votre adresse e-mail est utilisée uniquement pour vous répondre. Elle n’est ni publiée, ni ajoutée à une liste de diffusion, ni conservée dans une base de données du site. Comme tout courriel reçu, votre message et votre adresse restent dans ma boîte mail jusqu’à leur suppression.</p>
+      </aside>
+
+      <div class="contact-actions">
+        <button type="submit" disabled>Envoyer</button>
+        <p id="contact-status" role="status">Les mesures nécessaires sont mises en place pour sécuriser au mieux l’envoi et le traitement de votre message.</p>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
