@@ -3226,6 +3226,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   };
   const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null, stormDetails = null) => {
     const stormLayout = stormPassageLevel != null;
+    const colorLevel = Math.max(0, Math.min(5, Math.round(Number(stormLayout ? stormPassageLevel : level) || 0)));
     const passageDetail = stormDetails?.passage || detail;
     const intensityDetail = stormDetails?.intensity || detail;
     const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
@@ -3235,7 +3236,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         + (displayedTrend ? trendMarkup(displayedTrend, passageDetail) : '')
         + (showStormIntensity ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
-    return '<button class="three-hour-action metric-' + kind + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
+    return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
   const threat = radar.threat;
@@ -3783,12 +3784,22 @@ function renderPiaf(piaf, radar = null) {
     const primary = entries[0];
     const label = entries.length > 1 ? entries.map(entry => entry.id).join("+") : primary.id;
     const detail = entries.map(entry => entry.detail).join("\n\n");
-    return '<span class="now-cell-period chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1" title="' + escapeText(detail) + '">Cell. ' + escapeText(label) + '</span>';
+    return '<button class="now-cell-period chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '">Cell. ' + escapeText(label) + '</button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
     : '';
   $("rain-bars").innerHTML = slices + aversePeriods + cellPeriods + noRainPeriod;
+  $("rain-bars").querySelectorAll("[data-open-nowcast]").forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    const details = $("nowcast-details");
+    if (!details) return;
+    details.hidden = false;
+    $("header-nowcast-link")?.setAttribute("aria-expanded", "true");
+    $("nowcast-title-toggle")?.setAttribute("aria-expanded", "true");
+    document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => $("radar-nowcast")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }));
   bindChartTooltips();
 }
 
