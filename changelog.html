@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique des versions · Météo les Tatins</title><style>:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424;background:#fff}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#fff}.site-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 28px 12px;border-bottom:1px solid #d4d4d4}.site-header h1{margin:0;font-size:38px;line-height:1;letter-spacing:-.03em}.site-header h1 a{color:#242424;text-decoration:none}.header-subtitle{margin:7px 0 0;color:#e99512;font-size:15px;font-weight:850;letter-spacing:.02em}.header-subtitle a{color:inherit;text-underline-offset:3px}.app-version{margin-top:45px;color:#8a969c;font-size:10px;font-weight:700;line-height:1;text-decoration:none}.changelog-main{padding:22px 28px;overflow:auto}.changelog-main pre{width:max-content;min-width:100%;margin:0;white-space:pre;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}@media(max-width:760px){.site-header{padding:16px 16px 10px}.site-header h1{font-size:31px}.header-subtitle{margin-bottom:10px;font-size:10px}.app-version{margin-top:38px}.changelog-main{padding:16px}}</style><script src="runtime-config.js?v=2.160" defer></script><script src="analytics.js?v=1" defer></script></head><body><header class="site-header"><div><h1><a href="index.html">Météo les Tatins</a></h1><p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p></div><a class="app-version" href="changelog.html">v2.160</a></header><main class="changelog-main"><pre>09/08/2026 22:30 — v1.001 — Mise en ligne, premiers tests.
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique des versions · Météo les Tatins</title><style>:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424;background:#fff}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#fff}.site-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 28px 12px;border-bottom:1px solid #d4d4d4}.site-header h1{margin:0;font-size:38px;line-height:1;letter-spacing:-.03em}.site-header h1 a{color:#242424;text-decoration:none}.header-subtitle{margin:7px 0 0;color:#e99512;font-size:15px;font-weight:850;letter-spacing:.02em}.header-subtitle a{color:inherit;text-underline-offset:3px}.app-version{margin-top:45px;color:#8a969c;font-size:10px;font-weight:700;line-height:1;text-decoration:none}.changelog-main{padding:22px 28px;overflow:auto}.changelog-main pre{width:max-content;min-width:100%;margin:0;white-space:pre;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}@media(max-width:760px){.site-header{padding:16px 16px 10px}.site-header h1{font-size:31px}.header-subtitle{margin-bottom:10px;font-size:10px}.app-version{margin-top:38px}.changelog-main{padding:16px}}</style><script src="runtime-config.js?v=3.000" defer></script><script src="analytics.js?v=1" defer></script></head><body><header class="site-header"><div><h1><a href="index.html">Météo les Tatins</a></h1><p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p></div><a class="app-version" href="changelog.html">v3.000</a></header><main class="changelog-main"><pre>09/08/2026 22:30 — v1.001 — Mise en ligne, premiers tests.
 09/08/2026 22:40 — v1.002 — Première version : prévisions, radar, foudre, administration, caches et outils de lancement.
 09/08/2026 23:10 — v1.003 — Configuration
 09/08/2026 23:45 — v1.004 — Ajout des scripts de déploiement et mise en place de l'administration.
@@ -239,9 +239,7 @@
 16/08/2026 08:20 — v2.117 — PE-ARPEGE lisse et reprend ses acquisitions sans rafale ni perte, tandis que les orages de la synthèse 48 h retrouvent leur emplacement dans la zone graphique.
 16/08/2026 08:55 — v2.118 — Les pastilles API conduisent à leur chapitre dans About, dont chaque titre donne accès à la documentation officielle.
 16/08/2026 10:39 — v2.119 — PE-ARPEGE conserve 90 requêtes par minute mais sérialise sans téléchargements concurrents et mémorise durablement toute suspension d’une heure.
-
 16/08/2026 13:46 — v2.120 — Correction des périodes horaires de pluie.
-
 16/08/2026 13:55 — v2.121 — Orages visibles dès 3/5 dans la synthèse 48 h.
 16/08/2026 15:15 — v2.122 — Une cellule à moins de 2 km impose au moins 40 % de probabilité de passage, la flèche conserve l’évolution du risque et attend une confirmation avant de signaler l’éloignement d’un passage certain, tandis que les prévisions de pluie PIAF encore valides restent affichées pendant une panne.
 16/08/2026 16:17 — v2.123 — La page News interprète correctement les titres, paragraphes, listes et autres éléments Markdown sans conserver une ancienne version en cache.
@@ -255,55 +253,32 @@
 20/08/2026 09:22 — v2.131 — La synthèse vent visible reste neutre, ses survols détaillent les sources, les périodes de jour complètes n’absorbent plus la nuit et une probabilité de pluie seule ne crée plus de période pluvieuse.
 20/08/2026 09:56 — v2.132 — Le nowcasting suit l'historique des cellules, prolonge les trajectoires fiables malgré les phases stationnaires et rend les cônes proportionnels à la probabilité et à l'incertitude.
 20/08/2026 10:52 — v2.133 — Le nowcasting plafonne les probabilités selon l'incertitude liée à la distance, limite le score de risque aux cellules locales et peut rejouer les archives radar localement pour contrôler les trajectoires.
-
 20/08/2026 11:46 — v2.134 — Le nowcasting abaisse les quasi-ratés sans ETA et ajoute un replay animé local pour suivre l'évolution des cellules, cônes et probabilités.
-
 20/08/2026 12:02 — v2.135 — Les cônes nowcasting partent du bord avant des cellules dans la carte et le replay interactif.
-
 20/08/2026 12:06 — v2.136 — Le calcul de passage suit la distance du bord des cellules et les cônes comme les trajectoires sont dégagés du disque visible.
-
 20/08/2026 12:24 — v2.137 — Le nowcasting remplace les cônes pleins par une trajectoire calculée et des halos de probabilité qui s'effacent à zéro.
-
 20/08/2026 12:37 — v2.138 — Le nowcasting rend les trajectoires plus lisibles, affiche l'horizon complet du replay et ajoute un plancher contextuel de passage quand plusieurs cellules sont proches.
-
 20/08/2026 12:47 — v2.139 — Les flèches de trajectoire du nowcasting deviennent de petits chevrons discrets.
-
 20/08/2026 12:54 — v2.140 — La carte nowcasting privilégie l'échelle locale 20 km et n'affiche plus qu'une trajectoire probabiliste principale pour rester lisible.
-
 20/08/2026 13:04 — v2.141 — Le nowcasting remplace les halos ponctuels par un cône continu aux bords flous, avec de petits chevrons près de la cellule.
-
 20/08/2026 13:08 — v2.142 — Le cône nowcasting démarre sans coupe nette au bord de la cellule et ne conserve qu'un seul chevron de direction.
-
 20/08/2026 13:15 — v2.143 — Le cône nowcasting part désormais des bords de la cellule et le trait central de trajectoire est retiré.
-
 20/08/2026 13:24 — v2.144 — Le nowcasting affiche une ETA possible dès que le cône de probabilité atteint Les Tatins, sans appliquer les planchers forts réservés au noyau de cellule.
-
 20/08/2026 13:34 — v2.145 — La flèche d'évolution nowcasting tient compte de l'ETA et la frise pluie 3 h marque le créneau de présence possible des cellules.
-
 20/08/2026 13:39 — v2.146 — La frise pluie 3 h étend la présence possible des cellules sur plusieurs créneaux selon leur taille et leur vitesse, avec cumul des cellules simultanées.
-
 20/08/2026 13:52 — v2.147 — La case Orage 3 h se colore selon la probabilité de passage et les marqueurs ETA de la frise pluie ouvrent directement le nowcasting.
-
 20/08/2026 14:02 — v2.148 — La synthèse pluie 48 h conserve le cumul du modèle qui voit la pluie quand l'autre modèle reste sec, au lieu de diviser ce signal par deux.
-
 20/08/2026 14:11 — v2.149 — Dans l'encadré 3 h, la case Orage reste neutre aux niveaux 1/5 et 2/5 ; les couleurs de fond commencent à partir de 3/5.
-
 20/08/2026 14:21 — v2.150 — La pluie de la synthèse 48 h utilise désormais une confiance propre par créneau, distincte de l'accord global température/vent, et les signaux vus par un seul modèle restent lisibles sans être artificiellement divisés.
-
 20/08/2026 14:43 — v2.151 — La frise pluie 3 h affiche les cellules en ETA comme une surcharge de cumul Nowcasting sur les créneaux PIAF concernés, sans afficher les noms de cellules en lecture directe.
-
 20/08/2026 14:50 — v2.152 — Les surcharges Nowcasting de la frise pluie 3 h affichent seulement leur cumul visible, avec les détails au survol, et la source Nowcasting ouvre directement la carte.
-
 20/08/2026 14:55 — v2.153 — Le nowcasting affiche un cône faible dès qu'une trajectoire existe même sans passage calculé, et le plancher de passage des cellules proches diminue progressivement entre 2 et 5 km.
-
 20/08/2026 15:27 — v2.154 — La synthèse pluie 3 h affiche le cumul PIAF puis l'amendement Nowcasting entre parenthèses quand une cellule ETA ajoute un cumul.
-
 20/08/2026 15:34 — v2.155 — Les survols Nowcasting de la frise pluie 3 h sont raccourcis et n'affichent plus de double infobulle.
-
 20/08/2026 16:02 — v2.156 — Le nowcasting conserve la forme réelle des cellules pour calculer leur bord, leur passage et leur ETA, rétablit l'historique de mouvement et n'abaisse plus PIAF avec le radar.
-
 20/08/2026 16:20 — v2.157 — La frise pluie utilise l'heure de validité PIAF afin de rester calée après le recalage d'une prévision mise en cache.
-
 20/08/2026 16:25 — v2.158 — La flèche des cellules suit le sens réel de la trajectoire et les premières heures de la frise 48 h reprennent les cumuls Météo-France amendés par le Nowcasting.
 20/08/2026 16:44 — v2.159 — Les frises 3 h et 48 h affichent le cumul pluie total, avec la part ajoutée par le Nowcasting représentée en bandes orange sur la frise 48 h.
-20/08/2026 17:09 — v2.160 — La carte Nowcasting dessine l’emprise radar réelle des cellules sans remplir artificiellement les creux de leur enveloppe convexe ; le bord affiché et le départ du cône utilisent la même géométrie que la probabilité de passage.</pre></main></body></html>
+20/08/2026 17:09 — v2.160 — La carte Nowcasting dessine l’emprise radar réelle des cellules sans remplir artificiellement les creux de leur enveloppe convexe ; le bord affiché et le départ du cône utilisent la même géométrie que la probabilité de passage.
+20/08/2026 17:21 — v2.161 — La carte Nowcasting repasse automatiquement de 20 à 60 km lorsque les cellules saturent la vue rapprochée, avec une marge de retour évitant les changements d’échelle incessants.
+20/08/2026 17:30 — v3.000 — Le Nowcasting entre en version 3 avec des cellules fondées sur leur emprise radar réelle ; l’historique des modifications adopte un espacement uniforme.</pre></main></body></html>
