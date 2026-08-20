@@ -622,11 +622,9 @@ button:hover { background: #eef7fb; }
 .three-hour-action-body b { margin-left: auto; white-space: nowrap; font-size: 15px; font-variant-numeric: tabular-nums; }
 .three-hour-action.metric-storm .three-hour-action-body { width: 100%; flex-wrap: wrap; gap: 5px 9px; }
 .three-hour-storm-timing { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
-.three-hour-storm-window { display: inline-flex; flex: 0 0 auto; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; min-width: 0; color: #173f57; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.three-hour-storm-window { display: inline-flex; flex: 0 0 auto; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; min-width: 0; margin-left: auto; color: #173f57; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .three-hour-storm-eta { font-size: 13px; font-weight: 850; line-height: 1.05; }
 .three-hour-storm-duration { font-size: 10px; font-weight: 800; line-height: 1.05; }
-.three-hour-storm-intensity { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: #173f57; font-size: 15px; font-weight: 850; white-space: nowrap; }
-.three-hour-storm-intensity strong { font: inherit; }
 .three-hour-action .week-metric-pictogram { min-width: 0; gap: 4px; }
 .three-hour-action .week-metric-pictogram svg { width: 23px; height: 23px; flex: 0 0 23px; }
 .three-hour-action .week-metric-scale { width: 52px; }
@@ -861,7 +859,6 @@ button:hover { background: #eef7fb; }
   .three-hour-storm-eta { font-size: 9px; }
   .three-hour-storm-duration { font-size: 7px; }
   .three-hour-action-body > b { grid-column: 1 / -1; justify-self: center; margin-left: 0; font-size: 12px; }
-  .three-hour-action.metric-storm .three-hour-storm-intensity { flex-basis: 100%; justify-content: center; margin-left: 0; }
   .nowcast-heading { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px; }
   .nowcast-heading h2 { flex: 0 0 auto; }
   .nowcast-heading .section-api-links { width: auto; min-width: 0; align-self: center; justify-self: end; flex-wrap: nowrap; justify-content: flex-end; margin-left: 0; }
