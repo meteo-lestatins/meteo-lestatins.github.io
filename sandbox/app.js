@@ -107,6 +107,7 @@ const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
 const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
 const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
+const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
 const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
   + sourceLink("piaf", "api-piaf", "PIAF")
   + sourceLink("arome", "api-arome", "AROME")
@@ -114,7 +115,7 @@ const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink()
 
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
-  if ($("rain-api-links")) $("rain-api-links").innerHTML = activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "api-piaf", "PIAF") + radarLink();
+  if ($("rain-api-links")) $("rain-api-links").innerHTML = (activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "api-piaf", "PIAF") + radarLink()) + nowcastDisplayLink();
   if ($("nowcast-api-links")) $("nowcast-api-links").innerHTML = radarLink() + (window.METEO_REPLAY ? "" : lightningLink());
   refreshSourceIndicators();
 }
@@ -2098,7 +2099,7 @@ function renderActiveRain() {
   if (!data) return;
   const useOpenMeteo = activeRainSource === "openmeteo" || !data.piaf;
   if (useOpenMeteo) {
-    if ($("rain-api-links")) $("rain-api-links").innerHTML = openMeteoLink();
+    if ($("rain-api-links")) $("rain-api-links").innerHTML = openMeteoLink() + nowcastDisplayLink();
     const probabilityByHour = new Map((data.openMeteo?.hours || []).map(item => [item.time.slice(0, 13), item.probability]));
     const values = (data.openMeteo?.minutely15 || []).map(item => ({
       ...item,
@@ -2106,7 +2107,7 @@ function renderActiveRain() {
     }));
     if (values.length) renderPiaf({ values, source: "openmeteo" });
   } else {
-    if ($("rain-api-links")) $("rain-api-links").innerHTML = sourceLink("piaf", "api-piaf", "PIAF") + radarLink();
+    if ($("rain-api-links")) $("rain-api-links").innerHTML = sourceLink("piaf", "api-piaf", "PIAF") + radarLink() + nowcastDisplayLink();
     if (data.piaf) renderPiaf(data.piaf, data.radar);
   }
   refreshSourceIndicators();
@@ -3756,13 +3757,16 @@ function renderPiaf(piaf, radar = null) {
         if (eventEnd <= interval.start || eventStart >= interval.end) return;
         const item = values[slotIndex];
         const precipitation = precipitationFor(item);
+        const overlapMinutes = Math.max(0, Math.min(eventEnd, interval.end) - Math.max(eventStart, interval.start)) / 60000;
+        const etaRain = Math.round(Math.max(0, Number(cell.maximum) || 0) * overlapMinutes / 60 * 100) / 100;
         const detail = "Cellule " + cell.id
           + "\n" + etaLabel + shortEtaLabel(etaMinutes)
           + "\nPrésence estimée : " + hourFormat.format(new Date(eventStart)) + "–" + hourFormat.format(new Date(eventEnd))
           + "\nPassage : " + passage + " %"
+          + "\nSurcharge nowcasting sur ce créneau : " + etaRain.toFixed(2) + " mm"
           + "\nCumul prévu sur ce créneau : " + precipitation.toFixed(2) + " mm"
           + (Number.isFinite(Number(item.radarPrecipitation)) ? "\nPIAF : " + Number(item.precipitation || 0).toFixed(2) + " mm · radar extrapolé : " + Number(item.radarPrecipitation).toFixed(2) + " mm" : "");
-        const entry = { id: cell.id, passage, etaMinutes, etaBasis: cell.etaBasis, detail };
+        const entry = { id: cell.id, passage, etaMinutes, etaBasis: cell.etaBasis, etaRain, detail };
         if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
         cellEtaSlots.get(slotIndex).push(entry);
       });
@@ -3806,10 +3810,13 @@ function renderPiaf(piaf, radar = null) {
     : '').join('');
   const cellPeriods = [...cellEtaSlots.entries()].map(([index, entries]) => {
     entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
-    const primary = entries[0];
-    const label = entries.length > 1 ? entries.map(entry => entry.id).join("+") : primary.id;
-    const detail = entries.map(entry => entry.detail).join("\n\n");
-    return '<button class="now-cell-period chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '">Cell. ' + escapeText(label) + '</button>';
+    const etaRain = Math.round(entries.reduce((total, entry) => total + Math.max(0, Number(entry.etaRain) || 0), 0) * 100) / 100;
+    const passage = Math.max(...entries.map(entry => Number(entry.passage) || 0));
+    const height = etaRain > 0 ? Math.min(100, Math.max(4, etaRain / fullScaleRain * 100)) : 4;
+    const alpha = Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
+    const label = etaRain >= .05 ? etaRain.toFixed(etaRain < 1 ? 2 : 1) + " mm" : "";
+    const detail = "Synthèse PIAF + Nowcasting\nSurcharge nowcasting : " + etaRain.toFixed(2) + " mm\nPassage max : " + passage + " %\n\n" + entries.map(entry => entry.detail).join("\n\n");
+    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span><span class="now-cell-overlay-label">' + escapeText(label) + '</span></button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
@@ -3817,13 +3824,7 @@ function renderPiaf(piaf, radar = null) {
   $("rain-bars").innerHTML = slices + aversePeriods + cellPeriods + noRainPeriod;
   $("rain-bars").querySelectorAll("[data-open-nowcast]").forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
-    const details = $("nowcast-details");
-    if (!details) return;
-    details.hidden = false;
-    $("header-nowcast-link")?.setAttribute("aria-expanded", "true");
-    $("nowcast-title-toggle")?.setAttribute("aria-expanded", "true");
-    document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", "true");
-    requestAnimationFrame(() => $("radar-nowcast")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    setNowcastOpen(true, true);
   }));
   bindChartTooltips();
 }
@@ -3936,23 +3937,34 @@ async function renderAppVersion() {
   renderAppVersion.timer = setTimeout(renderAppVersion, 60000);
 }
 
+function setNowcastOpen(open, scroll = false) {
+  const link = $("header-nowcast-link");
+  const details = $("nowcast-details");
+  const titleToggle = $("nowcast-title-toggle");
+  if (!details) return;
+  details.hidden = !open;
+  link?.setAttribute("aria-expanded", String(open));
+  titleToggle?.setAttribute("aria-expanded", String(open));
+  document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", String(open));
+  if (open && scroll) details.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function bindHeaderNowcastLink() {
   const link = $("header-nowcast-link");
   const details = $("nowcast-details");
   const titleToggle = $("nowcast-title-toggle");
   if (!link || !details || !titleToggle) return;
-  const setOpen = (open, scroll = false) => {
-    details.hidden = !open;
-    link.setAttribute("aria-expanded", String(open));
-    titleToggle.setAttribute("aria-expanded", String(open));
-    document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", String(open));
-    if (open && scroll) details.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
   link.addEventListener("click", event => {
     event.preventDefault();
-    setOpen(details.hidden, details.hidden);
+    setNowcastOpen(details.hidden, details.hidden);
   });
-  titleToggle.addEventListener("click", () => setOpen(details.hidden));
+  titleToggle.addEventListener("click", () => setNowcastOpen(details.hidden));
+  document.addEventListener("click", event => {
+    const trigger = event.target.closest("[data-open-nowcast-link]");
+    if (!trigger) return;
+    event.preventDefault();
+    setNowcastOpen(true, true);
+  });
 }
 
 bindForecastLayout();
