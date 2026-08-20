@@ -3138,7 +3138,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const compactDesktopMap = !window.matchMedia("(max-width: 1100px)").matches;
+  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
+  const compactDesktopMap = nowcastContainerWidth >= 1250;
   const width = compactDesktopMap ? 640 : 360;
   const height = compactDesktopMap ? 640 : 360;
   const radarCells = (radar?.cells || []).filter(cell => {
@@ -3367,7 +3368,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></circle>';
     const cellLabelX = shapeRuns.length ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4 : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - radius - 4;
     const cellLabelY = shapeRuns.length ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4 : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - radius - 4;
-    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellEdgeX.toFixed(1) + '" y1="' + cellEdgeY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><g aria-hidden="true">' + intensityDots + '</g></g>' + cellShape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + cellLabelX.toFixed(1) + '" y="' + cellLabelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
+    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '">' + cellShape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + cellLabelX.toFixed(1) + '" y="' + cellLabelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text><line class="cell-distance-link" x1="' + cellEdgeX.toFixed(1) + '" y1="' + cellEdgeY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><g aria-hidden="true">' + intensityDots + '</g></g></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
   const secondaryTracks = '';
@@ -3409,7 +3410,8 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const compactDesktopMap = !window.matchMedia("(max-width: 1100px)").matches;
+  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
+  const compactDesktopMap = nowcastContainerWidth >= 1250;
   const width = compactDesktopMap ? 640 : 360;
   const height = compactDesktopMap ? 640 : 360;
   const scale = width === 360

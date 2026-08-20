@@ -1,6 +1,6 @@
 .contact-page { color: #242424; background: #fff; }
 .site-header h1 a { color: inherit; text-decoration: none; }
-.contact-header-nav { min-height: 38px; display: flex; align-items: center; gap: 7px; color: #a0a8ac; font-size: 19px; font-weight: 750; line-height: 1; }
+.contact-header-nav { min-height: 32px; display: flex; align-items: center; gap: 6px; color: #a0a8ac; font-size: 14px; font-weight: 750; line-height: 1; }
 .contact-header-nav a { color: #6f7f87; text-decoration: none; }
 .contact-header-nav a[aria-current="page"] { color: #397a9e; }
 .contact-header-nav a:hover, .contact-header-nav a:focus-visible { color: #397a9e; text-decoration: underline; }
@@ -35,7 +35,7 @@
   .contact-page .site-header { padding: 16px 16px 10px; }
   .contact-page .site-header h1 { font-size: 31px; }
   .contact-page .header-subtitle { margin-bottom: 10px; font-size: 10px; }
-  .contact-header-nav { min-height: 31px; font-size: 16px; }
+  .contact-header-nav { min-height: 28px; font-size: 12px; }
   .contact-main { padding: 30px 16px 42px; }
   .contact-heading { margin-bottom: 24px; }
   .contact-heading h2 { font-size: 24px; }
