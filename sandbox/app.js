@@ -406,6 +406,37 @@ function nowcastEtaRainAmount(events, windowStart, windowEnd) {
   }, 0) * 10) / 10;
 }
 
+function shortTermRainTrend(values, sourceDetail = "PIAF") {
+  const analysedValues = (values || []).slice(0, 12);
+  const series = analysedValues.map(item => Math.max(0, Number(item.precipitation) || 0));
+  const total = series.reduce((sum, value) => sum + value, 0);
+  const wetIndexes = series.map((value, index) => value > 0 ? index : -1).filter(index => index >= 0);
+  const stepDetail = series.length + " pas de 5 min sur l’heure à venir";
+  if (!wetIndexes.length || total <= 0) return { label: "stable", change: 0, detail: "Aucune pluie prévue par " + sourceDetail + " · " + stepDetail };
+
+  const middleIndex = (series.length - 1) / 2;
+  const mean = total / series.length;
+  const numerator = series.reduce((sum, value, index) => sum + (index - middleIndex) * (value - mean), 0);
+  const denominator = series.reduce((sum, _, index) => sum + (index - middleIndex) ** 2, 0) || 1;
+  const projectedChange = numerator / denominator * Math.max(0, series.length - 1);
+  const threshold = Math.max(.005, Math.max(...series) * .15);
+  const firstWet = wetIndexes[0];
+  const lastWet = wetIndexes.at(-1);
+  const lead = index => "+" + Math.round(Number(analysedValues[index]?.seconds) / 60) + " min";
+  const timing = "premier signal " + lead(firstWet) + " · dernier signal " + lead(lastWet) + " · " + stepDetail;
+
+  if (projectedChange > threshold) {
+    const wording = firstWet > 0 ? "Pluie arrivant" : "Pluie s’intensifiant";
+    return { label: "croissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
+  }
+  if (projectedChange < -threshold) {
+    const wording = lastWet < series.length - 1 ? "Pluie cessant" : "Pluie s’atténuant";
+    return { label: "decroissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
+  }
+  const wording = firstWet > 0 && lastWet < series.length - 1 ? "Passage pluvieux temporaire" : "Pluie globalement stable";
+  return { label: "stable", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
+}
+
 function formatRainAmount(value, decimals = 1) {
   const rounded = Math.round((Number(value) || 0) * 10 ** decimals) / 10 ** decimals;
   return rounded.toLocaleString("fr-FR", {
@@ -3415,50 +3446,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const average = group => group.reduce((sum, item) => sum + (Number(value(item)) || 0), 0) / Math.max(1, group.length);
     return { start: average(values.slice(0, count)), end: average(values.slice(-count)) };
   };
-  const piafRainTrend = values => {
-    const radarAdjusted = values.some(item => item.radarCellOverPoint);
-    const series = values.map(item => Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0));
-    const total = series.reduce((sum, value) => sum + value, 0);
-    const wetIndexes = series.map((value, index) => value > 0 ? index : -1).filter(index => index >= 0);
-    const stepDetail = series.length + " pas PIAF de 5 min analysés";
-    const sourceDetail = radarAdjusted ? "PIAF amendé par le radar" : "PIAF";
-    if (!wetIndexes.length || total <= 0) return { label: "stable", change: 0, detail: "Aucune pluie prévue par " + sourceDetail + " · " + stepDetail };
-
-    // Linear regression over every five-minute accumulation: isolated noise
-    // has little influence, while a rain band moving into or out of the period
-    // gives the arrow a clear direction.
-    const middleIndex = (series.length - 1) / 2;
-    const mean = total / series.length;
-    const numerator = series.reduce((sum, value, index) => sum + (index - middleIndex) * (value - mean), 0);
-    const denominator = series.reduce((sum, _, index) => sum + (index - middleIndex) ** 2, 0) || 1;
-    const projectedChange = numerator / denominator * Math.max(0, series.length - 1);
-    const threshold = Math.max(.005, Math.max(...series) * .15);
-    const firstWet = wetIndexes[0];
-    const lastWet = wetIndexes.at(-1);
-    const lead = index => "+" + Math.round(Number(values[index]?.seconds) / 60) + " min";
-    const timing = "premier signal " + lead(firstWet) + " · dernier signal " + lead(lastWet) + " · " + stepDetail;
-
-    const peak = Math.max(...series);
-    const peakIndex = series.indexOf(peak);
-    // La flèche suit l'évolution du premier épisode pluvieux : si les
-    // quantités montent vers un pic, elle monte, même si l'averse cesse plus tard.
-    if (peakIndex > firstWet && peak - series[firstWet] > threshold) {
-      return { label: "croissant", change: peak - series[firstWet], detail: "Pluie augmentant au fil des prochains créneaux selon PIAF · " + timing };
-    }
-    if (peakIndex === firstWet && (lastWet < series.length - 1 || peak - series[lastWet] > threshold)) {
-      return { label: "decroissant", change: series[lastWet] - peak, detail: "Pluie diminuant au fil des prochains créneaux selon PIAF · " + timing };
-    }
-    if (projectedChange > threshold) {
-      const wording = firstWet > 0 ? "Pluie arrivant" : "Pluie s’intensifiant";
-      return { label: "croissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
-    }
-    if (projectedChange < -threshold) {
-      const wording = lastWet < series.length - 1 ? "Pluie cessant" : "Pluie s’atténuant";
-      return { label: "decroissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
-    }
-    const wording = firstWet > 0 && lastWet < series.length - 1 ? "Passage pluvieux temporaire" : "Pluie globalement stable";
-    return { label: "stable", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
-  };
   const trendMarkup = (trend, source) => {
     const arrow = trend.label === "croissant"
       ? '<path d="M10 14V6m0 0L7 9m3-3 3 3"/>'
@@ -3625,7 +3612,23 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && currentObservation - previousObservation <= 45 * 60000
       ? cellPassageSnapshot
       : null;
-  const rainTrend = piafRainTrend(threeHours);
+  const rainTrendSteps = threeHours.map(item => {
+    const intervalEnd = piafItemEndTime(piaf, item);
+    const etaRain = Number.isFinite(intervalEnd)
+      ? nowcastEtaRainAmount(etaRainEvents, intervalEnd - 5 * 60000, intervalEnd)
+      : 0;
+    return {
+      seconds: item.seconds,
+      precipitation: Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0) + etaRain,
+      etaRain
+    };
+  });
+  const rainTrendUsesEta = rainTrendSteps.slice(0, 12).some(item => item.etaRain > 0);
+  const rainTrendUsesRadar = threeHours.slice(0, 12).some(item => item.radarCellOverPoint);
+  const rainTrendSource = rainTrendUsesEta
+    ? "PIAF + Nowcasting"
+    : rainTrendUsesRadar ? "PIAF amendé par le radar" : "PIAF";
+  const rainTrend = shortTermRainTrend(rainTrendSteps, rainTrendSource);
   const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
   const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
   const snapshotPassages = previousPassageSnapshot
@@ -4001,9 +4004,9 @@ function renderPiaf(piaf, radar = null) {
       });
     });
   }
-  // Echelle absolue : 2 mm en 15 minutes (8 mm/h) remplit le graphique.
-  // Ainsi 0,1 mm reste discret, tandis qu'une pluie moderee est lisible.
-  const fullScaleRain = 2;
+  // La correction d'unité radar rend désormais les cumuls réels. Revenir à
+  // 4 mm en 15 minutes évite de saturer les épisodes modérés à soutenus.
+  const fullScaleRain = 4;
   $("rain-bars").style.gridTemplateColumns = "repeat(" + values.length + ", minmax(0, 1fr))";
   $("rain-axis").style.gridTemplateColumns = "repeat(" + values.length + ", minmax(0, 1fr))";
   $("rain-axis").innerHTML = slotTimes.map((time, index) => {
@@ -4043,16 +4046,17 @@ function renderPiaf(piaf, radar = null) {
     const passage = Math.max(...entries.map(entry => Number(entry.passage) || 0));
     const height = etaRain > 0 ? Math.min(100, Math.max(4, etaRain / fullScaleRain * 100)) : 4;
     const alpha = Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
-    const label = passage > 0 ? Math.round(passage) + " %" : "";
+    const label = passage > 0 && passage < 100 ? Math.round(passage) + " %" : "";
     const etaWindowStart = Math.min(...entries.map(entry => entry.eventStart));
     const etaWindowEnd = Math.max(...entries.map(entry => entry.eventEnd));
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
     const detail = "Nowcasting · cumul si passage : +" + etaRain.toFixed(2) + " mm"
-      + "\nProbabilité de passage : " + passage + " %"
+      + (passage < 100 ? "\nProbabilité de passage : " + passage + " %" : "")
       + "\n" + etaLabels.join(" · ")
       + "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd))
       + "\nClic : ouvrir la carte";
-    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span><span class="now-cell-overlay-label">' + escapeText(label) + '</span></button>';
+    const labelMarkup = label ? '<span class="now-cell-overlay-label">' + escapeText(label) + '</span>' : '';
+    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span>' + labelMarkup + '</button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
