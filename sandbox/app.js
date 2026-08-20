@@ -2209,7 +2209,13 @@ function renderComparisonForecast(arome, openMeteo) {
   const rainBars = hours.map((pair, index) => {
     const mfWet = pair.meteoFrance.rain >= measurableRainThreshold;
     const omWet = pair.openMeteo.rain >= measurableRainThreshold;
-    const amount = average(pair, "rain");
+    const minimum = Math.min(pair.meteoFrance.rain, pair.openMeteo.rain);
+    const maximum = Math.max(pair.meteoFrance.rain, pair.openMeteo.rain);
+    const singleModelRain = mfWet !== omWet;
+    // If one model is dry and the other has measurable rain, averaging would
+    // turn a real signal into a half-cumul. Keep the wet model's amount in
+    // that case; average only when both models actually forecast rain.
+    const amount = mfWet && omWet ? average(pair, "rain") : singleModelRain ? maximum : average(pair, "rain");
     const omShower = Number(pair.openMeteo.probability) > 0 && (Number(pair.openMeteo.weatherCode) >= 80 || pair.openMeteo.rain < measurableRainThreshold);
     if (!mfWet && !omWet && !omShower) return "";
     if (!mfWet && !omWet && omShower) {
@@ -2217,17 +2223,18 @@ function renderComparisonForecast(arome, openMeteo) {
       const detail = 'Averse selon Open-Meteo\nProbabilité : ' + probability + ' %\nCumul horaire : ' + pair.openMeteo.rain.toFixed(2) + ' mm';
       return '<g class="comparison-shower chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><rect x="' + (index * cell + 10) + '" y="278" width="' + (cell - 20) + '" height="16" rx="8"/><text x="' + x(index) + '" y="289" text-anchor="middle">Averse · ' + probability + ' %</text></g>';
     }
-    const minimum = Math.min(pair.meteoFrance.rain, pair.openMeteo.rain);
-    const maximum = Math.max(pair.meteoFrance.rain, pair.openMeteo.rain);
     const barHeight = Math.min(66, Math.max(6, Math.sqrt(Math.max(amount, .02)) * 35));
     const minHeight = Math.min(barHeight, Math.sqrt(Math.max(minimum, .01)) * 35);
     const maxHeight = Math.min(66, Math.max(barHeight, Math.sqrt(Math.max(maximum, .02)) * 35));
     const rainAgreement = mfWet && omWet ? agreement(pair) : 18;
-    const singleModelRain = mfWet !== omWet;
     const probability = Number(pair.openMeteo.probability);
     const probabilityLabel = Number.isFinite(probability) ? Math.round(probability) + ' %' : '—';
     const amountLabel = (singleModelRain ? maximum : amount).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mm';
-    const detail = 'Précipitations : ' + amount.toFixed(2) + ' mm\nMétéo-France (' + meteoFranceRainSource(pair.meteoFrance) + ') : ' + pair.meteoFrance.rain.toFixed(2) + ' mm\nOpen-Meteo : ' + pair.openMeteo.rain.toFixed(2) + ' mm · probabilité ' + probabilityLabel + '\nPlage : ' + minimum.toFixed(2) + ' – ' + maximum.toFixed(2) + ' mm';
+    const detail = 'Précipitations synthèse : ' + amount.toFixed(2) + ' mm'
+      + (singleModelRain ? '\nUn seul modèle voit la pluie : cumul non divisé par deux.' : '')
+      + '\nMétéo-France (' + meteoFranceRainSource(pair.meteoFrance) + ') : ' + pair.meteoFrance.rain.toFixed(2) + ' mm'
+      + '\nOpen-Meteo : ' + pair.openMeteo.rain.toFixed(2) + ' mm · probabilité ' + probabilityLabel
+      + '\nPlage : ' + minimum.toFixed(2) + ' – ' + maximum.toFixed(2) + ' mm';
     const valueLabel = singleModelRain ? amountLabel + ' · ' + probabilityLabel : amount.toFixed(amount < 1 ? 1 : 0) + ' mm';
     return '<g class="comparison-rain-group' + (singleModelRain ? ' comparison-rain-single' : '') + ' chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><rect class="comparison-rain-range" x="' + (index * cell + 17) + '" y="' + (298 - maxHeight) + '" width="' + (cell - 34) + '" height="' + maxHeight + '" style="opacity:' + opacity(rainAgreement, .18) + '"/><rect class="comparison-rain" x="' + (index * cell + 24) + '" y="' + (298 - barHeight) + '" width="' + (cell - 48) + '" height="' + barHeight + '" style="opacity:' + opacity(rainAgreement, .24) + '"/><line class="comparison-rain-min" x1="' + (index * cell + 18) + '" x2="' + (index * cell + cell - 18) + '" y1="' + (298 - minHeight) + '" y2="' + (298 - minHeight) + '" style="opacity:' + opacity(rainAgreement, .24) + '"/><text class="comparison-rain-value" x="' + x(index) + '" y="' + (294 - maxHeight) + '" text-anchor="middle">' + valueLabel + '</text></g>';
   }).join("");

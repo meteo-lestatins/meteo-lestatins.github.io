@@ -599,8 +599,8 @@ button:hover { background: #eef7fb; }
 .three-hour-action.actionable[aria-expanded="true"] { border-color: #397a9e; background: #eef8fc; }
 .three-hour-action.actionable:focus-visible { outline: 2px solid #1686b5; outline-offset: 2px; }
 .three-hour-action.metric-storm.level-0 { border-color: #d7e3e8; background: #fff; }
-.three-hour-action.metric-storm.level-1 { border-color: #e5d58a; background: #fffbe1; }
-.three-hour-action.metric-storm.level-2 { border-color: #edc46b; background: #fff0c5; }
+.three-hour-action.metric-storm.level-1 { border-color: #d7e3e8; background: #fff; }
+.three-hour-action.metric-storm.level-2 { border-color: #d7e3e8; background: #f7fafc; }
 .three-hour-action.metric-storm.level-3 { border-color: #e4a45d; background: #ffe2ba; }
 .three-hour-action.metric-storm.level-4 { border-color: #df8d83; background: #ffd7d0; }
 .three-hour-action.metric-storm.level-5 { border-color: #d86c68; background: #ffc9c4; }
