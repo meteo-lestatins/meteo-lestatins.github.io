@@ -362,6 +362,57 @@ function shortEtaLabel(minutes) {
   return Math.round(minutes) + " min";
 }
 
+function nowcastEtaRainEvents(radar) {
+  const radarObservedAt = new Date(radar?.observedAt || 0).getTime();
+  if (!Number.isFinite(radarObservedAt)) return [];
+  const clampDuration = minutes => Math.max(15, Math.min(90, minutes));
+  const footprintAtEta = cell => {
+    const etaMinutes = Number(cell.etaMinutes);
+    const points = cell.track?.points || [];
+    const closestPoint = points.reduce((best, point) => {
+      const distance = Math.abs(Number(point.minutes) - etaMinutes);
+      return !best || distance < best.distance ? { point, distance } : best;
+    }, null)?.point;
+    if (cell.etaBasis === "envelope") return Math.max(Number(cell.radiusKm) || 0, Number(closestPoint?.uncertaintyKm) || 0);
+    return Math.max(0, Number(cell.radiusKm) || 0) + 2;
+  };
+  return (radar?.cells || []).map(cell => {
+    const etaMinutes = Number(cell.etaMinutes);
+    const passage = Math.round(Number(cell.risks?.passage) || 0);
+    if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return null;
+    const speedKmh = Math.max(1, Number(cell.track?.speedKmh) || 0);
+    const footprintKm = footprintAtEta(cell);
+    const durationMinutes = clampDuration(speedKmh > 2 ? 60 * (footprintKm * 2) / speedKmh : 45);
+    const eventStart = radarObservedAt + etaMinutes * 60000;
+    const eventEnd = eventStart + durationMinutes * 60000;
+    return {
+      cell,
+      etaMinutes,
+      passage,
+      eventStart,
+      eventEnd,
+      maximum: Math.max(0, Number(cell.maximum) || 0),
+      etaLabel: cell.etaBasis === "envelope" ? "ETA possible " : "ETA "
+    };
+  }).filter(Boolean);
+}
+
+function nowcastEtaRainAmount(events, windowStart, windowEnd) {
+  if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return 0;
+  return Math.round(events.reduce((sum, event) => {
+    const overlapMinutes = Math.max(0, Math.min(event.eventEnd, windowEnd) - Math.max(event.eventStart, windowStart)) / 60000;
+    return sum + event.maximum * overlapMinutes / 60;
+  }, 0) * 10) / 10;
+}
+
+function formatRainAmount(value, decimals = 1) {
+  const rounded = Math.round((Number(value) || 0) * 10 ** decimals) / 10 ** decimals;
+  return rounded.toLocaleString("fr-FR", {
+    minimumFractionDigits: rounded % 1 === 0 ? 0 : decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
 function renderApproachingCellsAlert(radar) {
   const banner = $("cell-approach-alert");
   const approaching = (radar?.cells || [])
@@ -3155,8 +3206,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const firstPiafRain = (piaf?.values || []).find(item => Number(item.nowcastPrecipitation ?? item.precipitation) >= measurableRainThreshold);
   const etaSeconds = radar.etaSeconds ?? firstPiafRain?.seconds ?? null;
   const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
-  const rainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Number(item.nowcastPrecipitation ?? item.precipitation) || 0), 0) * 10) / 10;
   const now = appNow();
+  const piafRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.precipitation) || 0)), 0) * 10) / 10;
+  const radarAdjustedRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0)), 0) * 10) / 10;
+  const directRadarRainAmendment = Math.max(0, Math.round((radarAdjustedRainAmount - piafRainAmount) * 10) / 10);
+  const etaRainEvents = nowcastEtaRainEvents(radar);
+  const etaRainAmendment = nowcastEtaRainAmount(etaRainEvents, now, now + 3 * 3600000);
+  const nowcastRainAmendment = Math.round((directRadarRainAmendment + etaRainAmendment) * 10) / 10;
+  const rainAmount = Math.round((piafRainAmount + nowcastRainAmendment) * 10) / 10;
   const upcomingWind = (arome?.hours || []).filter(item => {
     const time = new Date(item.time).getTime();
     return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
@@ -3597,13 +3654,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
   const radarOverPoint = threeHours.some(item => item.radarCellOverPoint);
-  const rainDetail = "Pluie · cumul PIAF prévu sur 3 h amendé par le radar : " + rainAmount.toFixed(1) + " mm"
+  const rainValue = formatRainAmount(piafRainAmount) + " mm" + (nowcastRainAmendment > 0 ? " (+" + formatRainAmount(nowcastRainAmendment) + " mm)" : "");
+  const rainDetail = "Pluie · cumul PIAF prévu sur 3 h : " + formatRainAmount(piafRainAmount) + " mm"
+    + (nowcastRainAmendment > 0 ? " · amendement Nowcasting : +" + formatRainAmount(nowcastRainAmendment) + " mm · total indicatif : " + formatRainAmount(rainAmount) + " mm" : "")
     + (radarOverPoint ? " · cellule au-dessus des Tatins : priorité au radar à courte échéance" : "")
     + " · " + rainTrend.detail;
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainAmount.toFixed(1) + ' mm', rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainValue, rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', stormPassageLevel, { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail, showIntensity: Boolean(relevantStormCell) })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
@@ -3733,44 +3792,23 @@ function renderPiaf(piaf, radar = null) {
   };
   const slotIntervals = values.map(slotIntervalFor);
   const cellEtaSlots = new Map();
-  const clampDuration = minutes => Math.max(15, Math.min(90, minutes));
-  const footprintAtEta = cell => {
-    const etaMinutes = Number(cell.etaMinutes);
-    const points = cell.track?.points || [];
-    const closestPoint = points.reduce((best, point) => {
-      const distance = Math.abs(Number(point.minutes) - etaMinutes);
-      return !best || distance < best.distance ? { point, distance } : best;
-    }, null)?.point;
-    if (cell.etaBasis === "envelope") return Math.max(Number(cell.radiusKm) || 0, Number(closestPoint?.uncertaintyKm) || 0);
-    return Math.max(0, Number(cell.radiusKm) || 0) + 2;
-  };
-  const radarObservedAt = new Date(radar?.observedAt || 0).getTime();
-  if (Number.isFinite(radarObservedAt)) {
-    (radar?.cells || []).forEach(cell => {
-      const etaMinutes = Number(cell.etaMinutes);
-      const passage = Math.round(Number(cell.risks?.passage) || 0);
-      if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return;
-      const etaTime = radarObservedAt + etaMinutes * 60000;
-      const speedKmh = Math.max(1, Number(cell.track?.speedKmh) || 0);
-      const footprintKm = footprintAtEta(cell);
-      const durationMinutes = clampDuration(speedKmh > 2 ? 60 * (footprintKm * 2) / speedKmh : 45);
-      const eventStart = etaTime;
-      const eventEnd = etaTime + durationMinutes * 60000;
-      const etaLabel = cell.etaBasis === "envelope" ? "ETA possible " : "ETA ";
+  const etaRainEvents = nowcastEtaRainEvents(radar);
+  if (etaRainEvents.length) {
+    etaRainEvents.forEach(event => {
+      const cell = event.cell;
       slotIntervals.forEach((interval, slotIndex) => {
-        if (eventEnd <= interval.start || eventStart >= interval.end) return;
+        if (event.eventEnd <= interval.start || event.eventStart >= interval.end) return;
         const item = values[slotIndex];
         const precipitation = precipitationFor(item);
-        const overlapMinutes = Math.max(0, Math.min(eventEnd, interval.end) - Math.max(eventStart, interval.start)) / 60000;
-        const etaRain = Math.round(Math.max(0, Number(cell.maximum) || 0) * overlapMinutes / 60 * 100) / 100;
+        const etaRain = nowcastEtaRainAmount([event], interval.start, interval.end);
         const detail = "Cellule " + cell.id
-          + "\n" + etaLabel + shortEtaLabel(etaMinutes)
-          + "\nPrésence estimée : " + hourFormat.format(new Date(eventStart)) + "–" + hourFormat.format(new Date(eventEnd))
-          + "\nPassage : " + passage + " %"
+          + "\n" + event.etaLabel + shortEtaLabel(event.etaMinutes)
+          + "\nPrésence estimée : " + hourFormat.format(new Date(event.eventStart)) + "–" + hourFormat.format(new Date(event.eventEnd))
+          + "\nPassage : " + event.passage + " %"
           + "\nSurcharge nowcasting sur ce créneau : " + etaRain.toFixed(2) + " mm"
           + "\nCumul prévu sur ce créneau : " + precipitation.toFixed(2) + " mm"
           + (Number.isFinite(Number(item.radarPrecipitation)) ? "\nPIAF : " + Number(item.precipitation || 0).toFixed(2) + " mm · radar extrapolé : " + Number(item.radarPrecipitation).toFixed(2) + " mm" : "");
-        const entry = { id: cell.id, passage, etaMinutes, etaBasis: cell.etaBasis, etaRain, detail };
+        const entry = { id: cell.id, passage: event.passage, etaMinutes: event.etaMinutes, etaBasis: cell.etaBasis, etaRain, detail };
         if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
         cellEtaSlots.get(slotIndex).push(entry);
       });
