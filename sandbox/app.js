@@ -3443,9 +3443,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const intensityDetail = stormDetails?.intensity || detail;
     const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
     const showStormIntensity = stormDetails?.showIntensity ?? stormPassageLevel > 0;
+    const stormTiming = displayedTrend || stormDetails?.eta
+      ? '<span class="three-hour-storm-timing">'
+        + (displayedTrend ? trendMarkup(displayedTrend, passageDetail) : '')
+        + (stormDetails?.eta ? '<span class="three-hour-storm-eta">' + escapeText(stormDetails.eta) + '</span>' : '')
+        + '</span>'
+      : '';
     const metric = stormLayout
       ? nowcastMetricPictogram(kind, stormPassageLevel, passageDetail)
-        + (displayedTrend ? trendMarkup(displayedTrend, passageDetail) : '')
+        + stormTiming
         + (showStormIntensity ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
@@ -3610,9 +3616,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     previous: stormTrendUsesDisplayedLevel ? previousStormPassageLevel : previousMaximumPassageRisk,
     basis: stormTrendUsesDisplayedLevel ? "displayed-level" : "passage-probability"
   };
-  const calculatedStormTrend = passageMotionTrend?.label === "croissant" && probabilityStormTrend.label !== "croissant"
-    ? { ...passageMotionTrend, basis: "cell-trajectory" }
-    : passageMotionTrend?.label === "decroissant" && probabilityStormTrend.label === "stable"
+  const calculatedStormTrend = passageMotionTrend?.label === "decroissant" && probabilityStormTrend.label === "stable"
       ? { ...passageMotionTrend, basis: "cell-trajectory" }
       : probabilityStormTrend;
   const previousPendingDecline = previousPassageSnapshot?.pendingDecline;
@@ -3648,6 +3652,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   // aussitôt comparée à elle-même et remplacée par une flèche horizontale.
   const savedStormTrend = sameObservationSnapshot?.displayedLevel === stormPassageLevel
     && ["croissant", "decroissant", "stable"].includes(sameObservationSnapshot?.trend?.label)
+    && !(sameObservationSnapshot.trend.label === "croissant" && guardedStormTrend.label !== "croissant")
       ? sameObservationSnapshot.trend
       : null;
   const stormTrend = savedStormTrend || guardedStormTrend;
@@ -3766,6 +3771,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormIntensityDetail = relevantStormCell
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
+  const relevantStormEtaMinutes = Number(relevantStormCell?.etaMinutes);
+  const stormEtaLabel = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180
+    ? relevantStormEtaMinutes < 1 ? "Maintenant" : "Dans " + Math.round(relevantStormEtaMinutes) + " min"
+    : "";
   const stormTrendWording = stormTrend.pendingConfirmation
     ? "stable, éloignement à confirmer"
     : stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
@@ -3796,7 +3805,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
-    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', stormPassageLevel, { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail, showIntensity: Boolean(relevantStormCell) })
+    + summaryAction('storm', '', stormLevel, stormDetail, stormTrend, 'nowcast', stormPassageLevel, { passage: stormPassageDetail, intensity: stormIntensityDetail, trend: stormTrendDetail, eta: stormEtaLabel, showIntensity: Boolean(relevantStormCell) })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
   if (summaryElement) {
