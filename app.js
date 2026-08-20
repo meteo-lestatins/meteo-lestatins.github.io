@@ -65,8 +65,8 @@ const measurableRainThreshold = .05;
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
 
-const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, openMeteo: 60 * 60000 };
-const sourceLabels = { arome: "AROME", pearome: "AROME-PI", ensemble: "PEAROME", piaf: "PIAF", radar: "Radar", lightning: "EUMETSAT LI", openMeteo: "Open-Meteo" };
+const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, vigilance: 30 * 60000, openMeteo: 60 * 60000 };
+const sourceLabels = { arome: "AROME", pearome: "AROME-PI", ensemble: "PEAROME", piaf: "PIAF", radar: "Radar", lightning: "EUMETSAT LI", vigilance: "Vigilance", openMeteo: "Open-Meteo" };
 
 function sourceSyncState(key) {
   const source = latestForecastData?.[key];
@@ -107,14 +107,18 @@ const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
 const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
 const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
+const vigilanceLink = () => sourceLink("vigilance", "api-vigilance", "Vigilance");
 const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
 const shortRainLinks = () => window.METEO_REPLAY
   ? openMeteoLink() + nowcastDisplayLink()
   : sourceLink("piaf", "api-piaf", "Météo-France") + nowcastDisplayLink();
-const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
+const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + nowcastDisplayLink() + openMeteoLink() : radarLink()
+  + nowcastDisplayLink()
   + sourceLink("piaf", "api-piaf", "PIAF")
   + sourceLink("arome", "api-arome", "AROME")
-  + lightningLink();
+  + lightningLink()
+  + openMeteoLink()
+  + vigilanceLink();
 
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
@@ -388,7 +392,7 @@ function nowcastEtaRainEvents(radar) {
       eventStart,
       eventEnd,
       maximum,
-      expectedIntensity: representativeIntensity * passage / 100,
+      conditionalIntensity: representativeIntensity,
       etaLabel: cell.etaBasis === "envelope" ? "ETA possible " : "ETA "
     };
   }).filter(Boolean);
@@ -398,7 +402,7 @@ function nowcastEtaRainAmount(events, windowStart, windowEnd) {
   if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return 0;
   return Math.round(events.reduce((sum, event) => {
     const overlapMinutes = Math.max(0, Math.min(event.eventEnd, windowEnd) - Math.max(event.eventStart, windowStart)) / 60000;
-    return sum + Math.max(0, Number(event.expectedIntensity ?? event.maximum) || 0) * overlapMinutes / 60;
+    return sum + Math.max(0, Number(event.conditionalIntensity ?? event.maximum) || 0) * overlapMinutes / 60;
   }, 0) * 10) / 10;
 }
 
@@ -2089,6 +2093,7 @@ function piafHourlyRain(piaf, radar = null) {
     const hourEvents = etaEvents.filter(event => event.eventEnd > hourStart && event.eventStart < hourStart + hour);
     const etaAmendment = nowcastEtaRainAmount(hourEvents, hourStart, hourStart + hour);
     const nowcastAmendment = Math.round((directRadarAmendment + etaAmendment) * 100) / 100;
+    const etaPassage = hourEvents.length ? Math.max(...hourEvents.map(event => Number(event.passage) || 0)) : null;
     const radarCellOverPoint = items.some(item => item.radarCellOverPoint);
     return [hourStart, {
       rain: Math.round((basePiaf + nowcastAmendment) * 100) / 100,
@@ -2097,6 +2102,7 @@ function piafHourlyRain(piaf, radar = null) {
       rainDirectRadarAmendment: directRadarAmendment,
       rainEtaAmendment: etaAmendment,
       rainEtaCellIds: hourEvents.map(event => event.cell.id),
+      rainEtaPassage: etaPassage,
       rainShortTerm: true,
       rainSource: nowcastAmendment > 0 ? "Météo-France + Nowcasting" : "Météo-France",
       rainIntervalStart: intervalStart,
@@ -2565,7 +2571,9 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
       : '';
     const shortTermDetail = isShortTermHour
       ? '\nMétéo-France : ' + Number(item.rainBasePiaf || 0).toFixed(2) + ' mm'
-        + (Number(item.rainNowcastAmendment) > 0 ? '\nNowcasting : +' + Number(item.rainNowcastAmendment).toFixed(2) + ' mm' : '')
+        + (Number(item.rainDirectRadarAmendment) > 0 ? '\nRadar aux Tatins : +' + Number(item.rainDirectRadarAmendment).toFixed(2) + ' mm' : '')
+        + (Number(item.rainEtaAmendment) > 0 ? '\nCellule(s) ETA si passage : +' + Number(item.rainEtaAmendment).toFixed(2) + ' mm' : '')
+        + (Number.isFinite(Number(item.rainEtaPassage)) ? '\nPassage Nowcasting : ' + Math.round(Number(item.rainEtaPassage)) + ' %' : '')
         + ((item.rainEtaCellIds || []).length ? '\nCellule(s) avec ETA : ' + item.rainEtaCellIds.join(', ') : '')
       : '';
     const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + shortTermDetail + intervalPeriod + (item.rainRadarCellOverPoint ? '\nPluie détectée aux Tatins par le radar' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
@@ -2588,6 +2596,10 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const nowcastBand = drawBar && nowcastBandHeight > 0
       ? '<rect class="overview-rain-nowcast-band" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + nowcastBandHeight + '"/>'
       : '';
+    const nowcastPassage = isShortTermHour && Number.isFinite(Number(item.rainEtaPassage)) ? Math.round(Number(item.rainEtaPassage)) : null;
+    const nowcastPassageLabel = drawBar && nowcastBandHeight > 0 && nowcastPassage != null
+      ? '<text class="overview-rain-nowcast-probability" x="' + centerX + '" y="' + Math.max(12, overviewHeight - height - 5) + '" text-anchor="middle">' + nowcastPassage + ' %</text>'
+      : '';
     // La probabilité décrit le volume affiché : elle reste dans la zone bleue,
     // juste au-dessus du cumul, sans suivre la borne haute d'incertitude.
     const probabilityLabelY = overviewHeight - (intervalAmountLabel ? 38 : 22);
@@ -2595,7 +2607,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const amountLabel = intervalAmountLabel
       ? '<text class="overview-rain-amount-label" x="' + centerX + '" y="' + (overviewHeight - 17) + '" text-anchor="middle"><tspan class="overview-rain-amount-value" x="' + centerX + '">' + escapeText(precipitationLabel) + '</tspan><tspan class="overview-rain-amount-range" x="' + centerX + '" dy="12">' + escapeText(intervalAmountLabel) + '</tspan></text>'
       : '<text class="overview-rain-amount-label" x="' + centerX + '" y="' + (overviewHeight - 5) + '" text-anchor="middle">' + escapeText(precipitationLabel) + '</text>';
-    const marker = drawBar && rainTrace ? '<rect class="overview-rain-bar wet" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + height + '"/>' + nowcastBand + uncertainty + probabilityLabel + amountLabel : (probabilisticAverse ? '<rect class="overview-rain-chance" x="' + chanceX + '" y="' + (overviewHeight - 24) + '" width="' + chanceWidth + '" height="18" rx="9"/><text class="overview-rain-chance-label" x="' + x(index) + '" y="' + (overviewHeight - 15) + '" text-anchor="middle" dominant-baseline="middle">' + escapeText(chanceLabel) + '</text>' : '');
+    const marker = drawBar && rainTrace ? '<rect class="overview-rain-bar wet" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + height + '"/>' + nowcastBand + nowcastPassageLabel + uncertainty + probabilityLabel + amountLabel : (probabilisticAverse ? '<rect class="overview-rain-chance" x="' + chanceX + '" y="' + (overviewHeight - 24) + '" width="' + chanceWidth + '" height="18" rx="9"/><text class="overview-rain-chance-label" x="' + x(index) + '" y="' + (overviewHeight - 15) + '" text-anchor="middle" dominant-baseline="middle">' + escapeText(chanceLabel) + '</text>' : '');
     return marker ? '<g class="overview-rain-svg' + (probabilisticAverse ? ' overview-rain-chance-group' : '') + ' chart-point" tabindex="0" data-rain-index="' + index + '" data-tooltip="' + escapeText(detail) + '">' + marker + '</g>' : '';
   }).join("");
   const overviewDataPoints = hours.map((item, index) => {
@@ -4014,12 +4026,12 @@ function renderPiaf(piaf, radar = null) {
     const passage = Math.max(...entries.map(entry => Number(entry.passage) || 0));
     const height = etaRain > 0 ? Math.min(100, Math.max(4, etaRain / fullScaleRain * 100)) : 4;
     const alpha = Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
-    const label = etaRain >= .05 ? etaRain.toFixed(etaRain < 1 ? 2 : 1) + " mm" : "";
+    const label = passage > 0 ? Math.round(passage) + " %" : "";
     const etaWindowStart = Math.min(...entries.map(entry => entry.eventStart));
     const etaWindowEnd = Math.max(...entries.map(entry => entry.eventEnd));
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
-    const detail = "Nowcasting · +" + etaRain.toFixed(2) + " mm"
-      + "\nPassage max : " + passage + " %"
+    const detail = "Nowcasting · cumul si passage : +" + etaRain.toFixed(2) + " mm"
+      + "\nProbabilité de passage : " + passage + " %"
       + "\n" + etaLabels.join(" · ")
       + "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd))
       + "\nClic : ouvrir la carte";

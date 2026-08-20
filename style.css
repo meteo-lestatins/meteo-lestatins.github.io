@@ -478,6 +478,7 @@ button:hover { background: #eef7fb; }
 .overview-temperature .overview-rain-bar { fill: #59a9d2; opacity: .78; }
 .overview-temperature .overview-rain-bar.risk { fill: #4c9dc7; opacity: .9; }
 .overview-temperature .overview-rain-nowcast-band { fill: url(#overview-nowcast-rain-stripes); opacity: .95; pointer-events: none; }
+.overview-temperature .overview-rain-nowcast-probability { fill: #9a5700; font: 850 10px system-ui; pointer-events: none; }
 .overview-temperature .overview-rain-error { fill: none; stroke: #126d9b; stroke-width: 1.5; }
 .overview-temperature .overview-rain-label { fill: #397ba6; font: 800 10px system-ui; }
 .overview-temperature .overview-rain-amount-label { fill: #397ba6; font: 800 10px system-ui; }
