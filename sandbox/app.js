@@ -653,8 +653,8 @@ function forecastPeriodKey(hour) {
 function forecastPeriodText(periods) {
   const selected = [...new Set((periods || []).filter(period => forecastPeriodOrder.includes(period)))].sort((left, right) => forecastPeriodOrder.indexOf(left) - forecastPeriodOrder.indexOf(right));
   if (!selected.length) return "";
-  if (selected.length === forecastPeriodOrder.length) return "toute la journée";
   const dayPeriods = ["morning", "afternoon", "evening"];
+  if (selected.includes("night") && dayPeriods.every(period => selected.includes(period))) return "la nuit et toute la journée";
   if (dayPeriods.every(period => selected.includes(period)) && selected.every(period => dayPeriods.includes(period) || period === "late_afternoon")) return "toute la journée";
   if (!selected.includes("night") && selected.includes("morning") && selected.includes("afternoon") && selected.some(period => period === "late_afternoon" || period === "evening")) return "toute la journée";
   if (selected.join(",") === "night,morning") return "entre la nuit et la matinée";
@@ -925,8 +925,10 @@ function conciseWindSummary(speedValues, gustValues, gustPeriods, windPeriods = 
     const indexes = qualified.map(value => labels.indexOf(value));
     const low = Math.min(...indexes);
     const high = Math.max(...indexes);
-    // Une plage n'apporte quelque chose que lors d'un changement réellement
-    // radical. Sinon, la catégorie la plus fréquente tranche le résumé.
+    if (low === high) return labels[low];
+    // Avec deux modèles, un désaccord de classe ne doit pas être tranché en
+    // faveur du plus fort : c'est une synthèse, pas le maximum d'une source.
+    if (values.length <= 2) return labels[low] + " à " + labels[high];
     return high - low >= 3 ? labels[low] + " à " + labels[high] : dominant;
   };
   const windMaximum = winds.length ? Math.max(...winds) : 0;
@@ -1649,6 +1651,29 @@ function renderWeekForecast() {
       const format = value => value > 0 && value < .1 ? "< 0,1" : value.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
       return (valid.length > 1 && Math.abs(valid[0] - valid[1]) >= .05 ? format(Math.min(...valid)) + " – " + format(Math.max(...valid)) : format(valid[0])) + " mm";
     };
+    const modelRangeDetail = (label, values, suffix = " km/h") => {
+      const valid = finite(values);
+      if (valid.length <= 1) return "";
+      return " · " + label + " " + range(valid, suffix);
+    };
+    const sourceValueDetail = (label, ecmwfValue, arpegeValue, suffix = " km/h") => {
+      const details = [
+        Number.isFinite(Number(ecmwfValue)) ? "Open-Meteo " + number(ecmwfValue) + suffix : "",
+        Number.isFinite(Number(arpegeValue)) ? "Météo-France " + number(arpegeValue) + suffix : ""
+      ].filter(Boolean);
+      return details.length ? " · " + label + " " + details.join(" · ") : "";
+    };
+    const combinedPeriodDetail = (label, periods) => {
+      const text = forecastPeriodText(periods);
+      return text ? " · " + label + " " + text : "";
+    };
+    const sourcePeriodDetail = (label, ecmwfPeriod, arpegePeriod) => {
+      const details = [
+        ecmwfPeriod ? "Open-Meteo " + forecastPeriodText([ecmwfPeriod]) : "",
+        arpegePeriod ? "Météo-France " + forecastPeriodText([arpegePeriod]) : ""
+      ].filter(Boolean);
+      return details.length ? " · " + label + " " + details.join(" · ") : "";
+    };
     const rainValues = finite([ecmwf.precipitationSum, arpege.precipitationSum]);
     const rawWindValues = finite([ecmwf.windSpeedMax, arpege.windSpeedMax]);
     const rawGustValues = finite([ecmwf.windGustMax, arpege.windGustMax]);
@@ -1674,12 +1699,18 @@ function renderWeekForecast() {
     const windPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.windPeriod ? [ecmwf.windPeriod] : [], arpege.windPeriod ? [arpege.windPeriod] : []));
     const gustPeriodSummary = forecastPeriodText(forecastSharedPeriods(ecmwf.gustPeriod ? [ecmwf.gustPeriod] : [], arpege.gustPeriod ? [arpege.gustPeriod] : []));
     const windHoverLabel = "Vent · synthèse " + range(windValues, " km/h")
-      + (rawWindValues.length > 1 ? " · plage " + range(rawWindValues, " km/h") : "")
+      + modelRangeDetail("plage modèles", rawWindValues)
+      + sourceValueDetail("sources", ecmwf.windSpeedMax, arpege.windSpeedMax)
       + (windDirection == null ? "" : " · direction " + Math.round(windDirection) + "°")
-      + (windPeriodSummary ? " · surtout " + windPeriodSummary : "");
+      + (windPeriodSummary ? " · surtout " + windPeriodSummary : "")
+      + combinedPeriodDetail("maxima possibles", [ecmwf.windPeriod, arpege.windPeriod].filter(Boolean))
+      + sourcePeriodDetail("maxima par source", ecmwf.windPeriod, arpege.windPeriod);
     const gustHoverLabel = "Rafales · synthèse " + range(gustValues, " km/h")
-      + (rawGustValues.length > 1 ? " · plage " + range(rawGustValues, " km/h") : "")
-      + (gustPeriodSummary ? " · surtout " + gustPeriodSummary : "");
+      + modelRangeDetail("plage modèles", rawGustValues)
+      + sourceValueDetail("sources", ecmwf.windGustMax, arpege.windGustMax)
+      + (gustPeriodSummary ? " · surtout " + gustPeriodSummary : "")
+      + combinedPeriodDetail("maxima possibles", [ecmwf.gustPeriod, arpege.gustPeriod].filter(Boolean))
+      + sourcePeriodDetail("maxima par source", ecmwf.gustPeriod, arpege.gustPeriod);
     const cloudMarkup = cloudMetricRow(cloudPresentation, cloudHoverLabel, agreement.skySummary);
     const rainMarkup = rainMetricRow(rainValues, escapeText(rainRange(rainValues)), [], showerLevel, agreement.rainProbability, agreement.rainSummary);
     const windMarkup = windMetricGroup(windValues, windDirectionMarkup + escapeText(range(windValues, " km/h")), gustValues, escapeText(range(gustValues, " km/h")), agreement.windSummary, windHoverLabel, gustHoverLabel);
