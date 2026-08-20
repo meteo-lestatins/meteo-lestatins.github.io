@@ -3182,10 +3182,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
   const threat = radar.threat;
   const cells = (radar.cells || []).map((cell, index) => ({ ...cell, id: cell.id || String.fromCharCode(65 + index) }));
-  const maximumPassageRisk = Math.max(0, ...cells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
   const cellCenterDistance = cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
   // La distance utile est celle du bord le plus proche, pas celle du centre.
   const cellDistance = cell => Math.max(0, cellCenterDistance(cell) - Math.max(0, Number(cell.radiusKm || 0)));
+  const nearbyCells = cells.filter(cell => cellDistance(cell) < 60);
+  const nearbyCellIds = new Set(nearbyCells.map(cell => cell.id));
+  const maximumPassageRisk = Math.max(0, ...nearbyCells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
   const vigilanceNow = Date.now();
   const vigilancePeriodActive = period =>
     (!period.start || new Date(period.start).getTime() <= vigilanceNow)
@@ -3249,7 +3251,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const remaining = rounded % 60;
     return hours + " h" + (remaining ? " " + remaining : "");
   };
-  const nearbyCells = cells.filter(cell => cellDistance(cell) < 60);
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const hazardIcons = {
     hail: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 14a4 4 0 0 1 .2-8A6 6 0 0 1 17 7a3.5 3.5 0 1 1 .5 7H5Z"></path><circle cx="8" cy="18" r="1.5"></circle><circle cx="13" cy="19" r="1.5"></circle><circle cx="18" cy="17.5" r="1.5"></circle></svg>',
@@ -3279,7 +3280,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   // Le premier indicateur décrit uniquement la probabilité de passage. Le
   // second décrit l'intensité de la cellule qui porte le maximum. A égalité
   // de probabilité, la cellule la plus intense est retenue.
-  const passageCandidates = cells
+  const passageCandidates = nearbyCells
     .filter(cell => Number(cell.risks?.passage) > 0)
     .map(cell => stormIntensityFor(cell))
     .sort((left, right) => right.passage - left.passage || right.level - left.level || cellDistance(left.cell) - cellDistance(right.cell));
@@ -3301,10 +3302,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
   const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
   const snapshotPassages = previousPassageSnapshot
-    ? Object.values(previousPassageSnapshot.values || {}).map(Number).filter(Number.isFinite)
+    ? Object.entries(previousPassageSnapshot.values || {})
+        .filter(([id]) => nearbyCellIds.has(id))
+        .map(([, value]) => Number(value))
+        .filter(Number.isFinite)
     : [
-        ...cells.map(cell => Number(cell.passageTrend?.previous)).filter(Number.isFinite),
-        ...(radar.disappearedCells || []).map(cell => Number(cell.risks?.passage)).filter(Number.isFinite)
+        ...nearbyCells.map(cell => Number(cell.passageTrend?.previous)).filter(Number.isFinite),
+        ...(radar.disappearedCells || [])
+          .filter(cell => Math.max(0, Number(cell.lastDistanceKm || 0) - Math.max(0, Number(cell.radiusKm || 0))) < 60)
+          .map(cell => Number(cell.risks?.passage))
+          .filter(Number.isFinite)
       ];
   const previousMaximumPassageRisk = snapshotPassages.length ? Math.max(0, ...snapshotPassages) : maximumPassageRisk;
   const maximumPassageChange = Math.round(maximumPassageRisk - previousMaximumPassageRisk);
