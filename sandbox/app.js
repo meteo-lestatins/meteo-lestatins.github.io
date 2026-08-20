@@ -2806,37 +2806,9 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
-  const buildApproachProjection = cell => {
-    const source = cell.track?.points || [];
-    const first = source.find(point => Number(point.minutes) === 0) || source[0];
-    const last = source.at(-1);
-    if (!first || !last || Number(last.minutes) <= Number(first.minutes)) return null;
-    const startDistance = Math.hypot(Number(first.eastKm), Number(first.northKm));
-    const endDistance = Math.hypot(Number(last.eastKm), Number(last.northKm));
-    if (endDistance >= startDistance - .25) return null;
-    const duration = Number(last.minutes) - Number(first.minutes);
-    const velocityEast = (Number(last.eastKm) - Number(first.eastKm)) / duration;
-    const velocityNorth = (Number(last.northKm) - Number(first.northKm)) / duration;
-    const speedSquared = velocityEast * velocityEast + velocityNorth * velocityNorth;
-    if (speedSquared <= .0001) return null;
-    const closestMinutes = Math.max(Number(last.minutes), -(Number(first.eastKm) * velocityEast + Number(first.northKm) * velocityNorth) / speedSquared);
-    const horizon = Math.min(240, Math.ceil(closestMinutes / 15) * 15);
-    if (horizon <= Number(last.minutes)) return { id: cell.id, points: source };
-    const firstUncertainty = Number(first.uncertaintyKm || cell.radiusKm || 3);
-    const lastUncertainty = Number(last.uncertaintyKm || firstUncertainty);
-    const uncertaintyRate = Math.max(.04, (lastUncertainty - firstUncertainty) / duration) * 1.35;
-    const extension = [];
-    for (let minutes = Number(last.minutes) + 15; minutes <= horizon; minutes += 15) {
-      extension.push({
-        minutes,
-        eastKm: Number(last.eastKm) + velocityEast * (minutes - Number(last.minutes)),
-        northKm: Number(last.northKm) + velocityNorth * (minutes - Number(last.minutes)),
-        uncertaintyKm: lastUncertainty + uncertaintyRate * (minutes - Number(last.minutes))
-      });
-    }
-    return { id: cell.id, points: source.concat(extension) };
-  };
-  const approachProjections = radarCells.map(buildApproachProjection).filter(Boolean);
+  const approachProjections = radarCells
+    .filter(cell => Number(cell.risks?.passage) > 0 && (cell.track?.points || []).length > 1)
+    .map(cell => ({ id: cell.id, points: cell.track.points }));
   const projectionsById = new Map(approachProjections.map(projection => [projection.id, projection]));
   const primaryProjection = projectionsById.get(threat.id);
   const primaryPoints = primaryProjection?.points || points;
@@ -2857,8 +2829,12 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const minimumNorth = -(height / 2 - paddingY) / scale;
   const maximumNorth = (height / 2 - paddingY) / scale;
   const trackPoints = primaryPoints.map(point => x(point.eastKm).toFixed(1) + ',' + y(point.northKm).toFixed(1)).join(' ');
-  const coneFor = (track, className, gradientId, color, startRadiusKm = null) => {
+  const coneFor = (track, className, gradientId, color, cell = null) => {
     if (track.length <= 1) return '';
+    const passage = Math.max(0, Math.min(100, Number(cell?.risks?.passage) || 0));
+    if (passage <= 0) return '';
+    const confidence = Math.max(0, Math.min(100, Number(cell?.track?.confidence) || 0));
+    const baseOpacity = Math.max(.04, Math.min(.42, .04 + passage / 100 * .3 + confidence / 100 * .08));
     const start = track[0];
     const end = track.at(-1);
     const startX = x(start.eastKm);
@@ -2870,7 +2846,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const length = Math.hypot(screenDx, screenDy) || 1;
     const perpendicularX = -screenDy / length;
     const perpendicularY = screenDx / length;
-    let previousRadiusKm = Math.max(0, Number(startRadiusKm) || 0);
+    let previousRadiusKm = Math.max(0, Number(cell?.radiusKm) || 0);
     const radiusByPointKm = track.map((point, index) => {
       const estimatedRadiusKm = index === 0 ? previousRadiusKm : Math.max(0, Number(point.uncertaintyKm) || 0);
       previousRadiusKm = Math.max(previousRadiusKm, estimatedRadiusKm);
@@ -2893,13 +2869,19 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const gradientY1 = middleY + perpendicularY * maximumRadius;
     const gradientX2 = middleX - perpendicularX * maximumRadius;
     const gradientY2 = middleY - perpendicularY * maximumRadius;
-    const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="' + gradientX1.toFixed(1) + '" y1="' + gradientY1.toFixed(1) + '" x2="' + gradientX2.toFixed(1) + '" y2="' + gradientY2.toFixed(1) + '"><stop offset="0" stop-color="' + color + '" stop-opacity=".02"></stop><stop offset=".28" stop-color="' + color + '" stop-opacity=".11"></stop><stop offset=".5" stop-color="' + color + '" stop-opacity=".3"></stop><stop offset=".72" stop-color="' + color + '" stop-opacity=".11"></stop><stop offset="1" stop-color="' + color + '" stop-opacity=".02"></stop></linearGradient>';
-    return '<defs>' + gradient + '</defs><polygon class="' + className + '" style="fill:url(#' + gradientId + ');stroke:none" points="' + left.concat(right).join(' ') + '"></polygon>';
+    const edgeOpacity = Math.max(.01, baseOpacity * .1);
+    const sideOpacity = Math.max(.02, baseOpacity * .38);
+    const centerOpacity = baseOpacity;
+    const title = cell
+      ? 'Zone probable cellule ' + cell.id + ' · passage ' + Math.round(passage) + ' % · confiance trajectoire ' + Math.round(confidence) + ' % · horizon ' + Math.round(Number(cell.track?.horizonMinutes || end.minutes || 0)) + ' min'
+      : 'Zone probable';
+    const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="' + gradientX1.toFixed(1) + '" y1="' + gradientY1.toFixed(1) + '" x2="' + gradientX2.toFixed(1) + '" y2="' + gradientY2.toFixed(1) + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + edgeOpacity.toFixed(3) + '"></stop><stop offset=".28" stop-color="' + color + '" stop-opacity="' + sideOpacity.toFixed(3) + '"></stop><stop offset=".5" stop-color="' + color + '" stop-opacity="' + centerOpacity.toFixed(3) + '"></stop><stop offset=".72" stop-color="' + color + '" stop-opacity="' + sideOpacity.toFixed(3) + '"></stop><stop offset="1" stop-color="' + color + '" stop-opacity="' + edgeOpacity.toFixed(3) + '"></stop></linearGradient>';
+    return '<defs>' + gradient + '</defs><polygon class="' + className + ' chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" style="fill:url(#' + gradientId + ');stroke:none" points="' + left.concat(right).join(' ') + '"><title>' + escapeText(title) + '</title></polygon>';
   };
-  const cone = coneFor(primaryPoints, 'storm-cone' + (primaryProjection ? ' projected' : ''), 'storm-probability-primary', '#2b91c6', threat.radiusKm);
+  const cone = coneFor(primaryPoints, 'storm-cone' + (primaryProjection ? ' projected' : ''), 'storm-probability-primary', '#2b91c6', threat);
   const secondaryCones = approachProjections.filter(projection => projection.id !== threat.id).map((projection, index) => {
     const cell = radarCells.find(candidate => candidate.id === projection.id);
-    return coneFor(projection.points, 'storm-cone projected secondary', 'storm-probability-secondary-' + index, '#5e93ad', cell?.radiusKm);
+    return coneFor(projection.points, 'storm-cone projected secondary', 'storm-probability-secondary-' + index, '#5e93ad', cell);
   }).join('');
   const mapProbabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const mapRainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
@@ -2922,7 +2904,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const relativeMotion = radialSpeed == null ? 'Évolution de la distance : à confirmer' : radialSpeed > 1 ? 'Vitesse d’éloignement : ' + radialSpeed + ' km/h' : radialSpeed < -1 ? 'Vitesse de rapprochement : ' + Math.abs(radialSpeed) + ' km/h' : 'Distance quasiment stable';
     const eta = cell.etaMinutes == null ? '—' : cell.etaMinutes <= 0 ? 'en cours' : Math.round(cell.etaMinutes) + ' min';
     const risks = cell.risks || {};
-    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + Math.round(Number(risks.hail) || 0) + ' %\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nSurface : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nRayon : ' + Number(cell.radiusKm || 0).toFixed(1) + ' km\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
+    const trajectoryBasis = cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire";
+    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + Math.round(Number(risks.hail) || 0) + ' %\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nRayon : ' + Number(cell.radiusKm || 0).toFixed(1) + ' km\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
     const cellX = x(cell.eastKm);
     const cellY = y(cell.northKm);
     const tatinsX = x(0);
@@ -3439,6 +3422,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice convectif</dt><dd>' + nowcastMetricPictogram("storm", probabilityStep(Number(risks.storm)), "Indice convectif : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
       detailMetric("Vitesse estimée", Number.isFinite(Number(cell.track?.speedKmh)) ? Number(cell.track.speedKmh).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km/h" : null),
       detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
+      detailMetric("Base trajectoire", cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire"),
+      detailMetric("Horizon trajectoire", Number.isFinite(Number(cell.track?.horizonMinutes)) ? Math.round(Number(cell.track.horizonMinutes)) + " min" : null),
       detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)
     ];
     const distance = cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
