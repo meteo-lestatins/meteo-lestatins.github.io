@@ -699,12 +699,71 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
   return Math.max(1, Math.min(5, Math.round(Math.sqrt(risk * intensity))));
 }
 
-function shortTermEventLabel(kind, etaMinutes) {
+function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   const rain = kind === "rain";
   const eta = etaMinutes == null ? null : Number(etaMinutes);
   if (!Number.isFinite(eta) || eta < 0) return rain ? "Pas de pluie prévue" : "Pas d’orage prévu";
-  if (eta < 1) return rain ? "Pluie en cours" : "Orage en cours";
+  if (eta < 1) {
+    if (!rain && Number(activeCount) > 0) {
+      const count = Math.max(1, Math.round(Number(activeCount)));
+      return count + (count > 1 ? " orages en cours" : " orage en cours");
+    }
+    return rain ? "Pluie en cours" : "Orage en cours";
+  }
   return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
+}
+
+function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
+  const allowedIds = new Set(candidateCellIds || []);
+  const candidates = (events || []).filter(event => {
+    const cellId = event?.cell?.id;
+    return allowedIds.has(cellId)
+      && Number.isFinite(Number(event.eventStart))
+      && Number.isFinite(Number(event.eventEnd))
+      && Number(event.eventEnd) > now;
+  });
+  const activeByCell = new Map();
+  candidates.filter(event => Number(event.eventStart) <= now).forEach(event => {
+    const cellId = event.cell.id;
+    const previous = activeByCell.get(cellId);
+    if (!previous || Number(event.eventEnd) > Number(previous.eventEnd)) activeByCell.set(cellId, event);
+  });
+  const active = [...activeByCell.values()];
+  const activeIds = new Set(active.map(event => event.cell.id));
+  const upcomingByCell = new Map();
+  candidates.filter(event => Number(event.eventStart) > now && !activeIds.has(event.cell.id)).forEach(event => {
+    const cellId = event.cell.id;
+    const previous = upcomingByCell.get(cellId);
+    if (!previous || Number(event.eventStart) < Number(previous.eventStart)) upcomingByCell.set(cellId, event);
+  });
+  const upcoming = [...upcomingByCell.values()];
+  if (active.length) {
+    const event = active.find(item => item.cell.id === preferredCellId)
+      || [...active].sort((left, right) => Number(right.passage) - Number(left.passage))[0];
+    const durationCalculable = active.every(item => Number.isFinite(Number(item.durationMinutes)) && Number(item.durationMinutes) > 0);
+    const latestEnd = Math.max(...active.map(item => Number(item.eventEnd)));
+    return {
+      event,
+      etaMinutes: 0,
+      durationMinutes: durationCalculable ? Math.max(1, Math.ceil((latestEnd - now) / 60000)) : null,
+      activeCount: active.length,
+      upcomingCount: upcoming.length,
+      activeIds: [...activeIds],
+      upcomingIds: [...upcomingByCell.keys()]
+    };
+  }
+  const event = upcoming.find(item => item.cell.id === preferredCellId)
+    || [...upcoming].sort((left, right) => Number(left.eventStart) - Number(right.eventStart))[0]
+    || null;
+  return {
+    event,
+    etaMinutes: event ? Math.max(0, (Number(event.eventStart) - now) / 60000) : null,
+    durationMinutes: Number.isFinite(Number(event?.durationMinutes)) && Number(event.durationMinutes) > 0 ? Number(event.durationMinutes) : null,
+    activeCount: 0,
+    upcomingCount: upcoming.length,
+    activeIds: [],
+    upcomingIds: [...upcomingByCell.keys()]
+  };
 }
 
 function formatRainAmount(value, decimals = 1) {
@@ -4133,24 +4192,37 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + " · grêle " + relevantStormIntensity.hailLevel + "/5"
       + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
     : "Pas d’orage prévu sur 3 h";
-  const relevantStormEtaEvent = relevantStormCell
-    ? etaRainEvents.find(event => event.cell?.id === relevantStormCell.id)
-    : null;
-  const relevantStormEtaMinutes = relevantStormEtaEvent?.etaMinutes == null
+  const stormEtaSelection = nowcastStormEtaSelection(
+    etaRainEvents,
+    passageCandidates.map(candidate => candidate.cell.id),
+    now,
+    relevantStormCell?.id
+  );
+  const relevantStormEtaEvent = stormEtaSelection.event;
+  const relevantStormEtaMinutes = stormEtaSelection.etaMinutes == null
     ? relevantStormCell?.etaMinutes == null ? null : Number(relevantStormCell.etaMinutes)
-    : Number(relevantStormEtaEvent.etaMinutes);
-  const relevantStormDurationMinutes = Number(relevantStormEtaEvent?.durationMinutes);
+    : Number(stormEtaSelection.etaMinutes);
+  const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
   const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
-  const stormEtaLabel = shortTermEventLabel("storm", hasStormEta ? relevantStormEtaMinutes : null);
-  const stormDurationLabel = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
+  const stormEtaLabel = shortTermEventLabel("storm", hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount);
+  const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
     : "";
-  const stormEtaDetail = hasStormEta && relevantStormCell
-    ? "Cellule " + relevantStormCell.id
-      + " · bord à " + cellDistance(relevantStormCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
+  const stormUpcomingText = stormEtaSelection.upcomingCount > 0
+    ? stormEtaSelection.upcomingCount + " à venir"
+    : "";
+  const stormDurationLabel = [stormDurationText, stormUpcomingText].filter(Boolean).join(" · ");
+  const stormEtaCell = relevantStormEtaEvent?.cell || relevantStormCell;
+  const stormEtaDetail = hasStormEta && stormEtaCell
+    ? (stormEtaSelection.activeCount > 0
+      ? stormEtaSelection.activeCount + " cellule" + (stormEtaSelection.activeCount > 1 ? "s" : "") + " en cours"
+      : "Cellule " + stormEtaCell.id)
+      + (stormEtaSelection.activeCount > 0 ? " : " + stormEtaSelection.activeIds.join(", ") : "")
+      + " · bord à " + cellDistance(stormEtaCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
       + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + " min")
       + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
+      + (stormEtaSelection.upcomingCount > 0 ? " (cellules " + stormEtaSelection.upcomingIds.join(", ") + ")" : "")
     : "";
   const stormTrendWording = stormTrend.pendingConfirmation
     ? "stable, éloignement à confirmer"
