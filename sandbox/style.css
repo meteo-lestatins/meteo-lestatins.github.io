@@ -408,10 +408,10 @@ button:hover { background: #eef7fb; }
 .comparison-rain { fill: #197eae; }
 .comparison-rain-min { stroke: #075e89; stroke-width: 2; }
 .comparison-rain-value { fill: #17658d; font-size: 10px; font-weight: 850; }
-.comparison-rain-single { opacity: .52; }
+.comparison-rain-single { opacity: .82; }
 .comparison-rain-single .comparison-rain-range { stroke: #258bc0; stroke-width: 1; stroke-dasharray: 3 3; fill: rgba(117, 190, 222, .08); }
-.comparison-rain-single .comparison-rain { fill: #77bcda; }
-.comparison-rain-single .comparison-rain-value { fill: #3a7d9b; font-weight: 750; }
+.comparison-rain-single .comparison-rain { fill: #3f9ec6; }
+.comparison-rain-single .comparison-rain-value { fill: #17658d; font-weight: 850; }
 .comparison-shower { opacity: .54; }
 .comparison-shower rect { fill: rgba(117, 190, 222, .12); stroke: #258bc0; stroke-width: 1; stroke-dasharray: 3 3; }
 .comparison-chart .comparison-shower text { fill: #3a7d9b; font-size: 9px; font-weight: 750; }

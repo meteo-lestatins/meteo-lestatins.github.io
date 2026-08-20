@@ -2145,15 +2145,36 @@ function renderComparisonForecast(arome, openMeteo) {
   const average = (pair, key) => (pair.meteoFrance[key] + pair.openMeteo[key]) / 2;
   const difference = (pair, key) => Math.abs(pair.meteoFrance[key] - pair.openMeteo[key]);
   const meteoFranceRainSource = item => item.rainSource?.replace(/^Météo-France\s+/, "") || "AROME";
+  const rainScenario = pair => {
+    const meteoFranceRain = Math.max(0, Number(pair.meteoFrance.rain) || 0);
+    const openMeteoRain = Math.max(0, Number(pair.openMeteo.rain) || 0);
+    const probability = Number(pair.openMeteo.probability);
+    const probabilityValue = Number.isFinite(probability) ? Math.max(0, Math.min(100, probability)) : null;
+    const mfWet = meteoFranceRain >= measurableRainThreshold;
+    const omWet = openMeteoRain >= measurableRainThreshold;
+    const shower = !mfWet && !omWet && probabilityValue > 0 && (Number(pair.openMeteo.weatherCode) >= 80 || openMeteoRain < measurableRainThreshold);
+    const minimum = Math.min(meteoFranceRain, openMeteoRain);
+    const maximum = Math.max(meteoFranceRain, openMeteoRain);
+    if (mfWet && omWet) {
+      const amount = (meteoFranceRain + openMeteoRain) / 2;
+      const spreadPenalty = Math.abs(meteoFranceRain - openMeteoRain) / Math.max(.5, maximum);
+      return { kind: "shared", amount, minimum, maximum, probabilityValue, confidence: Math.round(Math.max(45, Math.min(95, 100 - spreadPenalty * 55))) };
+    }
+    if (mfWet || omWet) {
+      const support = probabilityValue == null ? 0 : probabilityValue;
+      const confidence = Math.round(Math.max(30, Math.min(72, 32 + support * .38 + (omWet ? 8 : 0))));
+      return { kind: "single", amount: maximum, minimum, maximum, probabilityValue, confidence };
+    }
+    if (shower) return { kind: "shower", amount: 0, minimum, maximum, probabilityValue, confidence: Math.round(Math.max(20, Math.min(60, probabilityValue))) };
+    return { kind: "dry", amount: 0, minimum, maximum, probabilityValue, confidence: 70 };
+  };
   const agreement = pair => {
     // Use deliberately tight thresholds: a comparison view is useful only if
     // its background visibly reacts to modest model differences.
     const temperature = Math.max(0, 1 - difference(pair, "temperature") / 2.5);
     const wind = Math.max(0, 1 - difference(pair, "windSpeed") / 10);
     const gust = Math.max(0, 1 - difference(pair, "windGust") / 16);
-    const bothWet = pair.meteoFrance.rain >= measurableRainThreshold && pair.openMeteo.rain >= measurableRainThreshold;
-    const bothDry = pair.meteoFrance.rain < measurableRainThreshold && pair.openMeteo.rain < measurableRainThreshold;
-    const rain = bothWet ? Math.max(.2, 1 - difference(pair, "rain") / .7) : bothDry ? .7 : .1;
+    const rain = rainScenario(pair).confidence / 100;
     return Math.round((temperature * .32 + wind * .28 + gust * .25 + rain * .15) * 100);
   };
   const level = score => score >= 75 ? "fort" : score >= 50 ? "moyen" : "faible";
@@ -2207,36 +2228,33 @@ function renderComparisonForecast(arome, openMeteo) {
   const gustSegments = hours.slice(0, -1).map((pair, index) => '<line class="comparison-gust" x1="' + x(index) + '" y1="' + windY(gustValues[index]) + '" x2="' + x(index + 1) + '" y2="' + windY(gustValues[index + 1]) + '" style="opacity:' + opacity((agreement(pair) + agreement(hours[index + 1])) / 2) + '"/>').join("");
   const agreementWash = hours.map((pair, index) => '<rect class="comparison-agreement-wash" x="' + (index * cell) + '" y="0" width="' + cell + '" height="' + height + '" fill="' + agreementColor(agreement(pair), .17) + '"/>').join("");
   const rainBars = hours.map((pair, index) => {
-    const mfWet = pair.meteoFrance.rain >= measurableRainThreshold;
-    const omWet = pair.openMeteo.rain >= measurableRainThreshold;
-    const minimum = Math.min(pair.meteoFrance.rain, pair.openMeteo.rain);
-    const maximum = Math.max(pair.meteoFrance.rain, pair.openMeteo.rain);
-    const singleModelRain = mfWet !== omWet;
-    // If one model is dry and the other has measurable rain, averaging would
-    // turn a real signal into a half-cumul. Keep the wet model's amount in
-    // that case; average only when both models actually forecast rain.
-    const amount = mfWet && omWet ? average(pair, "rain") : singleModelRain ? maximum : average(pair, "rain");
-    const omShower = Number(pair.openMeteo.probability) > 0 && (Number(pair.openMeteo.weatherCode) >= 80 || pair.openMeteo.rain < measurableRainThreshold);
-    if (!mfWet && !omWet && !omShower) return "";
-    if (!mfWet && !omWet && omShower) {
-      const probability = Math.round(Number(pair.openMeteo.probability));
+    const scenario = rainScenario(pair);
+    if (scenario.kind === "dry") return "";
+    if (scenario.kind === "shower") {
+      const probability = Math.round(Number(scenario.probabilityValue));
       const detail = 'Averse selon Open-Meteo\nProbabilité : ' + probability + ' %\nCumul horaire : ' + pair.openMeteo.rain.toFixed(2) + ' mm';
       return '<g class="comparison-shower chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><rect x="' + (index * cell + 10) + '" y="278" width="' + (cell - 20) + '" height="16" rx="8"/><text x="' + x(index) + '" y="289" text-anchor="middle">Averse · ' + probability + ' %</text></g>';
     }
+    const amount = scenario.amount;
+    const minimum = scenario.minimum;
+    const maximum = scenario.maximum;
+    const singleModelRain = scenario.kind === "single";
     const barHeight = Math.min(66, Math.max(6, Math.sqrt(Math.max(amount, .02)) * 35));
     const minHeight = Math.min(barHeight, Math.sqrt(Math.max(minimum, .01)) * 35);
     const maxHeight = Math.min(66, Math.max(barHeight, Math.sqrt(Math.max(maximum, .02)) * 35));
-    const rainAgreement = mfWet && omWet ? agreement(pair) : 18;
-    const probability = Number(pair.openMeteo.probability);
+    const rainAgreement = scenario.confidence;
+    const probability = scenario.probabilityValue;
     const probabilityLabel = Number.isFinite(probability) ? Math.round(probability) + ' %' : '—';
-    const amountLabel = (singleModelRain ? maximum : amount).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mm';
+    const amountLabel = amount.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mm';
     const detail = 'Précipitations synthèse : ' + amount.toFixed(2) + ' mm'
-      + (singleModelRain ? '\nUn seul modèle voit la pluie : cumul non divisé par deux.' : '')
+      + (singleModelRain ? '\nUn seul modèle voit la pluie : cumul conservé, confiance réduite.' : '\nLes deux modèles voient de la pluie : cumul moyen.')
       + '\nMétéo-France (' + meteoFranceRainSource(pair.meteoFrance) + ') : ' + pair.meteoFrance.rain.toFixed(2) + ' mm'
       + '\nOpen-Meteo : ' + pair.openMeteo.rain.toFixed(2) + ' mm · probabilité ' + probabilityLabel
+      + '\nConfiance pluie : ' + rainAgreement + ' %'
       + '\nPlage : ' + minimum.toFixed(2) + ' – ' + maximum.toFixed(2) + ' mm';
-    const valueLabel = singleModelRain ? amountLabel + ' · ' + probabilityLabel : amount.toFixed(amount < 1 ? 1 : 0) + ' mm';
-    return '<g class="comparison-rain-group' + (singleModelRain ? ' comparison-rain-single' : '') + ' chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><rect class="comparison-rain-range" x="' + (index * cell + 17) + '" y="' + (298 - maxHeight) + '" width="' + (cell - 34) + '" height="' + maxHeight + '" style="opacity:' + opacity(rainAgreement, .18) + '"/><rect class="comparison-rain" x="' + (index * cell + 24) + '" y="' + (298 - barHeight) + '" width="' + (cell - 48) + '" height="' + barHeight + '" style="opacity:' + opacity(rainAgreement, .24) + '"/><line class="comparison-rain-min" x1="' + (index * cell + 18) + '" x2="' + (index * cell + cell - 18) + '" y1="' + (298 - minHeight) + '" y2="' + (298 - minHeight) + '" style="opacity:' + opacity(rainAgreement, .24) + '"/><text class="comparison-rain-value" x="' + x(index) + '" y="' + (294 - maxHeight) + '" text-anchor="middle">' + valueLabel + '</text></g>';
+    const valueLabel = amount.toFixed(amount < 1 ? 1 : 0) + ' mm';
+    const minimumLine = singleModelRain ? '' : '<line class="comparison-rain-min" x1="' + (index * cell + 18) + '" x2="' + (index * cell + cell - 18) + '" y1="' + (298 - minHeight) + '" y2="' + (298 - minHeight) + '" style="opacity:' + opacity(rainAgreement, .32) + '"/>';
+    return '<g class="comparison-rain-group' + (singleModelRain ? ' comparison-rain-single' : '') + ' chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '"><rect class="comparison-rain-range" x="' + (index * cell + 17) + '" y="' + (298 - maxHeight) + '" width="' + (cell - 34) + '" height="' + maxHeight + '" style="opacity:' + opacity(rainAgreement, .24) + '"/><rect class="comparison-rain" x="' + (index * cell + 24) + '" y="' + (298 - barHeight) + '" width="' + (cell - 48) + '" height="' + barHeight + '" style="opacity:' + opacity(rainAgreement, .36) + '"/>' + minimumLine + '<text class="comparison-rain-value" x="' + x(index) + '" y="' + (294 - maxHeight) + '" text-anchor="middle">' + valueLabel + '</text></g>';
   }).join("");
   const comparisonTemperaturePoints = hours.map((pair, index) => {
     const mf = pair.meteoFrance;
