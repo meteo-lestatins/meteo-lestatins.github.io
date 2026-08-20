@@ -2580,6 +2580,12 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const uncertaintyPositions = usePearomePeriod ? [barStart, barStart + barWidth] : [centerX];
     const uncertainty = quantifiedInterval ? uncertaintyPositions.map(position => '<path class="overview-rain-error" d="M' + position + ' ' + (overviewHeight - rainHeight(quantifiedInterval.high)) + 'V' + (overviewHeight - rainHeight(quantifiedInterval.low)) + 'M' + (position - 6) + ' ' + (overviewHeight - rainHeight(quantifiedInterval.high)) + 'H' + (position + 6) + 'M' + (position - 6) + ' ' + (overviewHeight - rainHeight(quantifiedInterval.low)) + 'H' + (position + 6) + '"/>').join('') : '';
     const drawBar = usePearomePeriod ? showPeriod : true;
+    const nowcastAmendment = isShortTermHour ? Math.min(displayedAmount, Math.max(0, Number(item.rainNowcastAmendment) || 0)) : 0;
+    const nowcastBaseHeight = rainHeight(Math.max(0, displayedAmount - nowcastAmendment));
+    const nowcastBandHeight = nowcastAmendment > 0 ? Math.max(3, height - nowcastBaseHeight) : 0;
+    const nowcastBand = drawBar && nowcastBandHeight > 0
+      ? '<rect class="overview-rain-nowcast-band" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + nowcastBandHeight + '"/>'
+      : '';
     // La probabilité décrit le volume affiché : elle reste dans la zone bleue,
     // juste au-dessus du cumul, sans suivre la borne haute d'incertitude.
     const probabilityLabelY = overviewHeight - (intervalAmountLabel ? 38 : 22);
@@ -2587,7 +2593,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const amountLabel = intervalAmountLabel
       ? '<text class="overview-rain-amount-label" x="' + centerX + '" y="' + (overviewHeight - 17) + '" text-anchor="middle"><tspan class="overview-rain-amount-value" x="' + centerX + '">' + escapeText(precipitationLabel) + '</tspan><tspan class="overview-rain-amount-range" x="' + centerX + '" dy="12">' + escapeText(intervalAmountLabel) + '</tspan></text>'
       : '<text class="overview-rain-amount-label" x="' + centerX + '" y="' + (overviewHeight - 5) + '" text-anchor="middle">' + escapeText(precipitationLabel) + '</text>';
-    const marker = drawBar && rainTrace ? '<rect class="overview-rain-bar wet" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + height + '"/>' + uncertainty + probabilityLabel + amountLabel : (probabilisticAverse ? '<rect class="overview-rain-chance" x="' + chanceX + '" y="' + (overviewHeight - 24) + '" width="' + chanceWidth + '" height="18" rx="9"/><text class="overview-rain-chance-label" x="' + x(index) + '" y="' + (overviewHeight - 15) + '" text-anchor="middle" dominant-baseline="middle">' + escapeText(chanceLabel) + '</text>' : '');
+    const marker = drawBar && rainTrace ? '<rect class="overview-rain-bar wet" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + height + '"/>' + nowcastBand + uncertainty + probabilityLabel + amountLabel : (probabilisticAverse ? '<rect class="overview-rain-chance" x="' + chanceX + '" y="' + (overviewHeight - 24) + '" width="' + chanceWidth + '" height="18" rx="9"/><text class="overview-rain-chance-label" x="' + x(index) + '" y="' + (overviewHeight - 15) + '" text-anchor="middle" dominant-baseline="middle">' + escapeText(chanceLabel) + '</text>' : '');
     return marker ? '<g class="overview-rain-svg' + (probabilisticAverse ? ' overview-rain-chance-group' : '') + ' chart-point" tabindex="0" data-rain-index="' + index + '" data-tooltip="' + escapeText(detail) + '">' + marker + '</g>' : '';
   }).join("");
   const overviewDataPoints = hours.map((item, index) => {
@@ -2616,7 +2622,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
   const eclipseOverlay = eclipseOverlayMarkup(timelineStart, timelineEnd, width);
   $("forecast-overview").innerHTML = comparisonLegend
     + '<div class="overview-graph-layout">' + forecastMetricControlsMarkup()
-    + '<section class="overview-panel"><div class="overview-scroll"><div class="overview-curve-labels" aria-hidden="true">' + curveLabels + '</div><div class="overview-canvas" style="width:' + width + 'px"><div class="overview-x-axis" aria-label="Heures des prévisions">' + overviewXAxis + '</div><div class="overview-head">' + overviewHeaders + '</div><svg class="overview-temperature" viewBox="0 0 ' + width + ' ' + overviewHeight + '" aria-label="Prévisions sélectionnées"><defs>' + overviewLightDefs + '</defs>' + overviewLightRects + cloudMarkup + '<g class="metric-layer metric-layer-rain">' + overviewRain + '</g>' + temperatureMarkup + windMarkup + gustMarkup + overviewDataPoints + '</svg>' + eclipseOverlay + '</div></div></section></div>';
+    + '<section class="overview-panel"><div class="overview-scroll"><div class="overview-curve-labels" aria-hidden="true">' + curveLabels + '</div><div class="overview-canvas" style="width:' + width + 'px"><div class="overview-x-axis" aria-label="Heures des prévisions">' + overviewXAxis + '</div><div class="overview-head">' + overviewHeaders + '</div><svg class="overview-temperature" viewBox="0 0 ' + width + ' ' + overviewHeight + '" aria-label="Prévisions sélectionnées"><defs>' + overviewLightDefs + '<pattern id="overview-nowcast-rain-stripes" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="7" fill="#e99512"/></pattern></defs>' + overviewLightRects + cloudMarkup + '<g class="metric-layer metric-layer-rain">' + overviewRain + '</g>' + temperatureMarkup + windMarkup + gustMarkup + overviewDataPoints + '</svg>' + eclipseOverlay + '</div></div></section></div>';
   const labelSeries = {
     "wind-average": { values: overviewWind, y: windY, format: value => Math.round(value) + " km/h" },
     "wind-gust": { values: overviewGust, y: gustY, format: value => Math.round(value) + " km/h" },
@@ -3709,7 +3715,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
   const radarOverPoint = threeHours.some(item => item.radarCellOverPoint);
-  const rainValue = formatRainAmount(piafRainAmount) + " mm" + (nowcastRainAmendment > 0 ? " (+" + formatRainAmount(nowcastRainAmendment) + " mm)" : "");
+  const rainValue = formatRainAmount(rainAmount) + " mm";
   const rainDetail = "Pluie · cumul PIAF prévu sur 3 h : " + formatRainAmount(piafRainAmount) + " mm"
     + (nowcastRainAmendment > 0 ? " · amendement Nowcasting : +" + formatRainAmount(nowcastRainAmendment) + " mm · total indicatif : " + formatRainAmount(rainAmount) + " mm" : "")
     + (radarOverPoint ? " · cellule au-dessus des Tatins : priorité au radar à courte échéance" : "")
