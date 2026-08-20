@@ -2874,9 +2874,13 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const coneFor = (track, className, gradientId, color, cell = null) => {
     if (track.length <= 1) return '';
     const passage = Math.max(0, Math.min(100, Number(cell?.risks?.passage) || 0));
-    if (passage <= 0) return '';
     const confidence = Math.max(0, Math.min(100, Number(cell?.track?.confidence) || 0));
-    const baseOpacity = Math.max(.12, Math.min(.6, .1 + passage / 100 * .38 + confidence / 100 * .12));
+    const speedKmh = Math.max(0, Number(cell?.track?.speedKmh) || 0);
+    const movingTrajectory = confidence > 0 || speedKmh >= 1;
+    if (passage <= 0 && !movingTrajectory) return '';
+    const baseOpacity = passage > 0
+      ? Math.max(.12, Math.min(.6, .1 + passage / 100 * .38 + confidence / 100 * .12))
+      : Math.max(.045, Math.min(.11, .035 + confidence / 100 * .06 + Math.min(speedKmh, 40) / 40 * .035));
     const start = track[0];
     const end = track.at(-1);
     const startX = x(start.eastKm);
@@ -2907,7 +2911,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const sideOpacity = Math.max(.06, baseOpacity * .68);
     const centerOpacity = baseOpacity;
     const title = cell
-      ? 'Zone probable cellule ' + cell.id + ' · passage ' + Math.round(passage) + ' % · confiance trajectoire ' + Math.round(confidence) + ' % · horizon ' + Math.round(Number(cell.track?.horizonMinutes || end.minutes || 0)) + ' min'
+      ? (passage > 0 ? 'Zone probable cellule ' : 'Trajectoire estimée cellule ') + cell.id + ' · passage ' + Math.round(passage) + ' % · confiance trajectoire ' + Math.round(confidence) + ' % · horizon ' + Math.round(Number(cell.track?.horizonMinutes || end.minutes || 0)) + ' min'
       : 'Zone probable';
     const visibleTrack = visibleTrackFor(track, cell);
     const coneCenterline = [start, ...visibleTrack.slice(1)];
