@@ -736,6 +736,7 @@ button:hover { background: #eef7fb; }
 .now-value { bottom: 3px; }
 .now-slice.averse-risk .now-value { bottom: 26px; z-index: 4; }
 .now-averse-period { align-self: end; justify-self: stretch; z-index: 3; margin: 0 2px 4px; padding: 2px 3px; overflow: hidden; border: 1px solid #9bcce1; border-radius: 999px; color: #3a7d9b; background: #eef8fc; font-size: 8px; font-weight: 750; letter-spacing: -.01em; text-align: center; white-space: nowrap; pointer-events: none; }
+.now-cell-period { align-self: start; justify-self: center; z-index: 5; max-width: calc(100% - 4px); margin-top: 5px; padding: 2px 4px; overflow: hidden; border: 1px solid #e2a35c; border-radius: 999px; color: #8a4e00; background: rgba(255, 240, 211, .94); font-size: 8px; font-weight: 850; letter-spacing: -.02em; text-align: center; white-space: nowrap; text-overflow: ellipsis; }
 .now-no-rain-period { grid-column: 1 / -1; grid-row: 1; align-self: center; justify-self: center; z-index: 3; padding: 4px 9px; border-radius: 999px; color: #607784; background: rgba(247, 250, 252, .92); font-size: 11px; font-weight: 750; pointer-events: none; }
 .now-bar { width: 100%; min-height: 0; border-radius: 2px 2px 0 0; background: transparent; }
 .now-bar.active { background: #2b91c6; }

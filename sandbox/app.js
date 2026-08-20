@@ -3382,12 +3382,18 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormPassageLevelChange = stormPassageLevel - previousStormPassageLevel;
   const stormTrendUsesDisplayedLevel = stormPassageLevelChange !== 0;
   const stormTrendChange = stormTrendUsesDisplayedLevel ? stormPassageLevelChange : maximumPassageChange;
-  const calculatedStormTrend = {
+  const passageMotionTrend = relevantStormCell ? passageTrendFor(relevantStormCell) : null;
+  const probabilityStormTrend = {
     label: stormTrendChange > 0 ? "croissant" : stormTrendChange < 0 ? "decroissant" : "stable",
     change: stormTrendChange,
     previous: stormTrendUsesDisplayedLevel ? previousStormPassageLevel : previousMaximumPassageRisk,
     basis: stormTrendUsesDisplayedLevel ? "displayed-level" : "passage-probability"
   };
+  const calculatedStormTrend = passageMotionTrend?.label === "croissant" && probabilityStormTrend.label !== "croissant"
+    ? { ...passageMotionTrend, basis: "cell-trajectory" }
+    : passageMotionTrend?.label === "decroissant" && probabilityStormTrend.label === "stable"
+      ? { ...passageMotionTrend, basis: "cell-trajectory" }
+      : probabilityStormTrend;
   const previousPendingDecline = previousPassageSnapshot?.pendingDecline;
   const declineFromCertainPassage = calculatedStormTrend.label === "decroissant"
     && previousMaximumPassageRisk >= 100
@@ -3543,12 +3549,18 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? "stable, éloignement à confirmer"
     : stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
   const effectiveStormTrendUsesDisplayedLevel = stormTrend.basis === "displayed-level";
+  const effectiveStormTrendUsesTrajectory = stormTrend.basis === "cell-trajectory";
   const effectivePreviousStormValue = Number(stormTrend.previous);
   const effectiveStormTrendChange = Number(stormTrend.change);
   const stormTrendDetail = effectiveStormTrendUsesDisplayedLevel
     ? "Risque orageux " + stormTrendWording
       + " · indicateur " + effectivePreviousStormValue + " sur 5 → " + stormPassageLevel + " sur 5"
       + (stormForecastSourceCount > effectivePreviousStormValue && stormPassageLevel <= 2 ? " · nouveau signal orageux entré dans les 3 prochaines heures" : "")
+    : effectiveStormTrendUsesTrajectory
+      ? "Trajectoire cellule " + (relevantStormCell?.id || "") + " " + stormTrendWording
+        + (Number.isFinite(Number(stormTrend.etaChange)) ? " · ETA " + (Number(stormTrend.etaChange) < 0 ? "rapprochée de " : "repoussée de ") + Math.abs(Math.round(Number(stormTrend.etaChange))) + " min" : "")
+        + (Number.isFinite(Number(stormTrend.radialChangeKm)) ? " · distance à +15 min " + (Number(stormTrend.radialChangeKm) < 0 ? "en baisse" : "en hausse") + " de " + Math.abs(Number(stormTrend.radialChangeKm)).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km" : "")
+        + " · passage " + maximumPassageRisk + " %"
     : "Probabilité de passage " + stormTrendWording
       + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
@@ -3674,6 +3686,62 @@ function renderPiaf(piaf, radar = null) {
   const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf);
   const slotTimes = values.map(item => item.slotTime || (isTimedForecast ? new Date(item.time) : new Date(piafBaseTime.getTime() + item.seconds * 1000)));
   const precipitationFor = item => Number(item.nowcastPrecipitation ?? item.precipitation) || 0;
+  const slotIntervalFor = (item, index) => {
+    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
+    const explicitEnd = Number(item.intervalEnd ?? item.rainIntervalEnd);
+    if (Number.isFinite(explicitStart) && Number.isFinite(explicitEnd) && explicitEnd > explicitStart) {
+      return { start: explicitStart, end: explicitEnd };
+    }
+    const current = slotTimes[index].getTime();
+    const next = slotTimes[index + 1]?.getTime();
+    const previous = slotTimes[index - 1]?.getTime();
+    if (isTimedForecast && Number.isFinite(next)) return { start: current, end: next };
+    if (isTimedForecast) return { start: current, end: current + 15 * 60000 };
+    const duration = Number.isFinite(previous) ? current - previous : 15 * 60000;
+    return { start: current - Math.max(5 * 60000, duration), end: current };
+  };
+  const slotIntervals = values.map(slotIntervalFor);
+  const cellEtaSlots = new Map();
+  const clampDuration = minutes => Math.max(15, Math.min(90, minutes));
+  const footprintAtEta = cell => {
+    const etaMinutes = Number(cell.etaMinutes);
+    const points = cell.track?.points || [];
+    const closestPoint = points.reduce((best, point) => {
+      const distance = Math.abs(Number(point.minutes) - etaMinutes);
+      return !best || distance < best.distance ? { point, distance } : best;
+    }, null)?.point;
+    if (cell.etaBasis === "envelope") return Math.max(Number(cell.radiusKm) || 0, Number(closestPoint?.uncertaintyKm) || 0);
+    return Math.max(0, Number(cell.radiusKm) || 0) + 2;
+  };
+  const radarObservedAt = new Date(radar?.observedAt || 0).getTime();
+  if (Number.isFinite(radarObservedAt)) {
+    (radar?.cells || []).forEach(cell => {
+      const etaMinutes = Number(cell.etaMinutes);
+      const passage = Math.round(Number(cell.risks?.passage) || 0);
+      if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return;
+      const etaTime = radarObservedAt + etaMinutes * 60000;
+      const speedKmh = Math.max(1, Number(cell.track?.speedKmh) || 0);
+      const footprintKm = footprintAtEta(cell);
+      const durationMinutes = clampDuration(speedKmh > 2 ? 60 * (footprintKm * 2) / speedKmh : 45);
+      const eventStart = etaTime;
+      const eventEnd = etaTime + durationMinutes * 60000;
+      const etaLabel = cell.etaBasis === "envelope" ? "ETA possible " : "ETA ";
+      slotIntervals.forEach((interval, slotIndex) => {
+        if (eventEnd <= interval.start || eventStart >= interval.end) return;
+        const item = values[slotIndex];
+        const precipitation = precipitationFor(item);
+        const detail = "Cellule " + cell.id
+          + "\n" + etaLabel + shortEtaLabel(etaMinutes)
+          + "\nPrésence estimée : " + hourFormat.format(new Date(eventStart)) + "–" + hourFormat.format(new Date(eventEnd))
+          + "\nPassage : " + passage + " %"
+          + "\nCumul prévu sur ce créneau : " + precipitation.toFixed(2) + " mm"
+          + (Number.isFinite(Number(item.radarPrecipitation)) ? "\nPIAF : " + Number(item.precipitation || 0).toFixed(2) + " mm · radar extrapolé : " + Number(item.radarPrecipitation).toFixed(2) + " mm" : "");
+        const entry = { id: cell.id, passage, etaMinutes, etaBasis: cell.etaBasis, detail };
+        if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
+        cellEtaSlots.get(slotIndex).push(entry);
+      });
+    });
+  }
   // Echelle absolue : 4 mm en 15 minutes remplit le graphique. Une faible
   // valeur reste donc visuellement faible, même si c'est le maximum de la série.
   const fullScaleRain = 4;
@@ -3710,10 +3778,17 @@ function renderPiaf(piaf, radar = null) {
   const aversePeriods = values.map((item, index) => isOpenMeteo && precipitationFor(item) <= 0 && Number(item.probability) > 0
     ? '<span class="now-averse-period" data-mobile-label="Averse" style="grid-column:' + (index + 1) + ';grid-row:1">Averse possible</span>'
     : '').join('');
+  const cellPeriods = [...cellEtaSlots.entries()].map(([index, entries]) => {
+    entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
+    const primary = entries[0];
+    const label = entries.length > 1 ? entries.map(entry => entry.id).join("+") : primary.id;
+    const detail = entries.map(entry => entry.detail).join("\n\n");
+    return '<span class="now-cell-period chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1" title="' + escapeText(detail) + '">Cell. ' + escapeText(label) + '</span>';
+  }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
     : '';
-  $("rain-bars").innerHTML = slices + aversePeriods + noRainPeriod;
+  $("rain-bars").innerHTML = slices + aversePeriods + cellPeriods + noRainPeriod;
   bindChartTooltips();
 }
 
