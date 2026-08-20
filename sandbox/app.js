@@ -370,6 +370,7 @@ function nowcastEtaRainEvents(radar) {
     return Math.max(0, Number(cell.radiusKm) || 0) + 2;
   };
   return (radar?.cells || []).map(cell => {
+    if (cell?.etaMinutes == null) return null;
     const etaMinutes = Number(cell.etaMinutes);
     const passage = Math.round(Number(cell.risks?.passage) || 0);
     if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return null;
@@ -2928,6 +2929,17 @@ function nowcastMapIsSaturated(cells) {
     || visibleCells.length >= 6;
 }
 
+function nowcastEtaCellOutsideMap(cell, radiusKm = 20) {
+  if (cell?.etaMinutes == null) return false;
+  const etaMinutes = Number(cell?.etaMinutes);
+  const passage = Number(cell?.risks?.passage);
+  return Number.isFinite(etaMinutes)
+    && etaMinutes >= 0
+    && etaMinutes <= 180
+    && passage > 0
+    && radarCellEdgeDistance(cell) >= radiusKm;
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
   if (shapeRuns.length) {
@@ -3443,15 +3455,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const intensityDetail = stormDetails?.intensity || detail;
     const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
     const showStormIntensity = stormDetails?.showIntensity ?? stormPassageLevel > 0;
-    const stormPassage = '<span class="three-hour-storm-passage">'
-      + nowcastMetricPictogram(kind, stormPassageLevel, passageDetail)
-      + (stormDetails?.eta ? '<span class="three-hour-storm-eta" title="' + escapeText(stormDetails.etaDetail || stormDetails.eta) + '">' + escapeText(stormDetails.eta) + '</span>' : '')
-      + '</span>';
+    const stormPassage = nowcastMetricPictogram(kind, stormPassageLevel, passageDetail);
+    const stormEta = stormDetails?.eta
+      ? '<span class="three-hour-storm-eta" title="' + escapeText(stormDetails.etaDetail || stormDetails.eta) + '">' + escapeText(stormDetails.eta) + '</span>'
+      : '';
     const stormTiming = displayedTrend
       ? '<span class="three-hour-storm-timing">' + trendMarkup(displayedTrend, passageDetail) + '</span>'
       : '';
     const metric = stormLayout
-      ? stormPassage + stormTiming
+      ? stormPassage + stormTiming + stormEta
         + (showStormIntensity ? '<span class="three-hour-storm-intensity"><strong>intensité</strong>' + nowcastMetricPictogram(kind, level, intensityDetail, false) + '</span>' : '')
       : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
@@ -3492,17 +3504,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   // probabilité de passage nowcasting supérieure à zéro utilise également
   // l'échelle complète de 1 à 5, indépendamment de l'intensité affichée.
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  const twentyKmSaturated = nowcastMapIsSaturated(cells);
-  if (twentyKmSaturated) {
-    if (activeNowcastMapRadius === 20) nowcastMapRadiusManuallySelected = false;
-    activeNowcastMapRadius = 60;
-    nowcastMapAutoExpanded = true;
-  } else {
-    nowcastMapAutoExpanded = false;
-    if (!nowcastMapRadiusManuallySelected) {
-      activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
-    }
-  }
   const currentObservation = new Date(radar.observedAt || 0).getTime();
   const previousObservation = new Date(cellPassageSnapshot?.observedAt || 0).getTime();
   const previousPassageSnapshot = cellPassageSnapshot
@@ -3572,6 +3573,18 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const relevantStormIntensity = passageCandidates[0] || null;
   const relevantStormCell = relevantStormIntensity?.cell || null;
   const otherPassageCells = passageCandidates.slice(1);
+  const twentyKmSaturated = nowcastMapIsSaturated(cells);
+  const etaTargetOutsideTwentyKm = nowcastEtaCellOutsideMap(relevantStormCell, 20);
+  if (twentyKmSaturated || etaTargetOutsideTwentyKm) {
+    if (activeNowcastMapRadius === 20) nowcastMapRadiusManuallySelected = false;
+    activeNowcastMapRadius = 60;
+    nowcastMapAutoExpanded = true;
+  } else {
+    nowcastMapAutoExpanded = false;
+    if (!nowcastMapRadiusManuallySelected) {
+      activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
+    }
+  }
   const nowcastStormPassageLevel = rawStormPassageLevel;
   const stormPassageLevel = Math.max(nowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
   const previousDisplayedLevelSnapshot = cellPassageSnapshot
@@ -3708,7 +3721,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)
     ];
     const distance = cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const etaMinutes = Number(cell.etaMinutes);
+    const etaMinutes = cell.etaMinutes == null ? null : Number(cell.etaMinutes);
     const etaText = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
       ? etaMinutes < 1 ? "Now" : Math.max(1, Math.round(etaMinutes)) + "min"
       : "";
@@ -3777,9 +3790,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormIntensityDetail = relevantStormCell
     ? "Intensité estimée de la cellule " + relevantStormCell.id + " : " + stormLevel + " sur 5"
     : "Aucune intensité de cellule à afficher";
-  const relevantStormEtaMinutes = Number(relevantStormCell?.etaMinutes);
+  const relevantStormEtaMinutes = relevantStormCell?.etaMinutes == null ? null : Number(relevantStormCell.etaMinutes);
   const stormEtaLabel = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180
-    ? relevantStormEtaMinutes < 1 ? "Now" : Math.max(1, Math.round(relevantStormEtaMinutes)) + " min"
+    ? relevantStormEtaMinutes < 1 ? "maintenant" : "dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + "min"
     : "";
   const stormEtaDetail = stormEtaLabel && relevantStormCell
     ? "Cellule " + relevantStormCell.id
