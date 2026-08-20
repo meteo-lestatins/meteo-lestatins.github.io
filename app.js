@@ -27,7 +27,6 @@ let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
 let dashboardSync = { status: "loading", error: null };
 let activeForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
-let activeRainSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
 let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
@@ -108,6 +107,9 @@ const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Mete
 const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
 const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
+const shortRainLinks = () => window.METEO_REPLAY
+  ? openMeteoLink() + nowcastDisplayLink()
+  : sourceLink("piaf", "api-piaf", "Météo-France") + nowcastDisplayLink();
 const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
   + sourceLink("piaf", "api-piaf", "PIAF")
   + sourceLink("arome", "api-arome", "AROME")
@@ -115,7 +117,7 @@ const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink()
 
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
-  if ($("rain-api-links")) $("rain-api-links").innerHTML = (activeRainSource === "openmeteo" ? openMeteoLink() : sourceLink("piaf", "api-piaf", "PIAF") + radarLink()) + nowcastDisplayLink();
+  if ($("rain-api-links")) $("rain-api-links").innerHTML = shortRainLinks();
   if ($("nowcast-api-links")) $("nowcast-api-links").innerHTML = radarLink() + (window.METEO_REPLAY ? "" : lightningLink());
   refreshSourceIndicators();
 }
@@ -124,8 +126,8 @@ function renderForecastApiLinks() {
   const container = $("forecast-api-links");
   if (!container) return;
   container.innerHTML = (activeForecastSource === "openmeteo" ? openMeteoLink()
-    : activeForecastSource === "comparison" ? meteoFranceLinks() + openMeteoLink()
-    : meteoFranceLinks());
+    : activeForecastSource === "comparison" ? meteoFranceLinks() + openMeteoLink() + nowcastDisplayLink()
+    : meteoFranceLinks() + nowcastDisplayLink());
   refreshSourceIndicators();
 }
 
@@ -288,17 +290,7 @@ function bindForecastControlButtons() {
 }
 
 function bindForecastLayout() {
-  const renderRainSourceSelector = () => {
-    const unavailable = window.METEO_REPLAY ? ' disabled title="PIAF non archivé pour cette date"' : '';
-    $("rain-source-selector").innerHTML = '<div class="forecast-source-selector" aria-label="Source des prévisions de précipitations"><button class="forecast-source-button' + (activeRainSource === "meteofrance" ? " active" : "") + '" type="button" data-rain-source="meteofrance" aria-pressed="' + (activeRainSource === "meteofrance") + '"' + unavailable + '>Météo-France</button><button class="forecast-source-button' + (activeRainSource === "openmeteo" ? " active" : "") + '" type="button" data-rain-source="openmeteo" aria-pressed="' + (activeRainSource === "openmeteo") + '">Open-Meteo</button></div>';
-    renderRainApiLinks();
-    $("rain-source-selector").querySelectorAll("[data-rain-source]").forEach(button => button.addEventListener("click", () => {
-      activeRainSource = button.dataset.rainSource;
-      renderRainSourceSelector();
-      renderActiveRain();
-    }));
-  };
-  renderRainSourceSelector();
+  renderRainApiLinks();
   renderForecastApiLinks();
   renderWeekApiLinks();
   ensureWeekForecast();
@@ -2023,14 +2015,21 @@ function piafRunTime(piaf) {
   return runText ? Date.parse(runText.replace(/\./g, ":")) : NaN;
 }
 
+function piafItemEndTime(piaf, item) {
+  const validTime = Date.parse(item?.validTime || "");
+  if (Number.isFinite(validTime)) return validTime;
+  const runTime = piafRunTime(piaf);
+  const seconds = Number(item?.seconds);
+  return Number.isFinite(runTime) && Number.isFinite(seconds) ? runTime + seconds * 1000 : NaN;
+}
+
 function piafQuarterHourRain(piaf) {
   const runTime = piafRunTime(piaf);
-  if (!Number.isFinite(runTime)) return [];
   const fiveMinutes = 5 * 60000;
   const quarterHour = 15 * 60000;
   const buckets = new Map();
   for (const item of piaf.values || []) {
-    const endTime = runTime + Number(item.seconds) * 1000;
+    const endTime = piafItemEndTime(piaf, item);
     if (!Number.isFinite(endTime) || !Number.isFinite(Number(item.precipitation))) continue;
     const bucketEnd = (Math.floor((endTime - 1) / quarterHour) + 1) * quarterHour;
     if (!buckets.has(bucketEnd)) buckets.set(bucketEnd, []);
@@ -2047,7 +2046,7 @@ function piafQuarterHourRain(piaf) {
     return {
       slotTime: new Date(complete ? bucketEnd : intervalEnd),
       endTime: bucketEnd,
-      seconds: (intervalEnd - runTime) / 1000,
+      seconds: Number.isFinite(runTime) ? (intervalEnd - runTime) / 1000 : Number(items.at(-1).seconds),
       precipitation: sum("precipitation"),
       nowcastPrecipitation: has("nowcastPrecipitation") ? sum("nowcastPrecipitation") : undefined,
       radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
@@ -2061,13 +2060,11 @@ function piafQuarterHourRain(piaf) {
 }
 
 function piafHourlyRain(piaf) {
-  const runTime = piafRunTime(piaf);
-  if (!Number.isFinite(runTime)) return new Map();
   const fiveMinutes = 5 * 60000;
   const hour = 60 * 60000;
   const buckets = new Map();
   for (const item of piaf.values || []) {
-    const endTime = runTime + Number(item.seconds) * 1000;
+    const endTime = piafItemEndTime(piaf, item);
     const precipitation = Number(item.nowcastPrecipitation ?? item.precipitation);
     if (!Number.isFinite(endTime) || !Number.isFinite(precipitation)) continue;
     // Un pas terminé exactement à H:00 appartient à l'heure précédente.
@@ -3009,17 +3006,17 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="' + edgeStartX.toFixed(1) + '" y1="' + edgeStartY.toFixed(1) + '" x2="' + endX.toFixed(1) + '" y2="' + endY.toFixed(1) + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + centerOpacity.toFixed(3) + '"></stop><stop offset=".55" stop-color="' + color + '" stop-opacity="' + sideOpacity.toFixed(3) + '"></stop><stop offset="1" stop-color="' + color + '" stop-opacity="' + edgeOpacity.toFixed(3) + '"></stop></linearGradient>';
     return '<defs>' + gradient + '</defs><path class="' + className + ' chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + conePath + '" style="fill:url(#' + gradientId + ');stroke:none"></path>';
   };
-  const directionChevronsFor = track => {
-    const visibleTrack = visibleTrackFor(track, threat);
-    if (visibleTrack.length <= 1) return '';
+  const directionChevronsFor = (track, cell) => {
+    const visibleTrack = visibleTrackFor(track, cell);
+    if (visibleTrack.length <= 1 || track.length <= 1) return '';
+    const origin = track[0];
+    const next = track.slice(1).find(point => Math.hypot(Number(point.eastKm) - Number(origin.eastKm), Number(point.northKm) - Number(origin.northKm)) > .01);
+    if (!next) return '';
     const start = visibleTrack[0];
-    const next = visibleTrack[1];
     const startX = x(start.eastKm);
     const startY = y(start.northKm);
-    const nextX = x(next.eastKm);
-    const nextY = y(next.northKm);
-    const dx = nextX - startX;
-    const dy = nextY - startY;
+    const dx = x(next.eastKm) - x(origin.eastKm);
+    const dy = y(next.northKm) - y(origin.northKm);
     const length = Math.hypot(dx, dy) || 1;
     const ux = dx / length;
     const uy = dy / length;
@@ -3117,7 +3114,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const scaleBarWidth = scaleBarKm * scale;
   return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Trajectoire prévue de la cellule ' + escapeText(threat.id) + ' sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
-    distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + directionChevronsFor(primaryPoints) + milestones +
+    distanceLink + cone + secondaryCones + secondaryTracks + cells + lightningMarks + directionChevronsFor(primaryPoints, threat) + milestones +
     '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g>' +
     '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
     '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span><span><i class="legend-cone"></i> zone probable</span>' + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
