@@ -699,6 +699,14 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
   return Math.max(1, Math.min(5, Math.round(Math.sqrt(risk * intensity))));
 }
 
+function shortTermEventLabel(kind, etaMinutes) {
+  const rain = kind === "rain";
+  const eta = etaMinutes == null ? null : Number(etaMinutes);
+  if (!Number.isFinite(eta) || eta < 0) return rain ? "Pas de pluie prévue" : "Pas d’orage prévu";
+  if (eta < 1) return rain ? "Pluie en cours" : "Orage en cours";
+  return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
+}
+
 function formatRainAmount(value, decimals = 1) {
   const rounded = Math.round((Number(value) || 0) * 10 ** decimals) / 10 ** decimals;
   return rounded.toLocaleString("fr-FR", {
@@ -3720,8 +3728,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const direction = cardinal(bearing).toUpperCase();
     return (direction === "EST" || direction === "OUEST" ? "L’" : "LE ") + direction;
   };
-  const firstPiafRain = (piaf?.values || []).find(item => Number(item.nowcastPrecipitation ?? item.precipitation) >= measurableRainThreshold);
-  const etaSeconds = radar.etaSeconds ?? firstPiafRain?.seconds ?? null;
   const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
   const now = appNow();
   const piafRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.precipitation) || 0)), 0) * 10) / 10;
@@ -4121,7 +4127,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       // L'affichage reste fonctionnel si le stockage local est indisponible.
     }
   }
-  const stormDetail = "Risque et intensité de l’orage sur 3 h";
+  const stormDetail = relevantStormIntensity
+    ? "Orage sur 3 h · passage " + maximumPassageRisk + " % · intensité " + stormIntensityLevel + "/5"
+      + " · pluie " + relevantStormIntensity.rainLevel + "/5"
+      + " · grêle " + relevantStormIntensity.hailLevel + "/5"
+      + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
+    : "Pas d’orage prévu sur 3 h";
   const relevantStormEtaEvent = relevantStormCell
     ? etaRainEvents.find(event => event.cell?.id === relevantStormCell.id)
     : null;
@@ -4129,13 +4140,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? relevantStormCell?.etaMinutes == null ? null : Number(relevantStormCell.etaMinutes)
     : Number(relevantStormEtaEvent.etaMinutes);
   const relevantStormDurationMinutes = Number(relevantStormEtaEvent?.durationMinutes);
-  const stormEtaLabel = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180
-    ? relevantStormEtaMinutes < 1 ? "Orage en cours" : "Dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + "min"
-    : "";
-  const stormDurationLabel = Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
+  const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
+  const stormEtaLabel = shortTermEventLabel("storm", hasStormEta ? relevantStormEtaMinutes : null);
+  const stormDurationLabel = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
     : "";
-  const stormEtaDetail = stormEtaLabel && relevantStormCell
+  const stormEtaDetail = hasStormEta && relevantStormCell
     ? "Cellule " + relevantStormCell.id
       + " · bord à " + cellDistance(relevantStormCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
@@ -4162,8 +4172,19 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
-  const rainValue = formatRainAmount(rainAmount) + " mm";
-  const rainDetail = "Intensité de la pluie sur 3 h";
+  const rainArrival = rainTrendSteps.map((step, index) => {
+    const item = threeHours[index];
+    const intervalEnd = piafItemEndTime(piaf, item);
+    const fallbackStart = now + Math.max(0, (Number(item?.seconds) || 300) - 300) * 1000;
+    const intervalStart = Number.isFinite(intervalEnd) ? intervalEnd - 5 * 60000 : fallbackStart;
+    return { precipitation: Number(step.precipitation) || 0, intervalStart, intervalEnd };
+  }).find(item => item.precipitation >= measurableRainThreshold
+    && (!Number.isFinite(item.intervalEnd) || item.intervalEnd >= now - 60000));
+  const rainEtaMinutes = rainArrival
+    ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
+    : null;
+  const rainValue = shortTermEventLabel("rain", rainEtaMinutes);
+  const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
