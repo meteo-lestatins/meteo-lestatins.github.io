@@ -498,7 +498,7 @@ function shortTermRainTrend(values, sourceDetail = "PIAF") {
   const analysedValues = (values || []).slice(0, 12);
   const series = analysedValues.map(item => Math.max(0, Number(item.precipitation) || 0));
   const total = series.reduce((sum, value) => sum + value, 0);
-  const wetIndexes = series.map((value, index) => value > 0 ? index : -1).filter(index => index >= 0);
+  const wetIndexes = series.map((value, index) => value >= .01 ? index : -1).filter(index => index >= 0);
   const stepDetail = series.length + " pas de 5 min sur l’heure à venir";
   if (!wetIndexes.length || total <= 0) return { label: "stable", change: 0, detail: "Aucune pluie prévue par " + sourceDetail + " · " + stepDetail };
 
@@ -513,9 +513,21 @@ function shortTermRainTrend(values, sourceDetail = "PIAF") {
   const lead = index => "+" + Math.round(Number(analysedValues[index]?.seconds) / 60) + " min";
   const timing = "premier signal " + lead(firstWet) + " · dernier signal " + lead(lastWet) + " · " + stepDetail;
 
-  if (projectedChange > threshold) {
+  // An imminent peak must describe the transition from the first five-minute
+  // step, not the average slope of the whole hour. Otherwise a strong shower
+  // arriving in ten minutes followed by dry weather is incorrectly marked as
+  // decreasing because the dry tail dominates the regression.
+  const peak = Math.max(...series);
+  const peakIndex = series.indexOf(peak);
+  const immediate = series[0] || 0;
+  const imminentRise = peakIndex > 0 && peak - immediate > threshold;
+  if (firstWet > 0 || imminentRise) {
     const wording = firstWet > 0 ? "Pluie arrivant" : "Pluie s’intensifiant";
-    return { label: "croissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
+    return { label: "croissant", change: peak - immediate, detail: wording + " selon " + sourceDetail + " · pic prévu " + lead(peakIndex) + " · " + timing };
+  }
+
+  if (projectedChange > threshold) {
+    return { label: "croissant", change: projectedChange, detail: "Pluie s’intensifiant selon " + sourceDetail + " · " + timing };
   }
   if (projectedChange < -threshold) {
     const wording = lastWet < series.length - 1 ? "Pluie cessant" : "Pluie s’atténuant";
@@ -2239,14 +2251,31 @@ function openMeteoHourlyRain(openMeteo) {
   })), 15, "Open-Meteo 15 min");
 }
 
-function withHourlyNowcast(forecast, hourlyRain) {
+function withHourlyNowcast(forecast, hourlyRain, options = {}) {
   if (!forecast?.hours?.length || !hourlyRain?.size) return forecast;
+  const fallbackByTime = new Map((options.fallbackHours || []).map(item => [new Date(item.time).getTime(), item]));
+  const existingTimes = new Set(forecast.hours.map(item => new Date(item.time).getTime()));
+  const currentHour = new Date(appNow());
+  currentHour.setMinutes(0, 0, 0);
+  const firstForecastTime = Math.min(...existingTimes);
+  const prependedHours = options.includeCurrentHour
+    ? [...hourlyRain.entries()].flatMap(([time, replacement]) => {
+        if (time < currentHour.getTime() || time >= firstForecastTime || existingTimes.has(time)) return [];
+        const fallback = fallbackByTime.get(time) || forecast.hours[0];
+        return [{
+          ...fallback,
+          time: new Date(time).toISOString(),
+          leadHour: Math.min(0, Number(fallback?.leadHour) || 0),
+          ...replacement
+        }];
+      })
+    : [];
   return {
     ...forecast,
-    hours: forecast.hours.map(item => {
+    hours: [...prependedHours, ...forecast.hours.map(item => {
       const replacement = hourlyRain.get(new Date(item.time).getTime());
       return replacement ? { ...item, ...replacement } : item;
-    })
+    })].sort((left, right) => new Date(left.time) - new Date(right.time))
   };
 }
 
@@ -2263,8 +2292,16 @@ function precedingHourEndKey(time) {
 function renderActiveForecast() {
   const data = latestForecastData;
   if (!data) return;
-  const meteoFrance = withHourlyNowcast(data.arome, data.piaf ? piafHourlyRain(data.piaf, data.radar) : null);
   const openMeteo = withHourlyNowcast(data.openMeteo, openMeteoHourlyRain(data.openMeteo));
+  const meteoFranceFallback = (openMeteo?.hours || []).map(item => ({
+    ...item,
+    cloudCover: item.cloudCover ?? item.cloudiness
+  }));
+  const meteoFrance = withHourlyNowcast(
+    data.arome,
+    data.piaf ? piafHourlyRain(data.piaf, data.radar) : null,
+    { includeCurrentHour: true, fallbackHours: meteoFranceFallback }
+  );
   if (activeForecastSource === "comparison") {
     renderComparisonForecast(meteoFrance, openMeteo);
     return;
@@ -2317,11 +2354,14 @@ function renderComparisonForecast(arome, openMeteo) {
     return;
   }
   const openByTime = new Map(openMeteo.hours.map(item => [new Date(item.time).getTime(), item]));
-  const nextHour = new Date(appNow());
-  nextHour.setMinutes(0, 0, 0);
+  const currentHour = new Date(appNow());
+  currentHour.setMinutes(0, 0, 0);
+  const nextHour = new Date(currentHour);
   nextHour.setHours(nextHour.getHours() + 1);
+  const hasCurrentShortTerm = arome.hours.some(item => item.rainShortTerm && new Date(item.time).getTime() === currentHour.getTime());
+  const forecastStart = hasCurrentShortTerm ? currentHour : nextHour;
   const hours = arome.hours
-    .filter(item => new Date(item.time) >= nextHour)
+    .filter(item => new Date(item.time) >= forecastStart)
     .map(meteoFrance => ({ meteoFrance, openMeteo: openByTime.get(new Date(meteoFrance.time).getTime()) }))
     .filter(pair => pair.openMeteo && ["temperature", "rain", "windSpeed", "windGust"].every(key => Number.isFinite(pair.meteoFrance[key]) && Number.isFinite(pair.openMeteo[key])))
     .slice(0, 48);
@@ -2491,12 +2531,16 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     panels.innerHTML = '<p class="forecast-empty">Actualisation des prévisions depuis le cache serveur…</p>';
     return;
   }
-  // A forecast cycle can stay cached across midnight.  Never let its past
-  // slots push the current forecast off screen: begin at the next full hour.
-  const nextHour = new Date(appNow());
-  nextHour.setMinutes(0, 0, 0);
+  // A forecast cycle can stay cached across midnight. Keep the current hour
+  // only when PIAF/Nowcasting provides a short-term partial accumulation;
+  // otherwise begin at the next full forecast hour.
+  const currentHour = new Date(appNow());
+  currentHour.setMinutes(0, 0, 0);
+  const nextHour = new Date(currentHour);
   nextHour.setHours(nextHour.getHours() + 1);
-  const hours = arome.hours.filter(item => new Date(item.time) >= nextHour);
+  const hasCurrentShortTerm = arome.hours.some(item => item.rainShortTerm && new Date(item.time).getTime() === currentHour.getTime());
+  const forecastStart = hasCurrentShortTerm ? currentHour : nextHour;
+  const hours = arome.hours.filter(item => new Date(item.time) >= forecastStart);
   if (!hours.length) return;
   const probabilities = (pearome?.hours || hours).filter(item => Number.isFinite(item.probability)).map(item => ({ ...item, time: new Date(item.time).getTime(), durationHours: item.durationHours || (pearome ? 3 : 1) }));
   const probabilityPointForTime = time => {
@@ -4131,7 +4175,10 @@ function renderPiaf(piaf, radar = null) {
     return '<span class="rain-axis-tick' + (index % 2 === 0 ? ' half-hour-tick' : '') + (index % 4 === 0 ? ' exact-hour' : '') + '" style="grid-column:' + (index + 1) + '">' + hourFormat.format(time) + '</span>';
   }).join("");
   const slices = values.map((item, index) => {
-    const precipitation = precipitationFor(item);
+    // Blue is the unmodified PIAF accumulation. Radar and cell ETA amounts
+    // are drawn separately in orange so the source of a high total remains
+    // visible instead of making PIAF itself look excessive.
+    const precipitation = Math.max(0, Number(item.precipitation) || 0);
     const wet = precipitation > 0;
     // PIAF est déterministe : aucun pourcentage artificiel n'est affiché.
     // Open-Meteo fournit en revanche une probabilité horaire distincte.
@@ -4145,33 +4192,48 @@ function renderPiaf(piaf, radar = null) {
     // provenant d'une source probabiliste distincte.
     const label = trace ? "gouttes" : wet ? precipitation.toFixed(2) + " mm" : probability == null ? "" : probability + "%";
     const slotTime = hourFormat.format(slotTimes[index]);
-    const fusionDetail = Number.isFinite(item.radarPrecipitation) ? " · PIAF " + item.precipitation.toFixed(2) + " mm · radar extrapolé " + item.radarPrecipitation.toFixed(2) + " mm" : "";
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
-    const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · pluie " + precipitation.toFixed(2) + " mm" + fusionDetail + (isTimedForecast ? periodDetail : "");
+    const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · PIAF " + precipitation.toFixed(2) + " mm" + periodDetail;
     const visibleLabel = label;
-    return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + (Number.isFinite(item.radarPrecipitation) ? " radar-adjusted" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
+    return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
   const aversePeriods = values.map((item, index) => isOpenMeteo && precipitationFor(item) <= 0 && Number(item.probability) > 0
     ? '<span class="now-averse-period" data-mobile-label="Averse" style="grid-column:' + (index + 1) + ';grid-row:1">Averse possible</span>'
     : '').join('');
-  const cellPeriods = [...cellEtaSlots.entries()].map(([index, entries]) => {
+  const cellPeriods = values.map((item, index) => {
+    const entries = cellEtaSlots.get(index) || [];
     entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
     const etaRain = Math.round(entries.reduce((total, entry) => total + Math.max(0, Number(entry.etaRain) || 0), 0) * 100) / 100;
-    const passage = Math.max(...entries.map(entry => Number(entry.passage) || 0));
-    const height = etaRain > 0 ? Math.min(100, Math.max(4, etaRain / fullScaleRain * 100)) : 4;
-    const alpha = Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
+    const basePiaf = Math.max(0, Number(item.precipitation) || 0);
+    const radarAdjusted = Math.max(basePiaf, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
+    const radarAmendment = Math.round(Math.max(0, radarAdjusted - basePiaf) * 100) / 100;
+    const nowcastAmendment = Math.round((radarAmendment + etaRain) * 100) / 100;
+    if (nowcastAmendment <= 0) return '';
+    const totalRain = Math.round((basePiaf + nowcastAmendment) * 100) / 100;
+    const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
+    const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
+    const totalHeight = Math.min(100, Math.max(3, totalRain / fullScaleRain * 100));
+    const amendmentBottom = Math.min(97, baseHeight);
+    const amendmentHeight = Math.min(100 - amendmentBottom, Math.max(3, totalHeight - amendmentBottom));
+    const alpha = passage == null ? .58 : Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
     const label = passage > 0 && passage < 100 ? Math.round(passage) + " %" : "";
-    const etaWindowStart = Math.min(...entries.map(entry => entry.eventStart));
-    const etaWindowEnd = Math.max(...entries.map(entry => entry.eventEnd));
+    const etaWindowStart = entries.length ? Math.min(...entries.map(entry => entry.eventStart)) : null;
+    const etaWindowEnd = entries.length ? Math.max(...entries.map(entry => entry.eventEnd)) : null;
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
-    const detail = "Nowcasting · cumul si passage : +" + etaRain.toFixed(2) + " mm"
-      + (passage < 100 ? "\nProbabilité de passage : " + passage + " %" : "")
-      + "\n" + etaLabels.join(" · ")
-      + "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd))
+    const piafPeriod = piaf.source === "arome"
+      ? " sur 1 h"
+      : item.complete === false ? " sur " + Math.max(5, Math.round((Number(item.intervalEnd) - Number(item.intervalStart)) / 60000)) + " min" : " sur 15 min";
+    const detail = "PIAF : " + basePiaf.toFixed(2) + " mm" + piafPeriod
+      + (radarAmendment > 0 ? "\nAmendement radar : +" + radarAmendment.toFixed(2) + " mm" : "")
+      + (etaRain > 0 ? "\nCellule(s) ETA si passage : +" + etaRain.toFixed(2) + " mm" : "")
+      + "\nTotal affiché : " + totalRain.toFixed(2) + " mm"
+      + (passage != null && passage < 100 ? "\nProbabilité de passage : " + passage + " %" : "")
+      + (etaLabels.length ? "\n" + etaLabels.join(" · ") : "")
+      + (etaWindowStart != null && etaWindowEnd != null ? "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd)) : "")
       + "\nClic : ouvrir la carte";
     const labelMarkup = label ? '<span class="now-cell-overlay-label">' + escapeText(label) + '</span>' : '';
-    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--eta-height:' + height.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span>' + labelMarkup + '</button>';
+    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--amendment-bottom:' + amendmentBottom.toFixed(1) + '%;--amendment-height:' + amendmentHeight.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span>' + labelMarkup + '</button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
