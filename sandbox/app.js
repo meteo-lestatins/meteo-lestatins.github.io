@@ -3984,9 +3984,9 @@ function renderPiaf(piaf, radar = null) {
       });
     });
   }
-  // Echelle absolue : 4 mm en 15 minutes remplit le graphique. Une faible
-  // valeur reste donc visuellement faible, même si c'est le maximum de la série.
-  const fullScaleRain = 4;
+  // Echelle absolue : 2 mm en 15 minutes (8 mm/h) remplit le graphique.
+  // Ainsi 0,1 mm reste discret, tandis qu'une pluie moderee est lisible.
+  const fullScaleRain = 2;
   $("rain-bars").style.gridTemplateColumns = "repeat(" + values.length + ", minmax(0, 1fr))";
   $("rain-axis").style.gridTemplateColumns = "repeat(" + values.length + ", minmax(0, 1fr))";
   $("rain-axis").innerHTML = slotTimes.map((time, index) => {
