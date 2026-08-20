@@ -1031,11 +1031,7 @@ function normalizeOpenMeteoDays(daily, hourly) {
     if (isToday && !samples.length) return null;
     const remainingProbability = samples.length ? Math.max(...samples.map(sample => sample.probability)) : null;
     const dailyProbability = isToday ? remainingProbability : daily.precipitation_probability_max?.[index] ?? null;
-    let rainSamples = samples.filter(sample => sample.precipitation >= .02);
-    if (!rainSamples.length && Number(dailyProbability) >= 50) {
-      const maximumProbability = Math.max(...samples.map(sample => sample.probability), 0);
-      rainSamples = samples.filter(sample => sample.probability >= Math.max(50, maximumProbability - 10));
-    }
+    const rainSamples = samples.filter(sample => sample.precipitation >= .02);
     const sunrise = daily.sunrise?.[index];
     const sunset = daily.sunset?.[index];
     const windPeriod = characteristicPeriod(samples, "windSpeed", 5, sunrise, sunset);
