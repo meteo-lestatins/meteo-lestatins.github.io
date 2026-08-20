@@ -41,6 +41,7 @@ let dashboardCacheHydrated = false;
 let weekCacheHydrated = false;
 let activeNowcastMapRadius = 60;
 let nowcastMapRadiusManuallySelected = false;
+let nowcastMapAutoExpanded = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
 let nowcastMapRequest = 0;
@@ -2887,7 +2888,61 @@ function radarCellEdgeDistance(cell) {
   return Math.max(0, Math.hypot(Number(cell?.eastKm || 0), Number(cell?.northKm || 0)) - Math.max(0, Number(cell?.radiusKm || 0)));
 }
 
+function radarCellShapeRuns(cell) {
+  return (Array.isArray(cell?.shapeRuns) ? cell.shapeRuns : []).filter(run => {
+    return Number.isFinite(Number(run?.westKm))
+      && Number.isFinite(Number(run?.eastKm))
+      && Number.isFinite(Number(run?.southKm))
+      && Number.isFinite(Number(run?.northKm))
+      && Number(run.eastKm) > Number(run.westKm)
+      && Number(run.northKm) > Number(run.southKm);
+  });
+}
+
+function nowcastMapCoverage(cells, radiusKm = 20) {
+  const minimum = -radiusKm;
+  const maximum = radiusKm;
+  const visibleAreaKm2 = radiusKm * radiusKm * 4;
+  const areaKm2 = (cells || []).reduce((total, cell) => {
+    if (radarCellEdgeDistance(cell) >= radiusKm) return total;
+    const shapeRuns = radarCellShapeRuns(cell);
+    if (!shapeRuns.length) return total + Math.min(visibleAreaKm2, Math.max(0, Number(cell.areaKm2) || 0));
+    return total + shapeRuns.reduce((cellTotal, run) => {
+      const west = Math.max(minimum, Number(run.westKm));
+      const east = Math.min(maximum, Number(run.eastKm));
+      const south = Math.max(minimum, Number(run.southKm));
+      const north = Math.min(maximum, Number(run.northKm));
+      return cellTotal + Math.max(0, east - west) * Math.max(0, north - south);
+    }, 0);
+  }, 0);
+  return Math.max(0, Math.min(1, areaKm2 / visibleAreaKm2));
+}
+
+function nowcastMapIsSaturated(cells) {
+  const visibleCells = (cells || []).filter(cell => radarCellEdgeDistance(cell) < 20);
+  const coverage = nowcastMapCoverage(visibleCells, 20);
+  const coverageThreshold = nowcastMapAutoExpanded ? .2 : .32;
+  const crowdedCoverageThreshold = nowcastMapAutoExpanded ? .12 : .18;
+  return coverage >= coverageThreshold
+    || visibleCells.length >= 4 && coverage >= crowdedCoverageThreshold
+    || visibleCells.length >= 6;
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
+  const shapeRuns = radarCellShapeRuns(cell);
+  if (shapeRuns.length) {
+    const centerEast = Number(cell.eastKm || 0);
+    const centerNorth = Number(cell.northKm || 0);
+    return Math.max(0, ...shapeRuns.flatMap(run => [
+      [Number(run.westKm), Number(run.southKm)],
+      [Number(run.westKm), Number(run.northKm)],
+      [Number(run.eastKm), Number(run.southKm)],
+      [Number(run.eastKm), Number(run.northKm)]
+    ]).map(([eastKm, northKm]) => {
+      const projection = (eastKm - centerEast) * directionEast + (northKm - centerNorth) * directionNorth;
+      return absolute ? Math.abs(projection) : projection;
+    }));
+  }
   const footprint = Array.isArray(cell?.footprint) ? cell.footprint : [];
   if (footprint.length < 3) return Math.max(0, Number(cell?.radiusKm || 0));
   const centerEast = Number(cell.eastKm || 0);
@@ -3100,8 +3155,13 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const linkLength = Math.max(1, Math.hypot(tatinsX - cellX, tatinsY - cellY));
     const linkX = (tatinsX - cellX) / linkLength;
     const linkY = (tatinsY - cellY) / linkLength;
+    const shapeRuns = radarCellShapeRuns(cell);
     const footprint = Array.isArray(cell.footprint) && cell.footprint.length >= 3 ? cell.footprint : null;
-    const nearestEdgePoint = footprint?.flatMap((point, pointIndex) => {
+    const nearestShapePoint = shapeRuns.map(run => ({
+      eastKm: Math.max(Number(run.westKm), Math.min(Number(run.eastKm), 0)),
+      northKm: Math.max(Number(run.southKm), Math.min(Number(run.northKm), 0))
+    })).sort((left, right) => Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))[0];
+    const nearestFootprintPoint = footprint?.flatMap((point, pointIndex) => {
       const next = footprint[(pointIndex + 1) % footprint.length];
       const dx = Number(next.eastKm) - Number(point.eastKm);
       const dy = Number(next.northKm) - Number(point.northKm);
@@ -3109,17 +3169,21 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       const ratio = lengthSquared ? Math.max(0, Math.min(1, -(Number(point.eastKm) * dx + Number(point.northKm) * dy) / lengthSquared)) : 0;
       return [{ eastKm: Number(point.eastKm) + dx * ratio, northKm: Number(point.northKm) + dy * ratio }];
     }).sort((left, right) => Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))[0];
+    const nearestEdgePoint = nearestShapePoint || nearestFootprintPoint;
     const cellEdgeX = nearestEdgePoint ? x(nearestEdgePoint.eastKm) : cellX + linkX * radius;
     const cellEdgeY = nearestEdgePoint ? y(nearestEdgePoint.northKm) : cellY + linkY * radius;
     const labelX = cellEdgeX + (tatinsX - cellEdgeX) * .32 - linkY * 13;
     const labelY = cellEdgeY + (tatinsY - cellEdgeY) * .32 + linkX * 13;
     const labelWidth = Math.max(72, distanceLabel.length * 6.3 + 12);
     const intensityDots = Array.from({ length: 5 }, (_, dotIndex) => '<circle class="cell-intensity-dot' + (dotIndex < cellIntensityLevel ? ' active' : '') + '" style="fill:' + (dotIndex < cellIntensityLevel ? '#d29319' : '#dfe7eb') + '" cx="' + (-16 + dotIndex * 8) + '" cy="10" r="2.3"></circle>').join('');
-    const cellShape = footprint
-      ? '<path class="radar-cell' + (selected ? ' selected' : '') + '" d="' + footprint.map((point, pointIndex) => (pointIndex ? 'L' : 'M') + x(point.eastKm).toFixed(1) + ' ' + y(point.northKm).toFixed(1)).join(' ') + 'Z" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
+    const rasterPath = shapeRuns.map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1) + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
+    const cellShape = shapeRuns.length
+      ? '<path class="radar-cell raster-shape' + (selected ? ' selected' : '') + '" d="' + rasterPath + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
+      : footprint
+        ? '<path class="radar-cell' + (selected ? ' selected' : '') + '" d="' + footprint.map((point, pointIndex) => (pointIndex ? 'L' : 'M') + x(point.eastKm).toFixed(1) + ' ' + y(point.northKm).toFixed(1)).join(' ') + 'Z" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
       : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></circle>';
-    const cellLabelX = footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - radius - 4;
-    const cellLabelY = footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - radius - 4;
+    const cellLabelX = shapeRuns.length ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4 : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - radius - 4;
+    const cellLabelY = shapeRuns.length ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4 : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - radius - 4;
     return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '"><line class="cell-distance-link" x1="' + cellEdgeX.toFixed(1) + '" y1="' + cellEdgeY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><g aria-hidden="true">' + intensityDots + '</g></g>' + cellShape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + cellLabelX.toFixed(1) + '" y="' + cellLabelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
@@ -3422,8 +3486,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   // probabilité de passage nowcasting supérieure à zéro utilise également
   // l'échelle complète de 1 à 5, indépendamment de l'intensité affichée.
   const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  if (!nowcastMapRadiusManuallySelected) {
-    activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
+  const twentyKmSaturated = nowcastMapIsSaturated(cells);
+  if (twentyKmSaturated) {
+    if (activeNowcastMapRadius === 20) nowcastMapRadiusManuallySelected = false;
+    activeNowcastMapRadius = 60;
+    nowcastMapAutoExpanded = true;
+  } else {
+    nowcastMapAutoExpanded = false;
+    if (!nowcastMapRadiusManuallySelected) {
+      activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
+    }
   }
   const currentObservation = new Date(radar.observedAt || 0).getTime();
   const previousObservation = new Date(cellPassageSnapshot?.observedAt || 0).getTime();

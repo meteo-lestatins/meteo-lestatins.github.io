@@ -712,8 +712,10 @@ button:hover { background: #eef7fb; }
 .north-arrow path, .scale-bar path { fill: none; stroke: #6c808b; stroke-width: 1.5; }
 .radar-cell { fill: rgba(42, 145, 198, .25); stroke: #258bc0; stroke-width: 1.5; }
 .radar-cell.selected { fill: rgba(236, 113, 51, .32); stroke: #e46d32; stroke-width: 2.5; }
+.radar-cell.raster-shape { stroke: none; filter: drop-shadow(0 0 1px #258bc0); }
+.radar-cell.raster-shape.selected { stroke: none; filter: drop-shadow(0 0 1.5px #e46d32); }
 .radar-cell { cursor: help; outline: none; }
-.radar-cell:focus, .radar-cell:hover { stroke-width: 3; filter: drop-shadow(0 0 3px rgba(20, 127, 174, .45)); }
+.radar-cell:focus, .radar-cell:hover { stroke-width: 3; filter: drop-shadow(0 0 3px rgba(20, 127, 174, .65)); }
 .cell-name { fill: #b64f28; font: 800 12px system-ui; pointer-events: none; }
 .cell-name.secondary { fill: #26779f; font-size: 10px; }
 .cell-distance path { fill: none; stroke: #7996a5; stroke-width: 1.5; stroke-dasharray: 5 5; }
