@@ -65,8 +65,8 @@ const measurableRainThreshold = .05;
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
 
-const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, openMeteo: 60 * 60000 };
-const sourceLabels = { arome: "AROME", pearome: "AROME-PI", ensemble: "PEAROME", piaf: "PIAF", radar: "Radar", lightning: "EUMETSAT LI", openMeteo: "Open-Meteo" };
+const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, vigilance: 30 * 60000, openMeteo: 60 * 60000 };
+const sourceLabels = { arome: "AROME", pearome: "AROME-PI", ensemble: "PEAROME", piaf: "PIAF", radar: "Radar", lightning: "EUMETSAT LI", vigilance: "Vigilance", openMeteo: "Open-Meteo" };
 
 function sourceSyncState(key) {
   const source = latestForecastData?.[key];
@@ -107,14 +107,18 @@ const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
 const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
 const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
 const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
+const vigilanceLink = () => sourceLink("vigilance", "api-vigilance", "Vigilance");
 const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
 const shortRainLinks = () => window.METEO_REPLAY
   ? openMeteoLink() + nowcastDisplayLink()
   : sourceLink("piaf", "api-piaf", "Météo-France") + nowcastDisplayLink();
-const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + openMeteoLink() : radarLink()
+const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + nowcastDisplayLink() + openMeteoLink() : radarLink()
+  + nowcastDisplayLink()
   + sourceLink("piaf", "api-piaf", "PIAF")
   + sourceLink("arome", "api-arome", "AROME")
-  + lightningLink();
+  + lightningLink()
+  + openMeteoLink()
+  + vigilanceLink();
 
 function renderRainApiLinks() {
   if ($("three-hour-api-links")) $("three-hour-api-links").innerHTML = threeHourLinks();
