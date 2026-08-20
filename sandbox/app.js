@@ -4130,7 +4130,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : Number(relevantStormEtaEvent.etaMinutes);
   const relevantStormDurationMinutes = Number(relevantStormEtaEvent?.durationMinutes);
   const stormEtaLabel = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180
-    ? relevantStormEtaMinutes < 1 ? "Maintenant" : "Dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + "min"
+    ? relevantStormEtaMinutes < 1 ? "Orage en cours" : "Dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + "min"
     : "";
   const stormDurationLabel = Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
@@ -4139,7 +4139,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? "Cellule " + relevantStormCell.id
       + " · bord à " + cellDistance(relevantStormCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
-      + " · ETA " + (relevantStormEtaMinutes < 1 ? "maintenant" : "dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + " min")
+      + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + " min")
       + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
     : "";
   const stormTrendWording = stormTrend.pendingConfirmation
