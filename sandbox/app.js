@@ -377,13 +377,16 @@ function nowcastEtaRainEvents(radar) {
     const durationMinutes = clampDuration(speedKmh > 2 ? 60 * (footprintKm * 2) / speedKmh : 45);
     const eventStart = radarObservedAt + etaMinutes * 60000;
     const eventEnd = eventStart + durationMinutes * 60000;
+    const maximum = Math.max(0, Number(cell.maximum) || 0);
+    const representativeIntensity = Math.min(maximum, Math.max(0, Number(cell.mean) || maximum * .5));
     return {
       cell,
       etaMinutes,
       passage,
       eventStart,
       eventEnd,
-      maximum: Math.max(0, Number(cell.maximum) || 0),
+      maximum,
+      expectedIntensity: representativeIntensity * passage / 100,
       etaLabel: cell.etaBasis === "envelope" ? "ETA possible " : "ETA "
     };
   }).filter(Boolean);
@@ -393,7 +396,7 @@ function nowcastEtaRainAmount(events, windowStart, windowEnd) {
   if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return 0;
   return Math.round(events.reduce((sum, event) => {
     const overlapMinutes = Math.max(0, Math.min(event.eventEnd, windowEnd) - Math.max(event.eventStart, windowStart)) / 60000;
-    return sum + event.maximum * overlapMinutes / 60;
+    return sum + Math.max(0, Number(event.expectedIntensity ?? event.maximum) || 0) * overlapMinutes / 60;
   }, 0) * 10) / 10;
 }
 
@@ -2059,28 +2062,41 @@ function piafQuarterHourRain(piaf) {
   });
 }
 
-function piafHourlyRain(piaf) {
+function piafHourlyRain(piaf, radar = null) {
   const fiveMinutes = 5 * 60000;
   const hour = 60 * 60000;
+  const etaEvents = nowcastEtaRainEvents(radar);
   const buckets = new Map();
   for (const item of piaf.values || []) {
     const endTime = piafItemEndTime(piaf, item);
-    const precipitation = Number(item.nowcastPrecipitation ?? item.precipitation);
-    if (!Number.isFinite(endTime) || !Number.isFinite(precipitation)) continue;
+    const basePrecipitation = Math.max(0, Number(item.precipitation) || 0);
+    const adjustedPrecipitation = Math.max(basePrecipitation, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
+    if (!Number.isFinite(endTime)) continue;
     // Un pas terminé exactement à H:00 appartient à l'heure précédente.
     const hourStart = Math.floor((endTime - 1) / hour) * hour;
     if (!buckets.has(hourStart)) buckets.set(hourStart, []);
-    buckets.get(hourStart).push({ ...item, endTime, precipitation });
+    buckets.get(hourStart).push({ ...item, endTime, basePrecipitation, adjustedPrecipitation });
   }
   return new Map([...buckets.entries()].sort(([left], [right]) => left - right).map(([hourStart, items]) => {
     items.sort((left, right) => left.endTime - right.endTime);
     const intervalStart = items[0].endTime - fiveMinutes;
     const intervalEnd = items.at(-1).endTime;
-    const radarAdjusted = items.some(item => Number.isFinite(item.nowcastPrecipitation));
+    const basePiaf = Math.round(items.reduce((total, item) => total + item.basePrecipitation, 0) * 100) / 100;
+    const radarAdjusted = Math.round(items.reduce((total, item) => total + item.adjustedPrecipitation, 0) * 100) / 100;
+    const directRadarAmendment = Math.max(0, Math.round((radarAdjusted - basePiaf) * 100) / 100);
+    const hourEvents = etaEvents.filter(event => event.eventEnd > hourStart && event.eventStart < hourStart + hour);
+    const etaAmendment = nowcastEtaRainAmount(hourEvents, hourStart, hourStart + hour);
+    const nowcastAmendment = Math.round((directRadarAmendment + etaAmendment) * 100) / 100;
     const radarCellOverPoint = items.some(item => item.radarCellOverPoint);
     return [hourStart, {
-      rain: Math.round(items.reduce((total, item) => total + Math.max(0, item.precipitation), 0) * 100) / 100,
-      rainSource: radarAdjusted ? "Météo-France PIAF + radar" : "Météo-France PIAF",
+      rain: Math.round((basePiaf + nowcastAmendment) * 100) / 100,
+      rainBasePiaf: basePiaf,
+      rainNowcastAmendment: nowcastAmendment,
+      rainDirectRadarAmendment: directRadarAmendment,
+      rainEtaAmendment: etaAmendment,
+      rainEtaCellIds: hourEvents.map(event => event.cell.id),
+      rainShortTerm: true,
+      rainSource: nowcastAmendment > 0 ? "Météo-France + Nowcasting" : "Météo-France",
       rainIntervalStart: intervalStart,
       rainIntervalEnd: intervalEnd,
       rainDurationMinutes: Math.round((intervalEnd - intervalStart) / 60000),
@@ -2120,7 +2136,7 @@ function precedingHourEndKey(time) {
 function renderActiveForecast() {
   const data = latestForecastData;
   if (!data) return;
-  const meteoFrance = withHourlyNowcast(data.arome, data.piaf ? piafHourlyRain(data.piaf) : null);
+  const meteoFrance = withHourlyNowcast(data.arome, data.piaf ? piafHourlyRain(data.piaf, data.radar) : null);
   const openMeteo = withHourlyNowcast(data.openMeteo, openMeteoHourlyRain(data.openMeteo));
   if (activeForecastSource === "comparison") {
     renderComparisonForecast(meteoFrance, openMeteo);
@@ -2145,9 +2161,9 @@ function renderActiveForecast() {
 function renderActiveRain() {
   const data = latestForecastData;
   if (!data) return;
-  const useOpenMeteo = activeRainSource === "openmeteo" || !data.piaf;
+  const useOpenMeteo = Boolean(window.METEO_REPLAY && !data.piaf);
   if (useOpenMeteo) {
-    if ($("rain-api-links")) $("rain-api-links").innerHTML = openMeteoLink() + nowcastDisplayLink();
+    if ($("rain-api-links")) $("rain-api-links").innerHTML = shortRainLinks();
     const probabilityByHour = new Map((data.openMeteo?.hours || []).map(item => [item.time.slice(0, 13), item.probability]));
     const values = (data.openMeteo?.minutely15 || []).map(item => ({
       ...item,
@@ -2155,7 +2171,7 @@ function renderActiveRain() {
     }));
     if (values.length) renderPiaf({ values, source: "openmeteo" });
   } else {
-    if ($("rain-api-links")) $("rain-api-links").innerHTML = sourceLink("piaf", "api-piaf", "PIAF") + radarLink() + nowcastDisplayLink();
+    if ($("rain-api-links")) $("rain-api-links").innerHTML = shortRainLinks();
     if (data.piaf) renderPiaf(data.piaf, data.radar);
   }
   refreshSourceIndicators();
@@ -2193,7 +2209,9 @@ function renderComparisonForecast(arome, openMeteo) {
   const x = index => index * cell + cell / 2;
   const average = (pair, key) => (pair.meteoFrance[key] + pair.openMeteo[key]) / 2;
   const difference = (pair, key) => Math.abs(pair.meteoFrance[key] - pair.openMeteo[key]);
-  const meteoFranceRainSource = item => item.rainSource?.replace(/^Météo-France\s+/, "") || "AROME";
+  const meteoFranceRainSource = item => item.rainShortTerm
+    ? (Number(item.rainNowcastAmendment) > 0 ? "PIAF + Nowcasting" : "PIAF")
+    : item.rainSource?.replace(/^Météo-France\s+/, "") || "AROME";
   const rainScenario = pair => {
     const meteoFranceRain = Math.max(0, Number(pair.meteoFrance.rain) || 0);
     const openMeteoRain = Math.max(0, Number(pair.openMeteo.rain) || 0);
@@ -2516,8 +2534,8 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
   }));
   const overviewRain = hours.map((item, index) => {
     const probabilityPoint = probabilityPointForTime(new Date(item.time).getTime());
-    const isPiafHour = item.rainSource?.startsWith("Météo-France PIAF");
-    const hasProbability = !isPiafHour && Number.isFinite(probabilityPoint?.probability);
+    const isShortTermHour = Boolean(item.rainShortTerm);
+    const hasProbability = !isShortTermHour && Number.isFinite(probabilityPoint?.probability);
     const probability = hasProbability ? Number(probabilityPoint.probability) : null;
     const usePearomePeriod = pearome && hasProbability && !item.rainSource;
     const periodIndexes = usePearomePeriod ? hours.map((hour, hourIndex) => ({ hourIndex, time: new Date(hour.time).getTime() }))
@@ -2533,7 +2551,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const showProbability = hasProbability && probability > 0 && (usePearomePeriod ? showPeriod : probabilityDisplayIndexes.get(probabilityPoint.time) === index);
     const probabilisticAverse = showProbability && probability > 0 && !measurable;
     const height = selectedMetrics.has("rain") && rainTrace ? (measurable ? Math.min(112, Math.max(7, Math.sqrt(displayedAmount) * 35)) : 4) : 0;
-    const interval = isPiafHour || ensemble?.source === "openmeteo" ? null : probabilityPoint?.interval;
+    const interval = isShortTermHour || ensemble?.source === "openmeteo" ? null : probabilityPoint?.interval;
     const intervalLabel = "Plage ensemble PEAROME (P10–P90)";
     const durationHours = usePearomePeriod ? probabilityPoint.durationHours : 1;
     const rainDurationMinutes = Number(item.rainDurationMinutes);
@@ -2543,8 +2561,13 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const intervalPeriod = item.rainIntervalStart && item.rainIntervalEnd
       ? '\nPériode : ' + hourFormat.format(new Date(item.rainIntervalStart)) + '–' + hourFormat.format(new Date(item.rainIntervalEnd))
       : '';
-    const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + intervalPeriod + (item.rainRadarCellOverPoint ? '\nCellule au-dessus des Tatins : radar prioritaire à courte échéance' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
-    const precipitationLabel = drops ? 'gouttes' : measurable ? displayedAmount.toFixed(isPiafHour ? 2 : 1) + ' mm' : (!pearome && probability > 0 ? 'averse' : '');
+    const shortTermDetail = isShortTermHour
+      ? '\nMétéo-France : ' + Number(item.rainBasePiaf || 0).toFixed(2) + ' mm'
+        + (Number(item.rainNowcastAmendment) > 0 ? '\nNowcasting : +' + Number(item.rainNowcastAmendment).toFixed(2) + ' mm' : '')
+        + ((item.rainEtaCellIds || []).length ? '\nCellule(s) avec ETA : ' + item.rainEtaCellIds.join(', ') : '')
+      : '';
+    const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + shortTermDetail + intervalPeriod + (item.rainRadarCellOverPoint ? '\nPluie détectée aux Tatins par le radar' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
+    const precipitationLabel = drops ? 'gouttes' : measurable ? displayedAmount.toFixed(isShortTermHour ? 2 : 1) + ' mm' : (!pearome && probability > 0 ? 'averse' : '');
     const intervalAmountLabel = interval && measurable && !drops ? '(' + interval.low.toFixed(1) + '–' + interval.high.toFixed(1) + ' mm)' : '';
     const centerX = usePearomePeriod ? (periodIndexes[0] * cell + (periodIndexes.length * cell) / 2) : x(index);
     const chanceLabel = 'Averse ' + probability + ' %';
