@@ -711,10 +711,11 @@ button:hover { background: #eef7fb; }
 .cell-distance rect { fill: rgba(255,255,255,.9); stroke: #c5d7df; stroke-width: .7; }
 .cell-distance text { fill: #4f6977; font: 800 11px system-ui; text-anchor: middle; }
 .lightning-flash path { fill: #f1a20b; stroke: #8d5d00; stroke-width: .7; }
-.storm-cone { fill: rgba(43, 145, 198, .15); stroke: rgba(43, 145, 198, .5); stroke-width: 1; }
-.storm-track { fill: none; stroke: #147fae; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#storm-arrowhead); }
-.storm-track.secondary { stroke: #5e93ad; stroke-width: 1.5; stroke-dasharray: 5 4; marker-end: none; opacity: .75; }
-#storm-arrowhead path { fill: #147fae; }
+.storm-cone { fill: rgba(43, 145, 198, .2); stroke: none; filter: blur(12px); }
+.storm-track { fill: none; stroke: #086f9d; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(255,255,255,.9)); }
+.storm-track.secondary { stroke: #2c7f9e; stroke-width: 2.4; stroke-dasharray: 9 5; opacity: .86; }
+.storm-direction { fill: none; stroke: #086f9d; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(255,255,255,.9)); }
+#storm-arrowhead path { fill: none; stroke: #147fae; }
 .track-time circle { fill: #147fae; stroke: #fff; stroke-width: 1.5; }
 .target-point circle { fill: #da4c35; stroke: #fff; stroke-width: 1; }
 .target-point path { fill: none; stroke: #da4c35; stroke-width: 2; }
@@ -939,9 +940,9 @@ button:hover { background: #eef7fb; }
 .approach-nowcast-meta { font-size: 13px; font-weight: 750; text-transform: none; }
 
 
-.storm-cone.projected { fill: rgba(43, 145, 198, .09); stroke: rgba(43, 145, 198, .5); stroke-dasharray: 5 4; }
-.storm-cone.projected.secondary { fill: rgba(94, 147, 173, .07); stroke: rgba(94, 147, 173, .42); }
-.storm-track.projected { stroke-dasharray: 7 5; opacity: .86; }
+.storm-cone.projected { fill: rgba(43, 145, 198, .16); stroke: none; filter: blur(12px); }
+.storm-cone.projected.secondary { fill: rgba(94, 147, 173, .12); stroke: none; filter: blur(12px); }
+.storm-track.projected { opacity: .92; }
 .map-legend .legend-projection { width: 14px; height: 0; border-top: 2px dashed #5e93ad; }
 
 
