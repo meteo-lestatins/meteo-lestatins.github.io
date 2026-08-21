@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="style.css?v=145">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="testing.css?v=1">
+  <link rel="stylesheet" href="testing.css?v=2">
   <title>Testing · Météo les Tatins</title>
 </head>
 <body class="testing-page"><span class="sandbox-badge" aria-label="Version de test">SANDBOX</span>
@@ -23,7 +23,7 @@
   <section id="vigilance-alert" class="vigilance-alert" aria-live="polite" hidden></section>
   <a id="news-alert" class="vigilance-alert news-alert" href="news/" aria-live="polite" hidden><span id="news-alert-message"></span><span class="news-alert-arrow" aria-hidden="true">→</span></a>
   <section id="cell-approach-alert" class="vigilance-alert cell-approach-alert" aria-live="polite" hidden></section>
-  <section class="testing-controller" aria-labelledby="testing-title"><div class="testing-controller-heading"><h2 id="testing-title">Relecture radar</h2><p>Archive réelle · modèle et interface sandbox</p></div><div class="testing-fields"><label class="testing-field">Archive<select id="testing-archive"></select></label><label class="testing-field">Début<input id="testing-from" type="datetime-local" step="300"></label><label class="testing-field">Durée<select id="testing-duration"><option value="60">1 h</option><option value="180" selected>3 h</option><option value="360">6 h</option></select></label><button id="testing-load" class="testing-load" type="button">Charger</button></div><div class="testing-player"><button id="testing-previous" type="button" title="Trame précédente" aria-label="Trame précédente">‹</button><button id="testing-play" type="button" title="Lecture" aria-label="Lire la relecture">▶</button><button id="testing-next" type="button" title="Trame suivante" aria-label="Trame suivante">›</button><input id="testing-frame" type="range" min="0" max="0" value="0" aria-label="Trame radar"><output class="testing-time"><strong id="testing-current-time">Aucune trame</strong><small id="testing-frame-state"></small></output></div><small id="testing-load-state" class="testing-load-state" aria-live="polite"></small></section>
+  <section id="testing-controller" class="testing-controller" aria-labelledby="testing-title"><div class="testing-controller-heading"><h2 id="testing-title">Relecture radar</h2><p>Archive réelle · modèle et interface sandbox</p></div><div class="testing-fields"><label class="testing-field testing-archive-field"><span>Archive</span><select id="testing-archive" aria-label="Archive"></select></label><label class="testing-field testing-from-field"><span>Début</span><input id="testing-from" type="datetime-local" step="300" aria-label="Début"></label><label class="testing-field testing-duration-field"><span>Durée</span><select id="testing-duration" aria-label="Durée"><option value="60">1 h</option><option value="180" selected>3 h</option><option value="360">6 h</option></select></label><button id="testing-load" class="testing-load" type="button">Charger</button></div><div class="testing-player"><button id="testing-previous" type="button" title="Trame précédente" aria-label="Trame précédente">‹</button><button id="testing-play" type="button" title="Lecture" aria-label="Lire la relecture">▶</button><button id="testing-next" type="button" title="Trame suivante" aria-label="Trame suivante">›</button><input id="testing-frame" type="range" min="0" max="0" value="0" aria-label="Trame radar"><output class="testing-time"><strong id="testing-current-time">Aucune trame</strong><small id="testing-frame-state"></small></output></div><small id="testing-load-state" class="testing-load-state" aria-live="polite"></small></section>
   <section class="three-hour-overview" aria-labelledby="three-hour-title">
     <div class="section-heading">
       <h2 id="three-hour-title">Dans les 3 h</h2>
@@ -68,7 +68,7 @@
 <div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
 <script src="runtime-config.js?v=3.020"></script>
 <script src="vendor/leaflet/leaflet.js"></script>
-<script src="testing.js?v=1"></script>
+<script src="testing.js?v=2"></script>
 <script src="app.js?v=195"></script>
 </body>
 </html>

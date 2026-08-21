@@ -7,7 +7,10 @@
     frameIndex: 0,
     applyDashboardPayload: null,
     playing: false,
-    timer: 0
+    timer: 0,
+    loadController: null,
+    frameRenderAnimation: 0,
+    pendingFrameIndex: 0
   };
   const localDateTime = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Europe/Paris",
@@ -29,8 +32,8 @@
   const currentFrame = () => state.frames[state.frameIndex] || null;
   const currentTime = () => new Date(currentFrame()?.observedAt || Date.now()).getTime();
 
-  async function apiJson(path) {
-    const response = await fetch(apiUrl(path), { cache: "no-store" });
+  async function apiJson(path, options = {}) {
+    const response = await fetch(apiUrl(path), { cache: "no-store", signal: options.signal });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `Erreur ${response.status}`);
     return data;
@@ -114,11 +117,20 @@
     $("nowcast-title-toggle")?.setAttribute("aria-expanded", "true");
   }
 
-  function stopPlayback() {
+  function scheduleFrame(index) {
+    state.pendingFrameIndex = index;
+    if (state.frameRenderAnimation) return;
+    state.frameRenderAnimation = requestAnimationFrame(() => {
+      state.frameRenderAnimation = 0;
+      renderFrame(state.pendingFrameIndex);
+    });
+  }
+
+  function stopPlayback({ update = true } = {}) {
     state.playing = false;
     clearInterval(state.timer);
     state.timer = 0;
-    updateFrameStatus();
+    if (update) updateFrameStatus();
   }
 
   function togglePlayback() {
@@ -151,10 +163,15 @@
     const fromValue = $("testing-from")?.value;
     if (!archive || !fromValue) return;
     stopPlayback();
+    state.loadController?.abort();
+    const loadController = new AbortController();
+    state.loadController = loadController;
     const button = $("testing-load");
     const status = $("testing-load-state");
     button.disabled = true;
     status.textContent = "Calcul du modèle…";
+    document.body.classList.add("testing-replay-loading");
+    $("testing-controller")?.setAttribute("aria-busy", "true");
     try {
       const from = new Date(fromValue).getTime();
       const durationMs = Number($("testing-duration")?.value || 180) * 60000;
@@ -165,18 +182,25 @@
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString()
       });
-      const replay = await apiJson(`api/testing/replay?${query}`);
+      const replay = await apiJson(`api/testing/replay?${query}`, { signal: loadController.signal });
+      if (state.loadController !== loadController) return;
       state.frames = replay.frames || [];
       state.frameIndex = 0;
       status.textContent = state.frames.length ? `${state.frames.length} trames recalculées · mémoire ${replay.warmupMinutes} min` : "Aucune trame sur ce créneau";
       if (state.frames.length) renderFrame(0);
       else updateFrameStatus();
     } catch (error) {
+      if (error.name === "AbortError") return;
       state.frames = [];
       updateFrameStatus();
       status.textContent = error.message;
     } finally {
-      button.disabled = false;
+      if (state.loadController === loadController) {
+        state.loadController = null;
+        button.disabled = false;
+        document.body.classList.remove("testing-replay-loading");
+        $("testing-controller")?.removeAttribute("aria-busy");
+      }
     }
   }
 
@@ -195,12 +219,18 @@
   }
 
   function bindController() {
-    $("testing-archive")?.addEventListener("change", selectLatestWindow);
-    $("testing-duration")?.addEventListener("change", selectLatestWindow);
+    const loadLatestWindow = () => {
+      selectLatestWindow();
+      loadReplay();
+    };
+    $("testing-archive")?.addEventListener("change", loadLatestWindow);
+    $("testing-duration")?.addEventListener("change", loadLatestWindow);
+    $("testing-from")?.addEventListener("change", loadReplay);
     $("testing-load")?.addEventListener("click", loadReplay);
     $("testing-frame")?.addEventListener("input", event => {
-      stopPlayback();
-      renderFrame(event.currentTarget.value);
+      const frameIndex = event.currentTarget.value;
+      stopPlayback({ update: false });
+      scheduleFrame(frameIndex);
     });
     $("testing-previous")?.addEventListener("click", () => {
       stopPlayback();
@@ -211,6 +241,17 @@
       stopPlayback();
       renderFrame(state.frameIndex + 1);
     });
+  }
+
+  function keepControllerBelowHeader() {
+    const header = document.querySelector("main > header");
+    const updateOffset = () => document.documentElement.style.setProperty(
+      "--testing-header-height",
+      `${Math.ceil(header?.getBoundingClientRect().height || 0)}px`
+    );
+    updateOffset();
+    if (header && "ResizeObserver" in window) new ResizeObserver(updateOffset).observe(header);
+    else window.addEventListener("resize", updateOffset, { passive: true });
   }
 
   window.METEO_REPLAY = {
@@ -230,6 +271,7 @@
     },
     async start({ applyDashboardPayload }) {
       state.applyDashboardPayload = applyDashboardPayload;
+      keepControllerBelowHeader();
       bindController();
       try {
         await initializeArchives();
