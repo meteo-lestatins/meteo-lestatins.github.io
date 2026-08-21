@@ -4297,7 +4297,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     }
     const directAmendment = Math.max(0, radarAdjustedAmount - piafAmount);
     const etaAmendment = nowcastEtaRainAmount(etaRainEvents, slot.start, slot.end);
-    const nowcastAmount = directAmendment + etaAmendment;
+    const nowcastAmount = Math.max(directAmendment, etaAmendment);
     const passage = Math.max(0, ...etaRainEvents
       .filter(event => event.eventEnd > slot.start && event.eventStart < slot.end)
       .map(event => Number(event.passage) || 0));
@@ -4358,40 +4358,38 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   });
   const timelineTime = timestamp => hourFormat.format(new Date(timestamp));
   const rainScale = 4;
-  const rainSlotMarkup = timelineRainSlots.map(slot => {
-    const baseHeight = Math.min(100, slot.piaf / rainScale * 100);
-    const amendmentHeight = Math.min(Math.max(0, 100 - baseHeight), slot.nowcast / rainScale * 100);
-    const tooltip = timelineTime(slot.start) + "–" + timelineTime(slot.end)
-      + "\nPIAF : " + slot.piaf.toFixed(2) + " mm"
-      + "\nNowcasting : +" + slot.nowcast.toFixed(2) + " mm"
-      + "\nTotal : " + slot.total.toFixed(2) + " mm"
-      + (slot.passage > 0 && slot.passage < 100 ? "\nPassage : " + slot.passage + " %" : "");
-    return '<button class="three-hour-timeline-slot rain chart-point" type="button" data-timeline-target="rain" data-tooltip="' + escapeText(tooltip) + '" aria-label="' + escapeText(tooltip) + '" style="--rain-base:' + baseHeight.toFixed(2) + '%;--rain-nowcast:' + amendmentHeight.toFixed(2) + '%"><span class="three-hour-rain-base"></span><span class="three-hour-rain-nowcast"></span></button>';
-  }).join("");
-  const stormSlotMarkup = timelineStormSlots.map(slot => {
-    const detail = slot.level
-      ? timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nRisque orage : " + slot.level + "/5" + (slot.passage ? "\nPassage : " + slot.passage + " %" : "") + (slot.sources.length ? "\nSources : " + slot.sources.join(" + ") : "")
-      : timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nPas de signal orageux";
-    return '<button class="three-hour-timeline-slot storm level-' + slot.level + ' chart-point" type="button" data-timeline-target="nowcast" data-tooltip="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><span aria-hidden="true"></span></button>';
-  }).join("");
-  const gustPoints = timelineGustSlots.map((slot, index) => {
-    const x = (index + .5) * 100;
-    const y = 43 - Math.min(1, slot.gust / 80) * 36;
-    return x.toFixed(1) + "," + y.toFixed(1);
-  }).join(" ");
-  const gustSlotMarkup = timelineGustSlots.map(slot => {
-    const detail = timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nRafales AROME : " + slot.gust + " km/h";
-    return '<span class="three-hour-timeline-slot gust level-' + slot.level + ' chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"></span>';
-  }).join("");
   const timelineRainTotal = Math.round(timelineRainSlots.reduce((sum, slot) => sum + slot.total, 0) * 10) / 10;
-  const timelineStormMaximum = Math.max(0, ...timelineStormSlots.map(slot => slot.level));
   const timelineGustMaximum = Math.max(0, ...timelineGustSlots.map(slot => slot.gust));
+  const combinedSlotMarkup = timelineSlots.map((slot, index) => {
+    const rain = timelineRainSlots[index];
+    const storm = timelineStormSlots[index];
+    const gust = timelineGustSlots[index];
+    const rainHeight = Math.min(100, rain.total / rainScale * 100);
+    const previousStormLevel = index ? timelineStormSlots[index - 1].level : 0;
+    const showStormIcon = storm.level >= 2 && (!index || previousStormLevel < 2 || previousStormLevel !== storm.level);
+    const probabilityLabel = rain.passage > 0 && rain.passage < 100
+      ? '<b class="three-hour-rain-probability">' + rain.passage + ' %</b>'
+      : '';
+    const rainValueLabel = rain.total > 0
+      ? '<small class="three-hour-rain-value">' + rain.total.toFixed(2) + ' mm</small>'
+      : '';
+    const stormIcon = showStormIcon
+      ? '<span class="three-hour-storm-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path class="storm-signal-cloud" d="M4.8 15.5a3.7 3.7 0 0 1 .4-7.4A5.7 5.7 0 0 1 16.4 6.8a4 4 0 0 1 3.3 1.7 3.6 3.6 0 0 1 .7 7H4.8Z"/><path class="storm-signal-bolt" d="m13.2 10.4-3.8 6h3.2l-1.5 6.5 8-9.8h-3.5l1.7-2.7h-4.1Z"/></svg></span>'
+      : '';
+    const tooltip = [
+      timelineTime(slot.start) + "–" + timelineTime(slot.end),
+      "Pluie : " + rain.total.toFixed(2) + " mm" + (rain.passage > 0 && rain.passage < 100 ? " · " + rain.passage + " %" : ""),
+      storm.level ? "Orage : " + storm.level + "/5" : "",
+      gust.gust ? "Rafales : " + gust.gust + " km/h" : ""
+    ].filter(Boolean).join("\n");
+    const target = storm.level >= 2 ? "nowcast" : "rain";
+    return '<button class="three-hour-combined-slot storm-level-' + storm.level + ' chart-point" type="button" data-timeline-target="' + target + '" data-tooltip="' + escapeText(tooltip) + '" aria-label="' + escapeText(tooltip) + '" style="--rain-height:' + rainHeight.toFixed(2) + '%"><span class="three-hour-storm-wash" aria-hidden="true"></span>' + stormIcon + probabilityLabel + '<span class="three-hour-rain-bar" aria-hidden="true"></span>' + rainValueLabel + '</button>';
+  }).join("");
   const timelineAxis = [0, 4, 8, 12].map((offset, index) => '<span style="left:' + (index * 100 / 3) + '%">' + escapeText(timelineTime(timelineStart + offset * timelineStep)) + '</span>').join("");
-  const unifiedTimeline = '<section class="three-hour-timeline" aria-label="Frise météo des trois prochaines heures">'
-    + '<div class="three-hour-timeline-axis-row"><span></span><div class="three-hour-timeline-axis">' + timelineAxis + '</div></div>'
-    + '<div class="three-hour-timeline-lane rain"><button class="three-hour-timeline-label" type="button" data-timeline-target="rain"><strong>Pluie</strong><small>PIAF + Nowcasting</small><b>' + escapeText(formatRainAmount(timelineRainTotal)) + ' mm</b></button><div class="three-hour-timeline-plot">' + rainSlotMarkup + '</div></div>'
-    + '<div class="three-hour-timeline-lane storm"><button class="three-hour-timeline-label" type="button" data-timeline-target="nowcast"><strong>Risque orage</strong><small>Foudre + convection</small><b>' + timelineStormMaximum + '/5</b></button><div class="three-hour-timeline-plot">' + stormSlotMarkup + '</div></div>'
-    + '<div class="three-hour-timeline-lane gust"><div class="three-hour-timeline-label"><strong>Rafales</strong><small>AROME</small><b>max ' + timelineGustMaximum + ' km/h</b></div><div class="three-hour-timeline-plot">' + gustSlotMarkup + '<svg class="three-hour-gust-line" viewBox="0 0 1200 48" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + gustPoints + '"></polyline></svg></div></div>'
+  const unifiedTimeline = '<section class="three-hour-combined-chart" aria-label="Frise météo des trois prochaines heures">'
+    + '<div class="three-hour-chart-summary"><button class="three-hour-rain-total" type="button" data-timeline-target="rain"><small>Cumul pluie 3 h</small><strong>' + escapeText(formatRainAmount(timelineRainTotal)) + ' mm</strong></button><div class="three-hour-gust-badge"><small>Rafales</small><strong>max ' + timelineGustMaximum + ' km/h</strong></div></div>'
+    + '<div class="three-hour-combined-plot">' + combinedSlotMarkup + '</div>'
+    + '<div class="three-hour-combined-axis">' + timelineAxis + '</div>'
     + '</section>';
   if (summaryElement) {
     summaryElement.innerHTML = unifiedTimeline;
