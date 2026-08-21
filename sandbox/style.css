@@ -638,6 +638,46 @@ button:hover { background: #eef7fb; }
 .three-hour-trend.croissant b { background: #d56037; }
 .three-hour-trend.decroissant { color: #277a59; }
 .three-hour-trend.decroissant b { background: #3d966d; }
+.three-hour-timeline { width: 100%; margin-top: 4px; color: #173f57; }
+.three-hour-timeline-axis-row,
+.three-hour-timeline-lane { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.three-hour-timeline-axis-row { min-height: 24px; }
+.three-hour-timeline-axis { position: relative; min-width: 0; color: #607784; font-size: 10px; font-variant-numeric: tabular-nums; }
+.three-hour-timeline-axis span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
+.three-hour-timeline-axis span:first-child { transform: none; }
+.three-hour-timeline-axis span:last-child { transform: translateX(-100%); }
+.three-hour-timeline-lane { min-height: 54px; border-top: 1px solid #d6e3e9; }
+.three-hour-timeline-lane:last-child { border-bottom: 1px solid #d6e3e9; }
+.three-hour-timeline-label { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 6px 0; border: 0; color: inherit; background: transparent; text-align: left; }
+button.three-hour-timeline-label { cursor: pointer; }
+button.three-hour-timeline-label:hover strong { color: #1686b5; }
+.three-hour-timeline-label strong { font-size: 13px; line-height: 1.05; }
+.three-hour-timeline-label small { color: #657d8a; font-size: 8px; line-height: 1.15; }
+.three-hour-timeline-label b { margin-top: 2px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1; }
+.three-hour-timeline-plot { position: relative; min-width: 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); overflow: hidden; }
+.three-hour-timeline-slot { position: relative; min-width: 0; min-height: 53px; margin: 0; padding: 0; border: 0; border-left: 1px solid rgba(119, 151, 168, .2); background: transparent; }
+.three-hour-timeline-slot:last-of-type { border-right: 1px solid rgba(119, 151, 168, .2); }
+button.three-hour-timeline-slot { cursor: pointer; }
+button.three-hour-timeline-slot:hover { box-shadow: inset 0 0 0 1px #1686b5; }
+.three-hour-timeline-slot:focus-visible,
+.three-hour-timeline-label:focus-visible { z-index: 4; outline: 2px solid #1686b5; outline-offset: -2px; }
+.three-hour-timeline-slot.rain span { position: absolute; right: 1px; bottom: 0; left: 1px; pointer-events: none; }
+.three-hour-rain-base { height: max(2px, var(--rain-base)); background: #2b86b4; }
+.three-hour-rain-nowcast { bottom: var(--rain-base)!important; height: max(2px, var(--rain-nowcast)); background: repeating-linear-gradient(135deg, #d7a51e 0 4px, #ffe7a4 4px 8px); }
+.three-hour-timeline-slot.rain[style*="--rain-base:0.00%"] .three-hour-rain-base,
+.three-hour-timeline-slot.rain[style*="--rain-nowcast:0.00%"] .three-hour-rain-nowcast { display: none; }
+.three-hour-timeline-slot.storm.level-1 { background: rgba(109, 131, 144, .1); }
+.three-hour-timeline-slot.storm.level-2 { background: rgba(238, 200, 44, .34); }
+.three-hour-timeline-slot.storm.level-3 { background: rgba(235, 151, 47, .56); }
+.three-hour-timeline-slot.storm.level-4 { background: rgba(229, 112, 55, .68); }
+.three-hour-timeline-slot.storm.level-5 { background: rgba(206, 69, 55, .78); }
+.three-hour-timeline-slot.gust { z-index: 1; }
+.three-hour-timeline-slot.gust.level-2 { background: rgba(128, 70, 187, .08); }
+.three-hour-timeline-slot.gust.level-3,
+.three-hour-timeline-slot.gust.level-4 { background: rgba(128, 70, 187, .14); }
+.three-hour-timeline-slot.gust.level-5 { background: rgba(128, 70, 187, .22); }
+.three-hour-gust-line { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.three-hour-gust-line polyline { fill: none; stroke: #8046bb; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .radar-nowcast { min-height: 260px; margin-inline: 28px; padding: 8px 0 24px; color: #3e5968; background: #f3f9fc; font-size: 12px; }
 .radar-nowcast[hidden] { display: none; }
 .nowcast-overview { display: grid; grid-template-columns: minmax(250px, .72fr) minmax(360px, 1.28fr); gap: 20px; }
@@ -784,7 +824,7 @@ button:hover { background: #eef7fb; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
   .section-heading .section-api-links { margin-left: 0; justify-content: flex-start; }
   .page-section-heading { padding: 18px 16px 12px; }
-  .three-hour-summary { overflow-x: auto; }
+  .three-hour-summary { overflow-x: visible; }
   .three-hour-actions { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
   header { min-height: 0; padding: 16px 16px 10px; }
   header .header-subtitle { margin-bottom: 10px; font-size: 10px; }
@@ -864,6 +904,17 @@ button:hover { background: #eef7fb; }
   .three-hour-storm-window { display: flex; align-items: center; justify-content: center; gap: 2px; }
   .three-hour-storm-eta { font-size: inherit; font-weight: inherit; line-height: inherit; }
   .three-hour-storm-duration { font-size: 8px; font-weight: 800; line-height: 1.05; }
+  .three-hour-timeline-axis-row,
+  .three-hour-timeline-lane { grid-template-columns: 74px minmax(0, 1fr); gap: 6px; }
+  .three-hour-timeline-axis-row { min-height: 21px; }
+  .three-hour-timeline-lane { min-height: 47px; }
+  .three-hour-timeline-label { padding-block: 4px; }
+  .three-hour-timeline-label strong { font-size: 11px; }
+  .three-hour-timeline-label small { font-size: 7px; }
+  .three-hour-timeline-label b { font-size: 9px; }
+  .three-hour-timeline-slot { min-height: 46px; }
+  .three-hour-timeline-axis { font-size: 8px; }
+  .three-hour-gust-line polyline { stroke-width: 4; }
   .nowcast-heading { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px; }
   .nowcast-heading h2 { flex: 0 0 auto; }
   .nowcast-heading .section-api-links { width: auto; min-width: 0; align-self: center; justify-self: end; flex-wrap: nowrap; justify-content: flex-end; margin-left: 0; }

@@ -4273,25 +4273,138 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
-  const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainValue, rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
-    + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
-    + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
-    + '</div></section>';
+  const timelineStep = 15 * 60000;
+  const timelineStart = Math.floor(now / timelineStep) * timelineStep;
+  const timelineSlots = Array.from({ length: 12 }, (_, index) => ({
+    start: timelineStart + index * timelineStep,
+    end: timelineStart + (index + 1) * timelineStep
+  }));
+  const overlapRatio = (intervalStart, intervalEnd, slot) => {
+    const overlap = Math.max(0, Math.min(intervalEnd, slot.end) - Math.max(intervalStart, slot.start));
+    return intervalEnd > intervalStart ? overlap / (intervalEnd - intervalStart) : 0;
+  };
+  const timelinePiafValues = piaf?.values?.length ? piafQuarterHourRain(piaf) : [];
+  const timelineRainSlots = timelineSlots.map(slot => {
+    let piafAmount = 0;
+    let radarAdjustedAmount = 0;
+    for (const item of timelinePiafValues) {
+      const intervalEnd = Number(item.intervalEnd) || piafItemEndTime(piaf, item);
+      const intervalStart = Number(item.intervalStart) || intervalEnd - timelineStep;
+      if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd)) continue;
+      const ratio = overlapRatio(intervalStart, intervalEnd, slot);
+      piafAmount += Math.max(0, Number(item.precipitation) || 0) * ratio;
+      radarAdjustedAmount += Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0) * ratio;
+    }
+    const directAmendment = Math.max(0, radarAdjustedAmount - piafAmount);
+    const etaAmendment = nowcastEtaRainAmount(etaRainEvents, slot.start, slot.end);
+    const nowcastAmount = directAmendment + etaAmendment;
+    const passage = Math.max(0, ...etaRainEvents
+      .filter(event => event.eventEnd > slot.start && event.eventStart < slot.end)
+      .map(event => Number(event.passage) || 0));
+    return {
+      ...slot,
+      piaf: Math.round(piafAmount * 100) / 100,
+      nowcast: Math.round(nowcastAmount * 100) / 100,
+      total: Math.round((piafAmount + nowcastAmount) * 100) / 100,
+      passage
+    };
+  });
+  const qualifiedStormCandidates = passageCandidates.filter(candidate =>
+    candidate.flashes > 0
+    || candidate.hailRisk >= 20
+    || Number(candidate.cell.risks?.storm) >= 30
+  );
+  const qualifiedStormById = new Map(qualifiedStormCandidates.map(candidate => [String(candidate.cell.id), candidate]));
+  const qualifiedStormEvents = etaRainEvents.filter(event => qualifiedStormById.has(String(event.cell?.id)));
+  const timelineStormSlots = timelineSlots.map(slot => {
+    const slotEvents = qualifiedStormEvents.filter(event => event.eventEnd > slot.start && event.eventStart < slot.end);
+    let level = slotEvents.reduce((maximum, event) => {
+      const candidate = qualifiedStormById.get(String(event.cell?.id));
+      const convectiveLevel = Math.max(
+        candidate?.level || 0,
+        probabilityStep(candidate?.cell?.risks?.storm),
+        candidate?.hailLevel || 0,
+        candidate?.lightningLevel || 0
+      );
+      return Math.max(maximum, stormRiskIntensityStep(probabilityStep(event.passage), convectiveLevel));
+    }, 0);
+    const aromeSignal = (arome?.hours || []).some(hour => {
+      const start = new Date(hour.time).getTime();
+      return Boolean(hour.stormSignal) && Number.isFinite(start) && start < slot.end && start + 3600000 > slot.start;
+    });
+    level = Math.max(level, aromeSignal ? 1 : 0, orangeVigilanceActive ? 1 : 0);
+    const passage = Math.max(0, ...slotEvents.map(event => Number(event.passage) || 0));
+    const sources = [slotEvents.length ? "Nowcasting" : "", aromeSignal ? "AROME" : "", orangeVigilanceActive ? "Vigilance" : ""].filter(Boolean);
+    return { ...slot, level, passage, sources };
+  });
+  const timelineWindValues = (arome?.hours || [])
+    .map(item => ({ time: new Date(item.time).getTime(), gust: Math.max(0, Number(item.windGust) || 0) }))
+    .filter(item => Number.isFinite(item.time))
+    .sort((left, right) => left.time - right.time);
+  const interpolatedGust = time => {
+    if (!timelineWindValues.length) return 0;
+    const rightIndex = timelineWindValues.findIndex(item => item.time >= time);
+    if (rightIndex < 0) return timelineWindValues.at(-1).gust;
+    if (rightIndex === 0) return timelineWindValues[0].gust;
+    const left = timelineWindValues[rightIndex - 1];
+    const right = timelineWindValues[rightIndex];
+    const ratio = (time - left.time) / Math.max(1, right.time - left.time);
+    return left.gust + (right.gust - left.gust) * ratio;
+  };
+  const gustLevel = value => value <= 0 ? 0 : value < 20 ? 1 : value < 35 ? 2 : value < 50 ? 3 : value < 70 ? 4 : 5;
+  const timelineGustSlots = timelineSlots.map(slot => {
+    const gust = Math.round(interpolatedGust((slot.start + slot.end) / 2));
+    return { ...slot, gust, level: gustLevel(gust) };
+  });
+  const timelineTime = timestamp => hourFormat.format(new Date(timestamp));
+  const rainScale = 4;
+  const rainSlotMarkup = timelineRainSlots.map(slot => {
+    const baseHeight = Math.min(100, slot.piaf / rainScale * 100);
+    const amendmentHeight = Math.min(Math.max(0, 100 - baseHeight), slot.nowcast / rainScale * 100);
+    const tooltip = timelineTime(slot.start) + "–" + timelineTime(slot.end)
+      + "\nPIAF : " + slot.piaf.toFixed(2) + " mm"
+      + "\nNowcasting : +" + slot.nowcast.toFixed(2) + " mm"
+      + "\nTotal : " + slot.total.toFixed(2) + " mm"
+      + (slot.passage > 0 && slot.passage < 100 ? "\nPassage : " + slot.passage + " %" : "");
+    return '<button class="three-hour-timeline-slot rain chart-point" type="button" data-timeline-target="rain" data-tooltip="' + escapeText(tooltip) + '" aria-label="' + escapeText(tooltip) + '" style="--rain-base:' + baseHeight.toFixed(2) + '%;--rain-nowcast:' + amendmentHeight.toFixed(2) + '%"><span class="three-hour-rain-base"></span><span class="three-hour-rain-nowcast"></span></button>';
+  }).join("");
+  const stormSlotMarkup = timelineStormSlots.map(slot => {
+    const detail = slot.level
+      ? timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nRisque orage : " + slot.level + "/5" + (slot.passage ? "\nPassage : " + slot.passage + " %" : "") + (slot.sources.length ? "\nSources : " + slot.sources.join(" + ") : "")
+      : timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nPas de signal orageux";
+    return '<button class="three-hour-timeline-slot storm level-' + slot.level + ' chart-point" type="button" data-timeline-target="nowcast" data-tooltip="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><span aria-hidden="true"></span></button>';
+  }).join("");
+  const gustPoints = timelineGustSlots.map((slot, index) => {
+    const x = (index + .5) * 100;
+    const y = 43 - Math.min(1, slot.gust / 80) * 36;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  const gustSlotMarkup = timelineGustSlots.map(slot => {
+    const detail = timelineTime(slot.start) + "–" + timelineTime(slot.end) + "\nRafales AROME : " + slot.gust + " km/h";
+    return '<span class="three-hour-timeline-slot gust level-' + slot.level + ' chart-point" tabindex="0" data-tooltip="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"></span>';
+  }).join("");
+  const timelineRainTotal = Math.round(timelineRainSlots.reduce((sum, slot) => sum + slot.total, 0) * 10) / 10;
+  const timelineStormMaximum = Math.max(0, ...timelineStormSlots.map(slot => slot.level));
+  const timelineGustMaximum = Math.max(0, ...timelineGustSlots.map(slot => slot.gust));
+  const timelineAxis = [0, 4, 8, 12].map((offset, index) => '<span style="left:' + (index * 100 / 3) + '%">' + escapeText(timelineTime(timelineStart + offset * timelineStep)) + '</span>').join("");
+  const unifiedTimeline = '<section class="three-hour-timeline" aria-label="Frise météo des trois prochaines heures">'
+    + '<div class="three-hour-timeline-axis-row"><span></span><div class="three-hour-timeline-axis">' + timelineAxis + '</div></div>'
+    + '<div class="three-hour-timeline-lane rain"><button class="three-hour-timeline-label" type="button" data-timeline-target="rain"><strong>Pluie</strong><small>PIAF + Nowcasting</small><b>' + escapeText(formatRainAmount(timelineRainTotal)) + ' mm</b></button><div class="three-hour-timeline-plot">' + rainSlotMarkup + '</div></div>'
+    + '<div class="three-hour-timeline-lane storm"><button class="three-hour-timeline-label" type="button" data-timeline-target="nowcast"><strong>Risque orage</strong><small>Foudre + convection</small><b>' + timelineStormMaximum + '/5</b></button><div class="three-hour-timeline-plot">' + stormSlotMarkup + '</div></div>'
+    + '<div class="three-hour-timeline-lane gust"><div class="three-hour-timeline-label"><strong>Rafales</strong><small>AROME</small><b>max ' + timelineGustMaximum + ' km/h</b></div><div class="three-hour-timeline-plot">' + gustSlotMarkup + '<svg class="three-hour-gust-line" viewBox="0 0 1200 48" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + gustPoints + '"></polyline></svg></div></div>'
+    + '</section>';
   if (summaryElement) {
-    summaryElement.innerHTML = generalExpertise;
-    summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
-      const details = $(button.dataset.summaryTarget + "-details");
-      button.setAttribute("aria-controls", details?.id || "");
-      button.setAttribute("aria-expanded", String(details ? !details.hidden : false));
+    summaryElement.innerHTML = unifiedTimeline;
+    summaryElement.querySelectorAll('[data-timeline-target]').forEach(button => {
       button.addEventListener('click', () => {
-        if (!details) return;
-        details.hidden = !details.hidden;
-        button.setAttribute("aria-expanded", String(!details.hidden));
-        if (button.dataset.summaryTarget === "nowcast") {
-          $("header-nowcast-link")?.setAttribute("aria-expanded", String(!details.hidden));
-          $("nowcast-title-toggle")?.setAttribute("aria-expanded", String(!details.hidden));
+        if (button.dataset.timelineTarget === "nowcast") {
+          setNowcastOpen(true, true);
+          return;
         }
+        const details = $("rain-details");
+        if (!details) return;
+        details.hidden = false;
+        details.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
   }
@@ -4376,7 +4489,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     marker.addEventListener("focusin", () => showMappedCell(marker));
     marker.addEventListener("focusout", () => hideMappedCell(marker));
   });
-  if (threat) bindChartTooltips();
+  bindChartTooltips();
 }
 
 function renderPiaf(piaf, radar = null) {
