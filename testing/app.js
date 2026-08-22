@@ -1947,27 +1947,23 @@ function renderTestingDailyForecast() {
     const valid = finite(values);
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
   };
-  const signedTemperature = value => {
-    const rounded = Math.round(Number(value));
-    return (rounded > 0 ? "+" : rounded < 0 ? "−" : "") + Math.abs(rounded) + "°";
-  };
   const seasonalTemperature = period => {
     const rawAnomaly = period?.temperatureAnomaly;
     const anomaly = rawAnomaly == null || rawAnomaly === "" ? NaN : Number(rawAnomaly);
     if (!Number.isFinite(anomaly)) return null;
     const warmShare = Number(period?.temperatureWarmShare);
     const coldShare = Number(period?.temperatureColdShare);
-    const label = warmShare >= .5 && anomaly >= 2 ? "inhabituellement élevée"
-      : coldShare >= .5 && anomaly <= -2 ? "inhabituellement basse"
-      : anomaly >= 4 ? "nettement au-dessus des normales"
-      : anomaly >= 1.5 ? "au-dessus des normales"
-      : anomaly <= -4 ? "nettement en dessous des normales"
-      : anomaly <= -1.5 ? "en dessous des normales"
-      : "de saison";
+    const label = warmShare >= .5 && anomaly >= 2 ? "Température inhabituellement élevée"
+      : coldShare >= .5 && anomaly <= -2 ? "Température inhabituellement basse"
+      : anomaly >= 4 ? "Température très élevée"
+      : anomaly >= 1.5 ? "Température élevée"
+      : anomaly <= -4 ? "Température très basse"
+      : anomaly <= -1.5 ? "Température basse"
+      : "Température habituelle";
     return {
       anomaly,
       label,
-      compact: label === "de saison" ? "De saison · écart " + signedTemperature(anomaly) : signedTemperature(anomaly) + " · " + label
+      compact: label
     };
   };
   const dailySeasonalTemperature = periods => {
@@ -2030,11 +2026,10 @@ function renderTestingDailyForecast() {
       : "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase();
     const hazard = hazardKind ? hazardPictogram(hazardKind, hazardDetail) : "";
     const seasonal = seasonalTemperature(period);
-    const seasonalSummary = seasonal && seasonal.label !== "de saison" ? '<span class="daily-period-season">' + escapeText(seasonal.compact) + '</span>' : "";
-    const seasonalDetail = seasonal ? '<div><dt>Normale 1991–2020</dt><dd>' + format(period.temperatureNormal, 0) + '° · écart ' + escapeText(signedTemperature(seasonal.anomaly)) + '</dd></div>' : "";
+    const seasonalSummary = seasonal && seasonal.label !== "Température habituelle" ? '<span class="daily-period-season">' + escapeText(seasonal.compact) + '</span>' : "";
     const notable = weatherDescription(period);
     const notableMarkup = notable || seasonalSummary ? '<span class="daily-period-copy">' + escapeText(notable) + seasonalSummary + '</span>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Courbes</small></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + seasonalDetail + '<div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Courbes</small></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2071,7 +2066,7 @@ function renderTestingDailyForecast() {
     const generalHazard = generalHazardKind ? hazardPictogram(generalHazardKind, generalHazardDetail) : "";
     const periods = [periodCard(morning, "Matin", generalHazardKind), periodCard(afternoon, "Après-midi", generalHazardKind)].filter(Boolean);
     const seasonal = dailySeasonalTemperature(availablePeriods);
-    const seasonalMarkup = seasonal && seasonal.label !== "de saison" ? '<small class="daily-temperature-reference">' + escapeText(seasonal.compact) + '</small>' : "";
+    const seasonalMarkup = seasonal && seasonal.label !== "Température habituelle" ? '<small class="daily-temperature-reference">' + escapeText(seasonal.compact) + '</small>' : "";
     const notableSummary = [];
     if (storm) notableSummary.push(severeStorm
       ? "Orage violent possible."

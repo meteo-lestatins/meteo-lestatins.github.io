@@ -643,6 +643,7 @@ button:hover { background: #eef7fb; }
 .nowcast-section-title { display: flex; align-items: baseline; gap: 12px; margin-inline: 28px; padding: 13px 0; border-bottom: 1px solid #d7e3e8; color: #667985; background: #fff; font-size: 12px; }
 .nowcast-section-title strong { color: #173f57; font-size: 15px; }
 .section-api-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.section-api-links, .tab-api-links, .forecast-api-links, .source-links, .week-source-links { display: none !important; }
 .section-api-links .source-link { background: #fff; }
 .three-hour-api-links { justify-content: flex-start; margin: 12px 28px 0; }
 .rain-section-heading { margin-inline: 28px; border-bottom: 1px solid #d7e3e8; }
