@@ -1159,7 +1159,7 @@ function moonPhaseMeteoconName(date) {
 
 function displayIcon(item) {
   const date = new Date(item.time);
-  const night = isNight(date);
+  const night = item.forceDay === true ? false : isNight(date);
   const period = night ? "night" : "day";
   const cloud = cloudiness(item);
   const rain = Math.max(0, Number(item.rain) || 0);
@@ -1726,7 +1726,7 @@ function normalizeOpenMeteoDays(daily, hourly) {
       periods: {
         morning: periodSummary(6, 12),
         afternoon: periodSummary(12, 18),
-        evening: periodSummary(18, 24)
+        evening: periodSummary(18, 22)
       }
     };
   }).filter(Boolean);
@@ -2228,7 +2228,8 @@ function renderTestingDailyForecast() {
       time: period.time,
       cloudCover: cloud,
       rain: hasStorm ? Math.max(.5, rain) : rain,
-      rainLevel: rainPictogramStep(rain)
+      rainLevel: rainPictogramStep(rain),
+      forceDay: label === "Soir"
     });
     const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin, 0) + '°</b></span></span>';
     const direction = Number.isFinite(Number(period.windDirection))
