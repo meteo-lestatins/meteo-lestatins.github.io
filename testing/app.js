@@ -1973,6 +1973,7 @@ function renderTestingDailyForecast() {
   const periodMetricIcons = {
     cloud: '<path d="M5.5 18a4.5 4.5 0 0 1-.6-9A6.2 6.2 0 0 1 16.7 8a5 5 0 1 1 .8 10H5.5Z"/>',
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
+    showers: '<path d="M5 10.5a5 5 0 0 1 9.4-2.3A3.8 3.8 0 1 1 17 15H6a3.2 3.2 0 0 1-1-6.2"/><path d="m8 17-1.2 3M12 17l-1.2 3M16 17l-1.2 3"/>',
     wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>'
@@ -1985,6 +1986,39 @@ function renderTestingDailyForecast() {
   const periodCloudStep = value => cloudCoverBand(value);
   const periodWindStep = value => value < 6 ? 1 : value < 12 ? 2 : value < 20 ? 3 : value < 30 ? 4 : 5;
   const periodGustStep = value => value < 20 ? 1 : value < 35 ? 2 : value < 50 ? 3 : value < 70 ? 4 : 5;
+  const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
+  const confidenceIndicator = (openMeteo, meteoFrance) => {
+    let score = null;
+    let detail = "Confiance à confirmer : données d’ensemble indisponibles.";
+    if (meteoFrance) {
+      const agreement = weekModelAgreement(openMeteo, meteoFrance);
+      const evolution = weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
+      const modelAgreementScore = Number.isFinite(Number(agreement.score)) ? Number(agreement.score) : .5;
+      const stabilityScore = agreement.stability === "stable" ? 1 : agreement.stability === "evolving" ? .68 : agreement.stability === "variable" ? .35 : .55;
+      const evolutionScore = evolution.level === "stable" ? 1 : evolution.level === "few" ? .75 : evolution.level === "frequent" ? .35 : .55;
+      score = modelAgreementScore * .65 + stabilityScore * .2 + evolutionScore * .15;
+      if (agreement.criticalDisagreement || agreement.rainDisagreement === "major" || modelAgreementScore < .38) score = Math.min(score, .35);
+      else if (agreement.rainDisagreement === "meaningful" || agreement.level === "mixed" || evolution.level === "frequent") score = Math.min(score, .59);
+      const ensembleLabel = agreement.stability === "stable" ? "plutôt stable" : agreement.stability === "evolving" ? "évolutif" : agreement.stability === "variable" ? "très variable" : "à confirmer";
+      const evolutionLabel = evolution.level === "frequent" ? "forte" : evolution.level === "few" ? "faible" : evolution.level === "stable" ? "nulle" : "sans recul";
+      const rainDisagreementLabel = agreement.rainDisagreement === "major" ? "majeur" : agreement.rainDisagreement === "meaningful" ? "significatif" : agreement.rainDisagreement === "minor" ? "mineur" : "faible";
+      detail = "Concordance pondérée : " + Math.round(modelAgreementScore * 100) + "/100 · écart pluie : " + rainDisagreementLabel + " · stabilité : " + ensembleLabel + " · évolution : " + evolutionLabel;
+    } else if (openMeteo.confidence) {
+      const confidence = openMeteo.confidence;
+      score = confidence.level === "strong" ? .9 : confidence.level === "medium" ? .65 : .35;
+      const spreads = [
+        Number.isFinite(Number(confidence.temperatureSpread)) ? "température " + format(confidence.temperatureSpread) + " °C" : "",
+        Number.isFinite(Number(confidence.windSpread)) ? "vent " + format(confidence.windSpread) + " km/h" : "",
+        Number.isFinite(Number(confidence.precipitationSpread)) ? "précipitations " + format(confidence.precipitationSpread) + " mm" : ""
+      ].filter(Boolean);
+      detail = "Variabilité de l’ensemble : " + (spreads.join(", ") || "à confirmer");
+    }
+    const tone = score >= .8 ? "green" : score >= .6 ? "yellow" : score >= .4 ? "orange" : "red";
+    const points = Number.isFinite(score) ? Math.max(1, Math.min(5, Math.round(score * 5))) : 1;
+    const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
+    const dots = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < points ? "filled" : "") + '"></i>').join("");
+    return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '" title="' + escapeText(detail) + '" data-tooltip="' + escapeText(detail) + '"><span aria-hidden="true">' + dots + '</span></span>';
+  };
   const periodCard = (period, label) => {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
@@ -2014,18 +2048,28 @@ function renderTestingDailyForecast() {
       : "";
     const notable = weatherDescription(period);
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>' + periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %") + '</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>' + periodMetricPictogram("rain", rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %") + '</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div><div><dt>' + periodMetricPictogram("storm", stormStep, period.storm ? "Orage possible" : "Pas d’orage") + '</dt><dd>' + (period.storm ? (Number(period.weatherCode) >= 96 ? 'Phénomène violent possible' : 'Possible sur la période') : 'Non prévu') + '</dd></div></dl></div></details>';
+    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax]);
+    const showers = Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82;
+    const skyDescription = conciseSkySummary(cloud);
+    const rainDescription = conciseRainSummary(rain, [], [], showers, period.storm, probabilitySummary) || "Pas de pluie.";
+    const windDescription = conciseWindSummary([period.windSpeedMax], [gust], [], [], [period.windDirection]);
+    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %"), format(cloud, 0) + " %", skyDescription);
+    const rainKind = showers ? "showers" : "rain";
+    const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
+    const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %") + showerPlus + '</span>';
+    const rainDetail = periodMetricRow(rainPictogram, (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + " mm", rainDescription, "week-rain-row");
+    const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + direction + format(period.windSpeedMax, 0) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + format(gust, 0) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
+    const stormDetail = period.storm ? periodMetricRow(periodMetricPictogram("storm", stormStep, Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible"), "", Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon Open-Meteo." : "Orage possible selon Open-Meteo.") : "";
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
+  const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
   const cards = openMeteoDays.map(openMeteo => {
     const morning = openMeteo.periods?.morning || null;
     const afternoon = openMeteo.periods?.afternoon || null;
     const evening = openMeteo.periods?.evening || null;
-    const availablePeriods = [morning, afternoon, evening].filter(Boolean);
-    const untimedStorm = !availablePeriods.some(period => period.storm) && meteoFranceStormForDate(openMeteo.date)
-      ? '<span class="daily-day-hazard">' + hazardPictogram("storm", "Orage possible, horaire à préciser") + '</span>' : "";
     const periods = [periodCard(morning, "Matin"), periodCard(afternoon, "Après-midi"), periodCard(evening, "Soir")].filter(Boolean);
-    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div>' + untimedStorm + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
+    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div>' + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   renderWeekApiLinks();
