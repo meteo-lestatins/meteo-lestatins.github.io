@@ -343,6 +343,41 @@ function bindForecastLayout() {
   ensureWeekForecast();
 }
 
+function sync48HourForecastFocus(scrollPage = false) {
+  const panel = $("panel-48h");
+  const dateKey = panel?.dataset.focusDate;
+  if (!panel || panel.hidden || !dateKey) return;
+  const marker = panel.querySelector('[data-forecast-date="' + dateKey + '"]');
+  const master = $("forecast-horizontal-scroll");
+  if (marker && master) {
+    const scrollable = marker.closest(".overview-scroll, .chart-scroll");
+    const left = Math.max(0, marker.offsetLeft - Math.min(88, (scrollable?.clientWidth || master.clientWidth) * .08));
+    master.scrollLeft = left;
+    master.dispatchEvent(new Event("scroll"));
+  }
+  if (scrollPage) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function toggleDaily48HourForecast(button) {
+  const panel = $("panel-48h");
+  if (!panel) return;
+  const dateKey = button.getAttribute("data-open-48h-date");
+  const alreadyOpen = !panel.hidden && panel.dataset.focusDate === dateKey;
+  document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
+  if (alreadyOpen) {
+    panel.hidden = true;
+    panel.removeAttribute("data-focus-date");
+    $("forecast-48h-title").textContent = "Prévisions 48 h";
+    return;
+  }
+  panel.dataset.focusDate = dateKey;
+  panel.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  $("forecast-48h-title").textContent = "Prévisions 48 h · " + button.getAttribute("data-open-48h-label");
+  renderActiveForecast();
+  requestAnimationFrame(() => sync48HourForecastFocus(true));
+}
+
 function renderVigilance(vigilance) {
   const banner = $("vigilance-alert");
   const alerts = vigilance?.alerts || [];
@@ -2089,7 +2124,14 @@ function renderTestingDailyForecast() {
     const afternoon = openMeteo.periods?.afternoon || null;
     const evening = openMeteo.periods?.evening || null;
     const periods = [periodCard(morning, "Matin"), periodCard(afternoon, "Après-midi"), periodCard(evening, "Soir")].filter(Boolean);
-    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div>' + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
+    const dayLabel = relativeDayLabel(openMeteo);
+    const shortDate = shortDateFormat.format(dateFromKey(openMeteo.date));
+    const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
+    const canOpen48h = dayGap >= 0 && dayGap <= 1;
+    const dayHeading = canOpen48h
+      ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span><span class="daily-day-open-icon" aria-hidden="true">↘</span></button>'
+      : '<div class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></div>';
+    return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   const periodDetails = [...target.querySelectorAll(".daily-period-card")];
@@ -2099,6 +2141,7 @@ function renderTestingDailyForecast() {
       if (other !== detail && other.open) other.open = false;
     });
   }));
+  target.querySelectorAll("[data-open-48h-date]").forEach(button => button.addEventListener("click", () => toggleDaily48HourForecast(button)));
   renderWeekApiLinks();
 }
 
@@ -2997,7 +3040,7 @@ function renderComparisonForecast(arome, openMeteo) {
     const score = agreement(pair);
     const date = new Date(item.time);
     const detail = levelLabel(score) + ' (' + score + '%)\nTempérature : ' + item.temperature.toFixed(1) + ' / ' + pair.openMeteo.temperature.toFixed(1) + ' °C\nVent : ' + Math.round(item.windSpeed) + ' / ' + Math.round(pair.openMeteo.windSpeed) + ' km/h\n' + dateTimeFormat.format(date);
-    return '<div class="comparison-hour chart-point" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time></div></div>';
+    return '<div class="comparison-hour chart-point" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time></div></div>';
   }).join("");
   $("forecast-controls").innerHTML = forecastSourceControlsMarkup();
   bindForecastControlButtons();
@@ -3180,7 +3223,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
   }).join("");
   const overviewXAxis = hours.map((item, index) => {
     const date = new Date(item.time);
-    return '<div class="overview-x-hour" style="' + daylightStyle(date, true) + '"><span>' + escapeText(forecastWeekdayLabel(date)) + '</span><time>' + escapeText(forecastHourLabel(date)) + '</time></div>';
+    return '<div class="overview-x-hour" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" style="' + daylightStyle(date, true) + '"><span>' + escapeText(forecastWeekdayLabel(date)) + '</span><time>' + escapeText(forecastHourLabel(date)) + '</time></div>';
   }).join("");
   const probabilityDisplayIndexes = new Map(probabilities.map(point => {
     const indexes = hours.map((item, index) => ({ index, time: new Date(item.time).getTime() }))
@@ -3512,6 +3555,7 @@ function bindSharedHorizontalScroll(width, onScroll = () => {}) {
     const chart = panel.querySelector(".chart-scroll");
     if (chart) chart.scrollLeft = master.scrollLeft;
   }));
+  if (!$("panel-48h").hidden && $("panel-48h").dataset.focusDate) requestAnimationFrame(() => sync48HourForecastFocus());
 }
 
 function bindChartTooltips() {
