@@ -15,7 +15,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.050</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.051</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -104,14 +104,21 @@
 </section>
 <section class="technical-chapter">
 <h2>Prévision semaine</h2>
-<h3>Agrégation des périodes</h3>
-<p>Pour une période choisie, les températures minimale et maximale sont prises sur tous les pas concernés, la pluie est cumulée et la nébulosité est moyennée. Pour la journée en cours, seules les heures restant à prévoir sont utilisées ; une journée complète utilise les agrégats quotidiens du modèle. Le vent et les rafales retiennent leurs maxima sur la période. Dans la synthèse entre sources, ces valeurs sont moyennées entre modèles et la direction utilise une moyenne circulaire, afin que 350° et 10° donnent 0° plutôt que 180°.</p>
+<p>La vue Testing présente les <strong>sept prochains jours</strong> sous forme de cartes disposées sur trois colonnes, puis deux et une lorsque la largeur disponible diminue. Chaque journée est directement découpée en trois créneaux : <strong>matin de 6 h à 12 h</strong>, <strong>après-midi de 12 h à 18 h</strong> et <strong>soir de 18 h à 23 h</strong>.</p>
+<h3>Sources et horizon</h3>
+<ul><li><strong>ECMWF IFS HRES</strong>, obtenu par Open-Meteo, fournit le scénario horaire homogène utilisé pour les pictogrammes, températures, précipitations, nébulosité, vent, rafales et codes météo des sept cartes affichées. Huit jours sont demandés à l’API pour garantir cette fenêtre malgré le changement de journée.</li><li><strong>ARPEGE Météo-France</strong> corrobore les échéances disponibles, notamment les températures, la pluie, les nuages, le vent, les rafales et le signal convectif des quatre premiers jours.</li><li><strong>DWD ICON-EPS</strong> fournit, via l’API d’ensemble Open-Meteo, les dispersions de température, précipitations et vent utilisées pour estimer l’incertitude lorsque la comparaison Météo-France n’est pas encore exploitable.</li></ul>
+<p>La journée en cours est recalculée au fil du temps. Les valeurs principales de chaque créneau sont agrégées sur ses heures : minimum et maximum de température, cumul de précipitations, probabilité maximale, nébulosité moyenne, vent et rafales maximaux, avec une direction moyenne circulaire.</p>
+<h3>Lecture des cartes</h3>
+<p>Le pictogramme principal conserve les différents degrés d’ensoleillement, de couverture nuageuse et de précipitations. L’éclair est solidaire du nuage à droite lorsqu’un orage est prévu ; le symbole de vent est centré sur le nuage et n’apparaît en surcouche qu’en cas de rafales fortes. Un cumul d’au moins 0,1 mm est indiqué par une goutte à côté des températures ; les rafales les plus marquées sont affichées au même endroit.</p>
+<p>Le texte replié ne mentionne que les phénomènes particuliers : pluie significative, orage ou fortes rafales. Une coloration jaune, orange ou rouge reste réservée aux créneaux qui le justifient, avec une intensité volontairement sobre.</p>
+<p>Aujourd’hui et Demain donnent accès à la frise 48 h par le symbole graphique. Un second clic la replie ; Demain positionne la frise à 7 h. Le bouton graphique des rafales ouvre la même frise sur les courbes de vent.</p>
+<h3>Détail d’un créneau</h3>
+<p>Un clic sur Matin, Après-midi ou Soir développe verticalement les mêmes indicateurs que dans Main et Sandbox : nébulosité, pluie ou averses, vent et rafales, puis orage. Chaque ligne associe un pictogramme à une graduation sur cinq, une valeur utile et un commentaire concis. La ligne Orage est <strong>toujours présente</strong>, y compris avec 0/5 et « Pas d’orage ». Un seul créneau peut être ouvert à la fois.</p>
+<h3>Confiance générale</h3>
+<p>Le rond placé dans le bandeau de chaque journée résume la confiance générale par une couleur verte, jaune, orange ou rouge. Au survol ou au clavier, trois lignes sur cinq détaillent séparément la <strong>convergence des modèles</strong>, l’<strong>évolution des prévisions</strong> et la <strong>confiance</strong>.</p>
+<p>Lorsque les données ARPEGE sont disponibles, le score privilégie l’accord ECMWF–ARPEGE et tient aussi compte de la stabilité des ensembles et de l’évolution récente. Un désaccord important sur la pluie ou l’orage limite volontairement le niveau affiché. Sinon, la dispersion ICON-EPS sert d’indication d’incertitude.</p>
 <h3>Risque orageux semaine</h3>
-<p>La graduation repose sur les deux signaux orageux prévisionnels disponibles, Open-Meteo et Météo-France. AROME fournit le signal jusqu’à 48 heures, puis ARPEGE prolonge l’analyse convective sur la prévision semaine Météo-France.</p>
-<p>Dans la vue d’un <strong>modèle individuel</strong>, l’échéance n’intervient pas. Un signal resté stable dans les prévisions récentes vaut <strong>5/5</strong>. Chaque changement récent retire un point, sans jamais descendre sous <strong>3/5</strong>. En l’absence d’un historique suffisant, le niveau reste également à <strong>3/5</strong>.</p>
-<p>La <strong>synthèse</strong> conserve une graduation distincte fondée sur le nombre de sources, l’échéance et la stabilité :</p>
-<div class="technical-table-scroll"><table><thead><tr><th>Échéance du jour concerné</th><th>Une source</th><th>Deux sources</th></tr></thead><tbody><tr><td>De 3 à 6 jours</td><td>1/5</td><td>3/5</td></tr><tr><td>À deux jours</td><td>2/5</td><td>4/5</td></tr><tr><td>Aujourd’hui ou demain</td><td>3/5</td><td>5/5</td></tr></tbody></table></div>
-<p>L’historique récent des prévisions module ensuite la convergence de la synthèse : un changement du signal orage retire un point et des apparitions ou disparitions répétées en retirent deux. Dans les vues propres à chaque source, l’éclair matérialise directement son signal. Dans la synthèse 48 h, il est affiché dès que le risque hebdomadaire atteint 3/5.</p>
+<p>La ligne Orage croise les codes 95 à 99 d’ECMWF avec le signal convectif Météo-France. Sans signal, elle reste à 0/5. Avec un signal, le niveau dépend de la proximité de l’échéance, de l’accord entre les sources et des apparitions ou disparitions observées dans les prévisions récentes. Les détails précisent toujours la ou les sources à l’origine du signal ; un code 96 à 99 est qualifié de phénomène violent possible.</p>
 </section>
 <section class="technical-chapter">
 <h2>Techniques / Sécurité / Confidentialité</h2>
