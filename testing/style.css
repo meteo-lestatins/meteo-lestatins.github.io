@@ -239,38 +239,27 @@ button:hover { background: #eef7fb; }
 .daily-cards-section { padding-bottom: 32px; overflow: visible; contain: none; background: #f4f7f8; }
 .daily-cards-scroll { margin: 0; padding: 22px 28px 0; overflow: visible; }
 .daily-cards-forecast { width: 100%; display: block; padding: 0; }
-.daily-cards-grid { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
+.daily-cards-grid { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 18px; }
 .daily-forecast-card { min-width: 0; overflow: hidden; border: 1px solid #c8d7de; border-radius: 14px; color: #193a4e; background: #fff; box-shadow: 0 4px 14px rgba(36, 68, 84, .08); }
-.daily-forecast-card > header { min-height: 58px; display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #dbe5e9; background: #eef4f6; }
+.daily-forecast-card > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #dbe5e9; background: #eef4f6; }
 .daily-forecast-card > header h3 { margin: 0; color: #173b52; font-size: 18px; letter-spacing: -.02em; }
 .daily-forecast-card > header time { display: block; margin-top: 2px; color: #667b87; font-size: 11px; font-weight: 750; }
-.daily-forecast-overview { min-height: 116px; display: grid; grid-template-columns: 80px 132px minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 14px; }
-.daily-forecast-icon { width: 72px; height: 72px; position: relative; display: grid; place-items: center; padding: 0; }
-.daily-forecast-icon > img, .daily-forecast-icon .layered-weather-icon, .daily-forecast-icon .weather-variant-icon { width: 68px; height: 68px; }
-.daily-forecast-temperatures { display: grid; grid-template-columns: repeat(2, min-content); align-items: end; gap: 5px 17px; }
-.daily-forecast-temperatures span { display: grid; gap: 2px; }
-.daily-forecast-temperatures small { color: #748690; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-.daily-forecast-temperatures b { color: #2675a8; font-size: 18px; }
-.daily-forecast-temperatures strong { color: #e5572c; font-size: 25px; line-height: 1; }
-.daily-forecast-overview p { margin: 0; color: #466170; font-size: 12px; font-weight: 650; line-height: 1.45; }
-.daily-period-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; border-top: 1px solid #dbe5e9; background: #fff; }
-.daily-period-grid.double { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.daily-period-grid.single { grid-template-columns: 1fr; }
+.daily-day-hazard { width: 29px; height: 29px; position: relative; flex: 0 0 auto; }
+.daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; background: #fff; }
 .daily-period-card { min-width: 0; background: #fff; }
-.daily-period-card + .daily-period-card { border-left: 1px solid #dbe5e9; }
-.daily-period-card summary { min-height: 126px; display: grid; grid-template-columns: 58px minmax(72px, auto) 22px; grid-template-rows: auto auto auto; align-items: center; gap: 4px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.daily-period-card + .daily-period-card { border-top: 1px solid #dbe5e9; }
+.daily-period-card summary { min-height: 154px; display: grid; grid-template-columns: 58px minmax(72px, auto) 22px; grid-template-rows: auto auto auto auto; align-items: center; gap: 4px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
 .daily-period-card summary::-webkit-details-marker { display: none; }
 .daily-period-card summary:hover { background: #f6fafb; }
-.daily-period-title { grid-column: 1 / 3; display: grid; gap: 1px; }
+.daily-period-title { grid-column: 1 / 3; }
 .daily-period-title strong { color: #173b52; font-size: 14px; }
-.daily-period-title small { color: #758791; font-size: 9px; font-weight: 700; }
 .daily-period-icon { width: 54px; height: 54px; position: relative; display: grid; place-items: center; padding: 0; }
 .daily-period-icon > img, .daily-period-icon .layered-weather-icon, .daily-period-icon .weather-variant-icon { width: 50px; height: 50px; }
 .daily-hazard-pictogram { width: 27px; height: 27px; position: absolute; top: -1px; right: -4px; z-index: 6; display: grid; place-items: center; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, .94); filter: drop-shadow(0 1px 2px rgba(46, 67, 78, .28)); }
 .daily-hazard-pictogram + .daily-hazard-pictogram { right: 26px; }
 .daily-hazard-pictogram svg { width: 23px; height: 23px; overflow: visible; }
-.daily-period-icon .daily-hazard-pictogram.storm, .daily-forecast-icon .daily-hazard-pictogram.storm { width: 27px; height: 27px; }
-.daily-period-icon .daily-hazard-pictogram.storm svg, .daily-forecast-icon .daily-hazard-pictogram.storm svg { width: 23px; height: 23px; }
+.daily-period-icon .daily-hazard-pictogram.storm { width: 27px; height: 27px; }
+.daily-period-icon .daily-hazard-pictogram.storm svg { width: 23px; height: 23px; }
 .daily-hazard-pictogram.storm { color: #d38a00; }
 .daily-hazard-pictogram.storm .storm-signal-cloud { fill: #e9eef1; stroke: #50636e; stroke-width: .9; }
 .daily-hazard-pictogram.storm .storm-signal-bolt { fill: #f0a000; stroke: #754600; stroke-width: .7; }
@@ -282,7 +271,12 @@ button:hover { background: #eef7fb; }
 .daily-period-temperatures strong { color: #e5572c; font-size: 19px; line-height: 1; }
 .daily-period-temperatures b { color: #2675a8; font-size: 15px; line-height: 1; }
 .daily-period-copy { grid-column: 1 / 3; color: #536b78; font-size: 10px; font-weight: 700; line-height: 1.35; }
-.daily-period-chevron { grid-column: 3; grid-row: 1 / 4; color: #397a9e; font-size: 20px; transition: transform .18s ease; }
+.daily-period-metrics { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; gap: 4px; padding-top: 7px; border-top: 1px solid #edf2f4; }
+.daily-period-metrics .week-metric-pictogram { min-width: 0; gap: 3px; }
+.daily-period-metrics .week-metric-pictogram svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.daily-period-metrics .week-metric-scale { width: 34px; gap: 1px; }
+.daily-period-metrics .week-metric-scale i { height: 6px; border-radius: 2px; }
+.daily-period-chevron { grid-column: 3; grid-row: 1 / 5; color: #397a9e; font-size: 20px; transition: transform .18s ease; }
 .daily-period-card[open] .daily-period-chevron { transform: rotate(180deg); }
 .daily-period-details { padding: 0 12px 12px; }
 .daily-period-details dl { margin: 0; padding-top: 8px; border-top: 1px solid #e2eaed; }
@@ -291,20 +285,16 @@ button:hover { background: #eef7fb; }
 .daily-period-details dt { color: #687b85; }
 .daily-period-details dd { margin: 0; color: #27485b; font-weight: 800; text-align: right; }
 .daily-period-wind-arrow { display: inline-block; margin-right: 5px; color: #16805f; font-size: 15px; }
-@media (max-width: 920px) {
+@media (max-width: 1100px) {
+  .daily-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
   .daily-cards-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
   .daily-cards-scroll { padding: 14px 16px 0; }
   .daily-cards-grid { gap: 12px; }
-  .daily-forecast-overview { grid-template-columns: 70px 112px minmax(0, 1fr); gap: 8px; padding-inline: 10px; }
-  .daily-forecast-icon { width: 64px; height: 64px; }
-  .daily-forecast-icon > img, .daily-forecast-icon .layered-weather-icon, .daily-forecast-icon .weather-variant-icon { width: 60px; height: 60px; }
-  .daily-forecast-temperatures { gap: 11px; }
-  .daily-forecast-overview p { font-size: 10px; }
   .daily-period-card summary { padding-inline: 9px; }
-  .daily-period-grid, .daily-period-grid.double { grid-template-columns: 1fr; }
-  .daily-period-card + .daily-period-card { border-top: 1px solid #dbe5e9; border-left: 0; }
 }
 .week-day-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 11px 8px; border-bottom: 1px solid #e0e8ec; background: #f4f8fa; }
 .week-day-head-active { justify-content: flex-start; gap: 4px; }
