@@ -1512,8 +1512,11 @@ function normalizeOpenMeteoDays(daily, hourly) {
     const remainingRain = samples.reduce((sum, sample) => sum + sample.rain, 0);
     const remainingShowers = samples.reduce((sum, sample) => sum + sample.showers, 0);
     const remainingDirection = directions.length ? (Math.atan2(directions.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), directions.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
-    const periodSummary = periodKeys => {
-      const periodSamples = samples.filter(sample => periodKeys.includes(solarPeriod(sample, sunrise, sunset)));
+    const periodSummary = (startHour, endHour) => {
+      const periodSamples = samples.filter(sample => {
+        const hour = Number(sample.time.slice(11, 13));
+        return hour >= startHour && hour < endHour;
+      });
       if (!periodSamples.length) return null;
       const values = key => finite(periodSamples, key);
       const temperatures = values("temperature");
@@ -1580,8 +1583,9 @@ function normalizeOpenMeteoDays(daily, hourly) {
       windPeriod,
       gustPeriod,
       periods: {
-        morning: periodSummary(["morning"]),
-        afternoon: periodSummary(["afternoon", "late_afternoon"])
+        morning: periodSummary(6, 12),
+        afternoon: periodSummary(12, 18),
+        evening: periodSummary(18, 23)
       }
     };
   }).filter(Boolean);
@@ -1985,7 +1989,7 @@ function renderTestingDailyForecast() {
       rain: period.storm ? Math.max(.5, rain) : rain,
       rainLevel: rainPictogramStep(rain)
     });
-    const temperature = format(period.temperatureMin, 0) + "–" + format(period.temperatureMax, 0) + "°";
+    const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin, 0) + '°</b></span></span>';
     const direction = Number.isFinite(Number(period.windDirection))
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
     const gust = Math.max(0, Number(period.windGustMax) || 0);
@@ -2000,7 +2004,10 @@ function renderTestingDailyForecast() {
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Courbes</small></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
   };
-  const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
+  const renderHour = new Date(appNow()).getHours();
+  const openMeteoDays = (latestWeekForecast?.days || [])
+    .filter(day => day.date > todayDateKey() || (day.date === todayDateKey() && renderHour < 23))
+    .slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
   const cards = openMeteoDays.map((openMeteo, index) => {
     const meteoFrance = meteoFranceByDate.get(openMeteo.date) || null;
@@ -2014,37 +2021,66 @@ function renderTestingDailyForecast() {
       windSpeedMax: mean([openMeteo.windSpeedMax, meteoFrance?.windSpeedMax]),
       windGustMax: mean([openMeteo.windGustMax, meteoFrance?.windGustMax])
     };
-    const storm = Number(openMeteo.weatherCode) >= 95 || meteoFranceStormForDate(openMeteo.date);
-    const rain = Math.max(0, Number(merged.precipitationSum) || 0);
-    const icon = displayIcon({ time: openMeteo.time, cloudCover: merged.cloudCover, rain: storm ? Math.max(.5, rain) : rain, rainLevel: rainPictogramStep(rain) });
-    const morning = openMeteo.periods?.morning || null;
-    const afternoon = openMeteo.periods?.afternoon || null;
-    const availablePeriods = [morning, afternoon].filter(Boolean);
+    const currentHour = renderHour;
+    const isToday = openMeteo.date === todayDateKey();
+    const morning = !isToday || currentHour < 12 ? openMeteo.periods?.morning || null : null;
+    const afternoon = !isToday || currentHour < 18 ? openMeteo.periods?.afternoon || null : null;
+    const evening = !isToday || currentHour < 23 ? openMeteo.periods?.evening || null : null;
+    const availablePeriods = [morning, afternoon, evening].filter(Boolean);
+    const periodValues = key => finite(availablePeriods.map(period => period[key]));
+    const periodMin = key => {
+      const values = periodValues(key);
+      return values.length ? Math.min(...values) : merged[key];
+    };
+    const periodMax = key => {
+      const values = periodValues(key);
+      return values.length ? Math.max(...values) : merged[key];
+    };
+    const visibleSummary = availablePeriods.length ? {
+      ...merged,
+      time: availablePeriods[Math.floor(availablePeriods.length / 2)]?.time || openMeteo.time,
+      weatherCode: periodMax("weatherCode"),
+      temperatureMin: periodMin("temperatureMin"),
+      temperatureMax: periodMax("temperatureMax"),
+      cloudCover: mean(periodValues("cloudCover")),
+      precipitationSum: periodValues("precipitationSum").reduce((sum, value) => sum + value, 0),
+      precipitationProbabilityMax: periodMax("precipitationProbabilityMax"),
+      windSpeedMax: periodMax("windSpeedMax"),
+      windGustMax: periodMax("windGustMax")
+    } : merged;
+    const storm = availablePeriods.some(period => period.storm)
+      || (!openMeteo.forecastStart && meteoFranceStormForDate(openMeteo.date));
+    const rain = Math.max(0, Number(visibleSummary.precipitationSum) || 0);
+    const icon = displayIcon({ time: visibleSummary.time, cloudCover: visibleSummary.cloudCover, rain: storm ? Math.max(.5, rain) : rain, rainLevel: rainPictogramStep(rain) });
     const stormPeriods = availablePeriods.filter(period => period.storm);
     const severeStorm = [openMeteo.weatherCode, ...availablePeriods.map(period => period.weatherCode)].some(code => Number(code) >= 96);
     const stormAllDay = availablePeriods.length > 1 && stormPeriods.length === availablePeriods.length;
     const stormTimingUnknown = storm && !stormPeriods.length;
     const windyPeriods = availablePeriods.filter(period => Number(period.windGustMax) >= 50);
     const windAllDay = availablePeriods.length > 1 && windyPeriods.length === availablePeriods.length;
-    const majorWind = Number(merged.windGustMax) >= 70;
-    const windTimingUnknown = Number(merged.windGustMax) >= 50 && !windyPeriods.length;
+    const majorWind = Number(visibleSummary.windGustMax) >= 70;
+    const windTimingUnknown = Number(visibleSummary.windGustMax) >= 50 && !windyPeriods.length;
     const generalStorm = severeStorm || stormAllDay || stormTimingUnknown;
     const generalWind = majorWind || windAllDay || windTimingUnknown;
     const generalHazardKinds = [generalStorm ? "storm" : "", generalWind ? "wind" : ""].filter(Boolean);
     const generalHazard = [
-      generalStorm ? hazardPictogram("storm", severeStorm ? "Orage violent possible dans la journée" : stormAllDay ? "Orage possible matin et après-midi" : "Orage possible, horaire à préciser") : "",
-      generalWind ? hazardPictogram("wind", "Vent fort dans la journée · rafales jusqu’à " + format(merged.windGustMax, 0) + " km/h") : ""
+      generalStorm ? hazardPictogram("storm", severeStorm ? "Orage violent possible dans la journée" : stormAllDay ? "Orage possible sur tous les créneaux affichés" : "Orage possible, horaire à préciser") : "",
+      generalWind ? hazardPictogram("wind", "Vent fort dans la journée · rafales jusqu’à " + format(visibleSummary.windGustMax, 0) + " km/h") : ""
     ].join("");
-    const periods = [periodCard(morning, "Matin", generalHazardKinds), periodCard(afternoon, "Après-midi", generalHazardKinds)].filter(Boolean);
+    const periods = [periodCard(morning, "Matin", generalHazardKinds), periodCard(afternoon, "Après-midi", generalHazardKinds), periodCard(evening, "Soir", generalHazardKinds)].filter(Boolean);
+    const stormTiming = stormPeriods.length === 1
+      ? morning?.storm ? "le matin" : afternoon?.storm ? "l’après-midi" : "le soir"
+      : "";
     const notableSummary = [];
     if (storm) notableSummary.push(severeStorm
       ? "Orage violent possible."
-      : stormPeriods.length === 1 ? "Orage possible " + (morning?.storm ? "le matin." : "l’après-midi.") : "Orage possible.");
+      : stormTiming ? "Orage possible " + stormTiming + "." : "Orage possible.");
     else if (rain >= 5) notableSummary.push(format(rain) + " mm de pluie.");
-    else if (Number(merged.precipitationProbabilityMax) >= 70) notableSummary.push("Pluie probable.");
-    if (Number(merged.windGustMax) >= 50) notableSummary.push("Rafales " + format(merged.windGustMax, 0) + " km/h.");
+    else if (Number(visibleSummary.precipitationProbabilityMax) >= 70) notableSummary.push("Pluie probable.");
+    if (Number(visibleSummary.windGustMax) >= 50) notableSummary.push("Rafales " + format(visibleSummary.windGustMax, 0) + " km/h.");
     const summaryMarkup = notableSummary.length ? '<p>' + escapeText(notableSummary.join(" ")) + '</p>' : "";
-    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + generalHazard + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span></div>' + summaryMarkup + '</div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
+    const periodGridClass = periods.length === 1 ? " single" : periods.length === 2 ? " double" : "";
+    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + generalHazard + '</div><div class="daily-forecast-temperatures"><span><small>Max.</small><strong>' + format(visibleSummary.temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(visibleSummary.temperatureMin, 0) + '°</b></span></div>' + summaryMarkup + '</div><div class="daily-period-grid' + periodGridClass + '">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   renderWeekApiLinks();
