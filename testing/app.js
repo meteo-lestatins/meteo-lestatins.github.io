@@ -1348,7 +1348,7 @@ function conciseRainSummary(amount, probabilities, periods, showers = false, sto
   const risk = Math.max(0, Number(probability.average) || 0);
   if (rain <= 0 && risk < 40 && !storm) return "";
   const timing = forecastPeriodText(periods);
-  const quantity = rain <= 0 ? "sans cumul notable"
+  const quantity = rain <= 0 ? "sans cumul défini"
     : rain < .1 ? "sous forme de quelques gouttes"
     : rain < 1 ? "en très faible quantité"
     : rain < 5 ? "en faible quantité"
@@ -1838,7 +1838,7 @@ function weekModelAgreement(ecmwf, arpege) {
   } else if (highestAmountLevel === 0) {
     rainCondition = "temps sec probable";
     rainScenario = Math.max(...rainProfiles.map(profile => profile.probability)) >= 50
-      ? "Les deux modèles n’annoncent pas de cumul notable, même si une possibilité de pluie subsiste."
+      ? "Les deux modèles n’annoncent pas de cumul défini, même si une possibilité de pluie subsiste."
       : "Les deux modèles privilégient une journée sans pluie notable.";
   } else if (lowestAmountLevel === 0 && highestAmountLevel <= 2) {
     rainCondition = "quelques gouttes possibles";

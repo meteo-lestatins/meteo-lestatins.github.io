@@ -270,7 +270,7 @@ button:hover { background: #eef7fb; }
 .daily-confidence-indicator:focus-visible { outline: 2px solid var(--confidence-color); outline-offset: 2px; }
 .daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; border-radius: 0 0 13px 13px; background: #fff; }
 .daily-period-card { min-width: 0; position: relative; background: #fff; }
-.daily-period-card.daily-period-alert-yellow { background: #fffaf0; box-shadow: inset 4px 0 #e0b83c; }
+.daily-period-card.daily-period-alert-yellow { background: #fff2c9; box-shadow: inset 4px 0 #d0a000; }
 .daily-period-card.daily-period-alert-orange { background: #fff4e8; box-shadow: inset 4px 0 #e28132; }
 .daily-period-card.daily-period-alert-red { background: #fff0ee; box-shadow: inset 4px 0 #cf4d47; }
 .daily-period-card + .daily-period-card { border-top: 1px solid #dbe5e9; }
@@ -280,7 +280,7 @@ button:hover { background: #eef7fb; }
 .daily-period-card summary { min-height: 220px; display: grid; grid-template-columns: 168px minmax(86px, auto) 22px; grid-template-rows: auto auto auto; align-items: center; gap: 4px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
 .daily-period-card summary::-webkit-details-marker { display: none; }
 .daily-period-card summary:hover { background: #f6fafb; }
-.daily-period-card.daily-period-alert-yellow summary:hover { background: #fff6dc; }
+.daily-period-card.daily-period-alert-yellow summary:hover { background: #ffe9ad; }
 .daily-period-card.daily-period-alert-orange summary:hover { background: #ffead7; }
 .daily-period-card.daily-period-alert-red summary:hover { background: #ffe2de; }
 .daily-period-title { grid-column: 1 / 3; }
