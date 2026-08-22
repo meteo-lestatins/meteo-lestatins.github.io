@@ -397,6 +397,7 @@ function set48HourForecastContentOpen(open) {
     panel.hidden = true;
     panel.removeAttribute("data-focus-date");
     panel.removeAttribute("data-focus-hour");
+    panel.removeAttribute("data-focus-metric");
     document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
     document.querySelector('[data-summary-target="wind48"]')?.setAttribute("aria-expanded", "false");
   }
@@ -438,12 +439,14 @@ function toggleDaily48HourForecast(button) {
     panel.hidden = true;
     panel.removeAttribute("data-focus-date");
     panel.removeAttribute("data-focus-hour");
+    panel.removeAttribute("data-focus-metric");
     return;
   }
   const tomorrow = new Date(todayDateKey() + "T12:00:00");
   tomorrow.setDate(tomorrow.getDate() + 1);
   panel.dataset.focusDate = dateKey;
   panel.dataset.focusHour = dateKey === forecastDateKey(tomorrow) ? "7" : "";
+  panel.removeAttribute("data-focus-metric");
   panel.hidden = false;
   button.setAttribute("aria-expanded", "true");
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
@@ -455,12 +458,17 @@ function toggleDaily48HourForecast(button) {
 function open48HourWindForecast() {
   const panel = $("panel-48h");
   if (!panel) return;
+  if (!panel.hidden && panel.dataset.focusMetric === "wind") {
+    set48HourForecastContentOpen(false);
+    return;
+  }
   Object.keys(metricOpacities).forEach(metric => {
     metricOpacities[metric] = metric === "wind" || metric === "gust" ? 100 : 0;
   });
   document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
   panel.dataset.focusDate = todayDateKey();
   panel.dataset.focusHour = "";
+  panel.dataset.focusMetric = "wind";
   panel.hidden = false;
   document.querySelector('[data-summary-target="wind48"]')?.setAttribute("aria-expanded", "true");
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
@@ -1161,8 +1169,8 @@ function displayIcon(item) {
   const base = night && cloudLevel === 0 && rainLevel === 0
     ? "vendor/meteocons/" + moonPhaseMeteoconName(date) + ".svg"
     : "vendor/weather-variants/cloud-" + period + "-" + cloudLevel + ".svg";
-  const rainMarkup = rainLevel ? '<img class="weather-rain-layer" src="vendor/weather-variants/rain-' + rainLevel + '.svg" alt="">' : '';
-  return '<span class="weather-variant-icon" role="img" aria-label="' + escapeText(label) + '"><img class="weather-cloud-layer" src="' + base + '" alt="">' + rainMarkup + '</span>';
+  const rainMarkup = rainLevel ? '<img class="weather-rain-layer" src="vendor/weather-variants/rain-' + rainLevel + '.svg" alt="" loading="lazy" decoding="async">' : '';
+  return '<span class="weather-variant-icon" role="img" aria-label="' + escapeText(label) + '"><img class="weather-cloud-layer" src="' + base + '" alt="" loading="lazy" decoding="async">' + rainMarkup + '</span>';
 }
 
 function stormSignalPictogram(detail, extraClass = "", withCloud = false) {
@@ -2214,7 +2222,14 @@ function renderTestingDailyForecast() {
       : "Pas d’orage.";
     const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage"), "", stormDescription, "daily-period-storm-detail");
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    // Use one restrained alert tone per slot. Météo-France's day-wide storm
+    // signal stays on the pictogram but does not colour all three periods.
+    const violentStorm = hasOpenMeteoStorm && Number(period.weatherCode) >= 96;
+    const alertTone = violentStorm || gust >= 90 ? "red"
+      : gust >= 75 ? "orange"
+      : hasOpenMeteoStorm || gust >= 60 ? "yellow" : "";
+    const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
+    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2668,6 +2683,9 @@ async function ensureWeekForecast() {
     url.searchParams.set("timezone", "Europe/Paris");
     url.searchParams.set("forecast_days", "8");
     url.searchParams.set("wind_speed_unit", "kmh");
+    // Keep one model over the whole forecast. Open-Meteo's automatic
+    // best-match currently introduces artificial gust jumps at model seams.
+    url.searchParams.set("models", "ecmwf_ifs025");
     url.searchParams.set("hourly", "temperature_2m,apparent_temperature,precipitation,rain,showers,precipitation_probability,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m");
     url.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,precipitation_probability_max,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset");
     const ensembleUrl = new URL("https://ensemble-api.open-meteo.com/v1/ensemble");
@@ -4220,12 +4238,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         + '</span>'
       : '';
     const actionGraph = target ? graphIconMarkup("three-hour-graph-icon") : "";
-    const stormTiming = displayedTrend && !target
+    const stormTiming = displayedTrend
       ? '<span class="three-hour-storm-timing">' + trendMarkup(kind, displayedTrend, passageDetail) + '</span>'
       : '';
     const metric = stormLayout
-      ? stormIndicator + actionGraph + stormTiming + stormEta
-      : nowcastMetricPictogram(kind, level, detail) + actionGraph + (!target && trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
+      ? stormIndicator + stormTiming + stormEta + actionGraph
+      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '') + actionGraph;
     const actionLabel = target === "rain" ? "Ouvrir les précipitations sur 3 h" : target === "nowcast" ? "Ouvrir le nowcasting" : target === "wind48" ? "Ouvrir les prévisions de vent sur 48 h" : "";
     const accessibleDetail = actionLabel ? actionLabel + " — " + detail : detail;
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '" title="' + escapeText(accessibleDetail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
@@ -4656,7 +4674,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
         button.setAttribute("aria-controls", "panel-48h");
-        button.setAttribute("aria-expanded", "false");
+        button.setAttribute("aria-expanded", String(!$("panel-48h").hidden && $("panel-48h").dataset.focusMetric === "wind"));
         button.addEventListener("click", open48HourWindForecast);
         return;
       }
