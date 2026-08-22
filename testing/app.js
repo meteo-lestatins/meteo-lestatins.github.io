@@ -27,7 +27,7 @@ let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
 let dashboardSync = { status: "loading", error: null };
-let activeForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
+let activeForecastSource = "openmeteo";
 let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
@@ -80,7 +80,7 @@ const measurableRainThreshold = .05;
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
 
 function graphIconMarkup(className) {
-  return '<span class="' + className + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8M16 7h3v3"/></svg></span>';
+  return '<span class="' + className + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8"/></svg></span>';
 }
 
 function ensureLeafletAssets() {
@@ -444,6 +444,8 @@ function toggleDaily48HourForecast(button) {
   }
   const tomorrow = new Date(todayDateKey() + "T12:00:00");
   tomorrow.setDate(tomorrow.getDate() + 1);
+  activeForecastSource = "openmeteo";
+  Object.keys(metricOpacities).forEach(metric => { metricOpacities[metric] = 100; });
   panel.dataset.focusDate = dateKey;
   panel.dataset.focusHour = dateKey === forecastDateKey(tomorrow) ? "7" : "";
   panel.removeAttribute("data-focus-metric");
@@ -452,6 +454,7 @@ function toggleDaily48HourForecast(button) {
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
   set48HourForecastContentOpen(true);
   renderActiveForecast();
+  void ensureOpenMeteoEnsemble();
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
 
@@ -1069,7 +1072,8 @@ const publicDataCacheName = "meteo-public-data-v1";
 function cacheableApiTarget(target) {
   try {
     const url = new URL(target, document.baseURI);
-    return url.origin === apiBaseUrl.origin && /\/api\/(dashboard|week)$/.test(url.pathname);
+    return url.origin === apiBaseUrl.origin && /\/api\/(dashboard|week)$/.test(url.pathname)
+      || ["api.open-meteo.com", "ensemble-api.open-meteo.com"].includes(url.hostname);
   } catch {
     return false;
   }
@@ -1241,7 +1245,9 @@ function weekForecastStartKey(now = new Date(appNow())) {
     hourCycle: "h23", timeZone: "Europe/Paris"
   }).formatToParts(now);
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return values.year + "-" + values.month + "-" + values.day + "T" + values.hour + ":" + values.minute;
+  // Open-Meteo fournit des pas horaires. Conserver l'heure entamée évite
+  // qu'à 23 h 01, le dernier point de 23 h soit déjà considéré comme passé.
+  return values.year + "-" + values.month + "-" + values.day + "T" + values.hour + ":00";
 }
 
 const forecastPeriodOrder = ["night", "morning", "afternoon", "late_afternoon", "evening"];
@@ -1720,10 +1726,53 @@ function normalizeOpenMeteoDays(daily, hourly) {
       periods: {
         morning: periodSummary(6, 12),
         afternoon: periodSummary(12, 18),
-        evening: periodSummary(18, 23)
+        evening: periodSummary(18, 24)
       }
     };
   }).filter(Boolean);
+}
+
+function normalizeDashboardOpenMeteoDays(openMeteo) {
+  if (!openMeteo?.days?.length || !openMeteo?.hours?.length) return [];
+  const daily = {};
+  ["time", "weather_code", "temperature_2m_max", "temperature_2m_min", "apparent_temperature_max", "apparent_temperature_min", "precipitation_sum", "rain_sum", "showers_sum", "precipitation_probability_max", "cloud_cover_mean", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "sunrise", "sunset"].forEach(key => { daily[key] = []; });
+  openMeteo.days.forEach(day => {
+    daily.time.push(day.date);
+    daily.weather_code.push(day.weatherCode);
+    daily.temperature_2m_max.push(day.temperatureMax);
+    daily.temperature_2m_min.push(day.temperatureMin);
+    daily.apparent_temperature_max.push(day.apparentTemperatureMax);
+    daily.apparent_temperature_min.push(day.apparentTemperatureMin);
+    daily.precipitation_sum.push(day.precipitationSum);
+    daily.rain_sum.push(day.rainSum);
+    daily.showers_sum.push(day.showersSum);
+    daily.precipitation_probability_max.push(day.precipitationProbabilityMax);
+    daily.cloud_cover_mean.push(day.cloudCover);
+    daily.wind_speed_10m_max.push(day.windSpeedMax);
+    daily.wind_gusts_10m_max.push(day.windGustMax);
+    daily.wind_direction_10m_dominant.push(day.windDirection);
+    daily.sunrise.push(day.sunrise);
+    daily.sunset.push(day.sunset);
+  });
+  const hourly = {};
+  ["time", "temperature_2m", "apparent_temperature", "precipitation", "rain", "showers", "precipitation_probability", "weather_code", "cloud_cover", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"].forEach(key => { hourly[key] = []; });
+  openMeteo.hours.forEach(hour => {
+    hourly.time.push(hour.time);
+    hourly.temperature_2m.push(hour.temperature);
+    hourly.apparent_temperature.push(null);
+    hourly.precipitation.push(hour.rain);
+    hourly.rain.push(hour.rain);
+    hourly.showers.push(0);
+    hourly.precipitation_probability.push(hour.probability);
+    hourly.weather_code.push(hour.weatherCode);
+    hourly.cloud_cover.push(hour.cloudiness);
+    hourly.wind_speed_10m.push(hour.windSpeed);
+    hourly.wind_direction_10m.push(hour.windDirection);
+    hourly.wind_gusts_10m.push(hour.windGust);
+  });
+  // Le tableau de bord fournit déjà 48 h détaillées : les afficher tout de
+  // suite, puis laisser la requête hebdomadaire compléter les jours suivants.
+  return normalizeOpenMeteoDays(daily, hourly).filter(day => Object.values(day.periods || {}).some(Boolean));
 }
 
 function dashboardOpenMeteoWeekDay(day) {
@@ -2699,13 +2748,14 @@ async function ensureWeekForecast() {
     ensembleUrl.searchParams.set("wind_speed_unit", "kmh");
     ensembleUrl.searchParams.set("models", "dwd_icon_eps_ensemble_mean_seamless");
     ensembleUrl.searchParams.set("hourly", "temperature_2m_spread,precipitation_spread,wind_speed_10m_spread");
-    const forecastRequest = latestOpenMeteoWeekRaw ? Promise.resolve(null) : json(url.toString()).then(value => {
+    const forecastRequest = latestOpenMeteoWeekRaw ? Promise.resolve(null) : (async () => {
+      const value = await readCachedJson(url.toString(), 30 * 60000) || await json(url.toString());
       latestOpenMeteoWeekRaw = { daily: value.daily, hourly: value.hourly };
       latestWeekForecast = { fetchedAt: Date.now(), model: "Open-Meteo", days: includeCurrentDashboardDay(normalizeOpenMeteoDays(value.daily, value.hourly)) };
       scheduleActiveWeekDayUpdate();
       renderWeekForecast();
       return value;
-    });
+    })();
     const [forecastResult, meteoFranceResult, ensembleResult] = await Promise.allSettled([
       forecastRequest,
       latestMeteoFranceWeek?.days?.length ? Promise.resolve(null) : loadMeteoFranceWeek(),
@@ -4853,10 +4903,11 @@ function applyDashboardPayload(payload) {
     dashboardSync = { status: payload.status, error: payload.error || null };
     latestForecastData = data;
     if (!latestWeekForecast?.days?.length && data?.openMeteo?.days?.length) {
+      const detailedDays = normalizeDashboardOpenMeteoDays(data.openMeteo);
       latestWeekForecast = {
         fetchedAt: data.openMeteo.fetchedAt || Date.now(),
         model: "Open-Meteo via serveur",
-        days: data.openMeteo.days.map(dashboardOpenMeteoWeekDay)
+        days: detailedDays.length ? detailedDays : data.openMeteo.days.map(dashboardOpenMeteoWeekDay)
       };
       renderWeekForecast();
     }
