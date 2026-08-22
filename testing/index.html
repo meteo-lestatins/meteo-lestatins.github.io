@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.basemaps.cartocdn.com; connect-src 'self' https://api.open-meteo.com https://ensemble-api.open-meteo.com https://nicolas.sindelar.fr; manifest-src 'self'; worker-src 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
-  <link rel="stylesheet" href="style.css?v=127">
+  <link rel="stylesheet" href="style.css?v=128">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <title>Testing · Météo les Tatins</title>
 </head>
@@ -44,14 +44,16 @@
     </div>
   </section>
   <section id="panel-48h" class="forecast-section page-forecast-section" aria-labelledby="forecast-48h-title" hidden>
-    <div class="section-heading page-section-heading">
-      <h2 id="forecast-48h-title">Prévisions 48 h</h2>
+    <div class="section-heading page-section-heading forecast-48h-heading">
+      <h2 id="forecast-48h-title"><button id="forecast-48h-title-toggle" type="button" aria-controls="forecast-48h-content" aria-expanded="true"><span id="forecast-48h-title-label">Prévisions</span><span class="forecast-title-chevron" aria-hidden="true">⌃</span></button></h2>
       <div id="forecast-api-links" class="section-api-links" aria-label="API des prévisions sur 48 heures" hidden></div>
     </div>
-    <div id="forecast-controls" class="forecast-controls" aria-label="Courbes affichées"></div>
-    <div class="forecast-horizontal-row"><div id="forecast-horizontal-scroll" class="forecast-horizontal-scroll" aria-label="Défilement commun des prévisions"><div id="forecast-horizontal-track"></div></div></div>
-    <div id="forecast-overview" class="forecast-overview" aria-label="Vue globale des prévisions"></div>
-    <div id="forecast-panels" class="forecast-panels" aria-live="polite"></div>
+    <div id="forecast-48h-content">
+      <div id="forecast-controls" class="forecast-controls" aria-label="Courbes affichées"></div>
+      <div class="forecast-horizontal-row"><div id="forecast-horizontal-scroll" class="forecast-horizontal-scroll" aria-label="Défilement commun des prévisions"><div id="forecast-horizontal-track"></div></div></div>
+      <div id="forecast-overview" class="forecast-overview" aria-label="Vue globale des prévisions"></div>
+      <div id="forecast-panels" class="forecast-panels" aria-live="polite"></div>
+    </div>
   </section>
   <section id="panel-week" class="week-section daily-cards-section page-forecast-section" aria-label="Prévisions quotidiennes">
     <div id="week-api-links" class="section-api-links week-tab-sources" aria-label="API des prévisions quotidiennes" hidden></div>
@@ -61,9 +63,9 @@
   </section>
 </main>
 <div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
-<script src="runtime-config.js?v=3.041"></script>
+<script src="runtime-config.js?v=3.042"></script>
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="analytics.js?v=1"></script>
-<script src="app.js?v=188"></script>
+<script src="app.js?v=189"></script>
 </body>
 </html>

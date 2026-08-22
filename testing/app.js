@@ -7,6 +7,7 @@ const apiUrl = path => new URL(String(path).replace(/^\/+/, ""), apiBaseUrl);
 const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
 const point = { lat: 44.6538, lon: 5.5995 };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+const forecastHourValue = date => Number(hourFormat.format(date).slice(0, 2));
 const forecastHourLabel = date => Number(hourFormat.format(date).slice(0, 2)) + "h";
 const forecastWeekdayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "Europe/Paris" });
 const forecastWeekdayLabel = date => {
@@ -340,18 +341,49 @@ function bindForecastLayout() {
   renderRainApiLinks();
   renderForecastApiLinks();
   renderWeekApiLinks();
+  bind48HourForecastTitle();
   ensureWeekForecast();
+}
+
+function forecast48HourRangeTitle() {
+  const start = new Date(todayDateKey() + "T12:00:00");
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return "Prévisions " + shortDateFormat.format(start) + " au " + shortDateFormat.format(end);
+}
+
+function set48HourForecastContentOpen(open) {
+  const content = $("forecast-48h-content");
+  const toggle = $("forecast-48h-title-toggle");
+  if (!content || !toggle) return;
+  content.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.setAttribute("aria-label", (open ? "Replier " : "Déplier ") + forecast48HourRangeTitle().toLowerCase());
+  toggle.title = open ? "Replier les prévisions" : "Déplier les prévisions";
+  const chevron = toggle.querySelector(".forecast-title-chevron");
+  if (chevron) chevron.textContent = open ? "⌃" : "⌄";
+}
+
+function bind48HourForecastTitle() {
+  const toggle = $("forecast-48h-title-toggle");
+  const label = $("forecast-48h-title-label");
+  if (!toggle || !label) return;
+  label.textContent = forecast48HourRangeTitle();
+  set48HourForecastContentOpen(true);
+  toggle.addEventListener("click", () => set48HourForecastContentOpen(toggle.getAttribute("aria-expanded") !== "true"));
 }
 
 function sync48HourForecastFocus(scrollPage = false) {
   const panel = $("panel-48h");
   const dateKey = panel?.dataset.focusDate;
   if (!panel || panel.hidden || !dateKey) return;
-  const marker = panel.querySelector('[data-forecast-date="' + dateKey + '"]');
+  const focusHour = panel.dataset.focusHour;
+  const marker = (focusHour ? panel.querySelector('[data-forecast-date="' + dateKey + '"][data-forecast-hour="' + focusHour + '"]') : null)
+    || panel.querySelector('[data-forecast-date="' + dateKey + '"]');
   const master = $("forecast-horizontal-scroll");
   if (marker && master) {
     const scrollable = marker.closest(".overview-scroll, .chart-scroll");
-    const left = Math.max(0, marker.offsetLeft - Math.min(88, (scrollable?.clientWidth || master.clientWidth) * .08));
+    const left = Math.max(0, marker.offsetLeft - (focusHour ? 0 : Math.min(88, (scrollable?.clientWidth || master.clientWidth) * .08)));
     master.scrollLeft = left;
     master.dispatchEvent(new Event("scroll"));
   }
@@ -367,13 +399,17 @@ function toggleDaily48HourForecast(button) {
   if (alreadyOpen) {
     panel.hidden = true;
     panel.removeAttribute("data-focus-date");
-    $("forecast-48h-title").textContent = "Prévisions 48 h";
+    panel.removeAttribute("data-focus-hour");
     return;
   }
+  const tomorrow = new Date(todayDateKey() + "T12:00:00");
+  tomorrow.setDate(tomorrow.getDate() + 1);
   panel.dataset.focusDate = dateKey;
+  panel.dataset.focusHour = dateKey === forecastDateKey(tomorrow) ? "7" : "";
   panel.hidden = false;
   button.setAttribute("aria-expanded", "true");
-  $("forecast-48h-title").textContent = "Prévisions 48 h · " + button.getAttribute("data-open-48h-label");
+  $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
+  set48HourForecastContentOpen(true);
   renderActiveForecast();
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
@@ -3048,7 +3084,7 @@ function renderComparisonForecast(arome, openMeteo) {
     const score = agreement(pair);
     const date = new Date(item.time);
     const detail = levelLabel(score) + ' (' + score + '%)\nTempérature : ' + item.temperature.toFixed(1) + ' / ' + pair.openMeteo.temperature.toFixed(1) + ' °C\nVent : ' + Math.round(item.windSpeed) + ' / ' + Math.round(pair.openMeteo.windSpeed) + ' km/h\n' + dateTimeFormat.format(date);
-    return '<div class="comparison-hour chart-point" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time></div></div>';
+    return '<div class="comparison-hour chart-point" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" data-forecast-hour="' + forecastHourValue(date) + '" tabindex="0" aria-label="' + escapeText(levelLabel(score) + ' : ' + score + ' %') + '" data-tooltip="' + escapeText(detail) + '" style="background:' + agreementColor(score, .17) + '"><div class="comparison-hour-content"><time><small>' + escapeText(forecastWeekdayLabel(date)) + '</small>' + escapeText(forecastHourLabel(date)) + '</time></div></div>';
   }).join("");
   $("forecast-controls").innerHTML = forecastSourceControlsMarkup();
   bindForecastControlButtons();
@@ -3231,7 +3267,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
   }).join("");
   const overviewXAxis = hours.map((item, index) => {
     const date = new Date(item.time);
-    return '<div class="overview-x-hour" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" style="' + daylightStyle(date, true) + '"><span>' + escapeText(forecastWeekdayLabel(date)) + '</span><time>' + escapeText(forecastHourLabel(date)) + '</time></div>';
+    return '<div class="overview-x-hour" data-forecast-date="' + escapeText(forecastDateKey(date)) + '" data-forecast-hour="' + forecastHourValue(date) + '" style="' + daylightStyle(date, true) + '"><span>' + escapeText(forecastWeekdayLabel(date)) + '</span><time>' + escapeText(forecastHourLabel(date)) + '</time></div>';
   }).join("");
   const probabilityDisplayIndexes = new Map(probabilities.map(point => {
     const indexes = hours.map((item, index) => ({ index, time: new Date(item.time).getTime() }))

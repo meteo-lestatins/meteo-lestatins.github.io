@@ -673,6 +673,9 @@ button:hover { background: #eef7fb; }
 .nowcast-heading h2 button { padding: 0; color: inherit; background: transparent; font: inherit; letter-spacing: inherit; }
 .nowcast-heading h2 button:hover { color: #397a9e; background: transparent; }
 .nowcast-heading h2 button span { display: inline-block; margin-left: 5px; font-size: 15px; }
+.forecast-48h-heading h2 button { display: inline-flex; align-items: center; gap: 7px; padding: 0; color: inherit; background: transparent; font: inherit; letter-spacing: inherit; text-align: left; }
+.forecast-48h-heading h2 button:hover { color: #397a9e; background: transparent; }
+.forecast-48h-heading .forecast-title-chevron { display: inline-block; flex: 0 0 auto; font-size: 15px; }
 .nowcast-section-title.sources-only { justify-content: flex-end; margin-top: 0; padding-block: 4px 2px; border-top: 0; border-bottom: 0; }
 .nowcast-section-title.sources-only .section-api-links { margin-left: 0; }
 .nowcast-section-title.sources-only .source-link { padding-block: 2px; font-size: 9px; }
