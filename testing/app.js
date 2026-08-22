@@ -1947,34 +1947,6 @@ function renderTestingDailyForecast() {
     const valid = finite(values);
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
   };
-  const seasonalTemperature = period => {
-    const rawAnomaly = period?.temperatureAnomaly;
-    const anomaly = rawAnomaly == null || rawAnomaly === "" ? NaN : Number(rawAnomaly);
-    if (!Number.isFinite(anomaly)) return null;
-    const warmShare = Number(period?.temperatureWarmShare);
-    const coldShare = Number(period?.temperatureColdShare);
-    const label = warmShare >= .5 && anomaly >= 2 ? "Température inhabituellement élevée"
-      : coldShare >= .5 && anomaly <= -2 ? "Température inhabituellement basse"
-      : anomaly >= 4 ? "Température très élevée"
-      : anomaly >= 1.5 ? "Température élevée"
-      : anomaly <= -4 ? "Température très basse"
-      : anomaly <= -1.5 ? "Température basse"
-      : "Température habituelle";
-    return {
-      anomaly,
-      label,
-      compact: label
-    };
-  };
-  const dailySeasonalTemperature = periods => {
-    const available = periods.filter(period => period?.temperatureAnomaly != null && period.temperatureAnomaly !== "" && Number.isFinite(Number(period.temperatureAnomaly)));
-    if (!available.length) return null;
-    return seasonalTemperature({
-      temperatureAnomaly: mean(available.map(period => period.temperatureAnomaly)),
-      temperatureWarmShare: mean(available.map(period => period.temperatureWarmShare)),
-      temperatureColdShare: mean(available.map(period => period.temperatureColdShare))
-    });
-  };
   const dateFromKey = dateKey => new Date(dateKey + "T12:00:00");
   const relativeDayLabel = (day, index) => {
     if (index === 0 && day.date === todayDateKey()) {
@@ -2003,7 +1975,7 @@ function renderTestingDailyForecast() {
   const hazardPictogram = (kind, detail) => kind === "storm"
     ? stormSignalPictogram(detail, "daily-hazard-pictogram storm", true)
     : '<span class="daily-hazard-pictogram wind" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>';
-  const periodCard = (period, label, generalHazardKind = "") => {
+  const periodCard = (period, label, generalHazardKinds = []) => {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
@@ -2018,17 +1990,14 @@ function renderTestingDailyForecast() {
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
     const gust = Math.max(0, Number(period.windGustMax) || 0);
     const stormDetail = period.storm ? '<div><dt>Orage</dt><dd>' + (Number(period.weatherCode) >= 96 ? 'Phénomène violent possible' : 'Possible sur la période') + '</dd></div>' : "";
-    const hazardKind = period.storm && generalHazardKind !== "storm"
-      ? "storm"
-      : gust >= 50 && !generalHazardKind ? "wind" : "";
-    const hazardDetail = hazardKind === "storm"
-      ? (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()
-      : "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase();
-    const hazard = hazardKind ? hazardPictogram(hazardKind, hazardDetail) : "";
-    const seasonal = seasonalTemperature(period);
-    const seasonalSummary = seasonal && seasonal.label !== "Température habituelle" ? '<span class="daily-period-season">' + escapeText(seasonal.compact) + '</span>' : "";
+    const hazard = [
+      period.storm && !generalHazardKinds.includes("storm")
+        ? hazardPictogram("storm", (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()) : "",
+      gust >= 50 && !generalHazardKinds.includes("wind")
+        ? hazardPictogram("wind", "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase()) : ""
+    ].join("");
     const notable = weatherDescription(period);
-    const notableMarkup = notable || seasonalSummary ? '<span class="daily-period-copy">' + escapeText(notable) + seasonalSummary + '</span>' : "";
+    const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Courbes</small></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
@@ -2059,14 +2028,14 @@ function renderTestingDailyForecast() {
     const windAllDay = availablePeriods.length > 1 && windyPeriods.length === availablePeriods.length;
     const majorWind = Number(merged.windGustMax) >= 70;
     const windTimingUnknown = Number(merged.windGustMax) >= 50 && !windyPeriods.length;
-    const generalHazardKind = severeStorm || stormAllDay || stormTimingUnknown ? "storm" : majorWind || windAllDay || windTimingUnknown ? "wind" : "";
-    const generalHazardDetail = generalHazardKind === "storm"
-      ? severeStorm ? "Orage violent possible dans la journée" : stormAllDay ? "Orage possible matin et après-midi" : "Orage possible, horaire à préciser"
-      : "Vent fort dans la journée · rafales jusqu’à " + format(merged.windGustMax, 0) + " km/h";
-    const generalHazard = generalHazardKind ? hazardPictogram(generalHazardKind, generalHazardDetail) : "";
-    const periods = [periodCard(morning, "Matin", generalHazardKind), periodCard(afternoon, "Après-midi", generalHazardKind)].filter(Boolean);
-    const seasonal = dailySeasonalTemperature(availablePeriods);
-    const seasonalMarkup = seasonal && seasonal.label !== "Température habituelle" ? '<small class="daily-temperature-reference">' + escapeText(seasonal.compact) + '</small>' : "";
+    const generalStorm = severeStorm || stormAllDay || stormTimingUnknown;
+    const generalWind = majorWind || windAllDay || windTimingUnknown;
+    const generalHazardKinds = [generalStorm ? "storm" : "", generalWind ? "wind" : ""].filter(Boolean);
+    const generalHazard = [
+      generalStorm ? hazardPictogram("storm", severeStorm ? "Orage violent possible dans la journée" : stormAllDay ? "Orage possible matin et après-midi" : "Orage possible, horaire à préciser") : "",
+      generalWind ? hazardPictogram("wind", "Vent fort dans la journée · rafales jusqu’à " + format(merged.windGustMax, 0) + " km/h") : ""
+    ].join("");
+    const periods = [periodCard(morning, "Matin", generalHazardKinds), periodCard(afternoon, "Après-midi", generalHazardKinds)].filter(Boolean);
     const notableSummary = [];
     if (storm) notableSummary.push(severeStorm
       ? "Orage violent possible."
@@ -2075,7 +2044,7 @@ function renderTestingDailyForecast() {
     else if (Number(merged.precipitationProbabilityMax) >= 70) notableSummary.push("Pluie probable.");
     if (Number(merged.windGustMax) >= 50) notableSummary.push("Rafales " + format(merged.windGustMax, 0) + " km/h.");
     const summaryMarkup = notableSummary.length ? '<p>' + escapeText(notableSummary.join(" ")) + '</p>' : "";
-    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + generalHazard + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span>' + seasonalMarkup + '</div>' + summaryMarkup + '</div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
+    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + generalHazard + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span></div>' + summaryMarkup + '</div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   renderWeekApiLinks();
