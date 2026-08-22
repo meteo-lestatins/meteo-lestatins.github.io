@@ -1075,4 +1075,4 @@ button:hover { background: #eef7fb; }
 }
 /* nowcast-container-layout:end */
 
-.interface-badge{position:fixed;right:8px;bottom:8px;z-index:9999;padding:5px 8px;border-radius:6px;color:#fff;background:#b24b18;font:800 9px system-ui;letter-spacing:.08em;box-shadow:0 2px 7px rgba(61,27,10,.24)}
+.testing-badge{position:fixed;right:8px;bottom:8px;z-index:9999;padding:5px 8px;border-radius:6px;color:#fff;background:#b24b18;font:800 9px system-ui;letter-spacing:.08em;box-shadow:0 2px 7px rgba(61,27,10,.24)}
