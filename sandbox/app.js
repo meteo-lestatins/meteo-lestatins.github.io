@@ -709,6 +709,15 @@ function rainIntensityStep(value) {
   return value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
 }
 
+function threeHourTrendIsSignificant(kind, trend) {
+  if (!trend || trend.label === "stable") return false;
+  const change = Math.abs(Number(trend.change) || 0);
+  if (kind === "rain") return change >= .5;
+  if (kind === "gust") return change >= 15;
+  if (kind === "storm") return change >= (trend.basis === "displayed-level" ? 2 : 30);
+  return false;
+}
+
 function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   const rain = kind === "rain";
   const eta = etaMinutes == null ? null : Number(etaMinutes);
@@ -3840,7 +3849,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const average = group => group.reduce((sum, item) => sum + (Number(value(item)) || 0), 0) / Math.max(1, group.length);
     return { start: average(values.slice(0, count)), end: average(values.slice(-count)) };
   };
-  const trendMarkup = (trend, source) => {
+  const trendMarkup = (kind, trend, source) => {
     const arrow = trend.label === "croissant"
       ? '<path d="M10 14V6m0 0L7 9m3-3 3 3"/>'
       : trend.label === "decroissant"
@@ -3848,7 +3857,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         : '<path d="M6 10h8m0 0-3-3m3 3-3 3"/>';
     const wording = trend.label === "croissant" ? "en hausse" : trend.label === "decroissant" ? "en baisse" : "stable";
     const detail = trend.detail || "Tendance " + wording + " sur les 3 prochaines heures" + (source ? " (" + source + ")" : "");
-    return '<span class="three-hour-trend ' + trend.label + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><b aria-hidden="true"><svg viewBox="0 0 20 20">' + arrow + '</svg></b></span>';
+    const significance = threeHourTrendIsSignificant(kind, trend) ? " significant" : "";
+    return '<span class="three-hour-trend ' + trend.label + significance + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><b aria-hidden="true"><svg viewBox="0 0 20 20">' + arrow + '</svg></b></span>';
   };
   // Synthèse pluie : l'intensité fixe le plafond, puis la probabilité module
   // ce niveau sans jamais transformer une pluie très faible en signal fort.
@@ -3870,11 +3880,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         + '</span>'
       : '';
     const stormTiming = displayedTrend
-      ? '<span class="three-hour-storm-timing">' + trendMarkup(displayedTrend, passageDetail) + '</span>'
+      ? '<span class="three-hour-storm-timing">' + trendMarkup(kind, displayedTrend, passageDetail) + '</span>'
       : '';
     const metric = stormLayout
       ? stormIndicator + stormTiming + stormEta
-      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
+      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";

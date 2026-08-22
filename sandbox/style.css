@@ -634,10 +634,10 @@ button:hover { background: #eef7fb; }
 .three-hour-trend { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; white-space: nowrap; }
 .three-hour-trend b { width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 50%; color: #fff; background: #6d8390; }
 .three-hour-trend b svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.three-hour-trend.croissant { color: #b84a28; }
-.three-hour-trend.croissant b { background: #d56037; }
-.three-hour-trend.decroissant { color: #277a59; }
-.three-hour-trend.decroissant b { background: #3d966d; }
+.three-hour-trend.significant.croissant { color: #b84a28; }
+.three-hour-trend.significant.croissant b { background: #d56037; }
+.three-hour-trend.significant.decroissant { color: #277a59; }
+.three-hour-trend.significant.decroissant b { background: #3d966d; }
 .three-hour-combined-chart { width: 100%; margin-top: 4px; color: #173f57; }
 .three-hour-chart-summary { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 40px; padding-bottom: 5px; }
 .three-hour-rain-total { display: grid; gap: 1px; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
