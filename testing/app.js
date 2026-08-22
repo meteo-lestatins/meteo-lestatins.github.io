@@ -1989,6 +1989,8 @@ function renderTestingDailyForecast() {
   const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
   const confidenceIndicator = (openMeteo, meteoFrance) => {
     let score = null;
+    let convergenceScore = null;
+    let evolutionDisplayScore = null;
     let detail = "Confiance à confirmer : données d’ensemble indisponibles.";
     if (meteoFrance) {
       const agreement = weekModelAgreement(openMeteo, meteoFrance);
@@ -1996,6 +1998,8 @@ function renderTestingDailyForecast() {
       const modelAgreementScore = Number.isFinite(Number(agreement.score)) ? Number(agreement.score) : .5;
       const stabilityScore = agreement.stability === "stable" ? 1 : agreement.stability === "evolving" ? .68 : agreement.stability === "variable" ? .35 : .55;
       const evolutionScore = evolution.level === "stable" ? 1 : evolution.level === "few" ? .75 : evolution.level === "frequent" ? .35 : .55;
+      convergenceScore = modelAgreementScore;
+      evolutionDisplayScore = Number.isFinite(Number(evolution.changeRate)) ? Math.max(.2, 1 - Number(evolution.changeRate)) : evolutionScore;
       score = modelAgreementScore * .65 + stabilityScore * .2 + evolutionScore * .15;
       if (agreement.criticalDisagreement || agreement.rainDisagreement === "major" || modelAgreementScore < .38) score = Math.min(score, .35);
       else if (agreement.rainDisagreement === "meaningful" || agreement.level === "mixed" || evolution.level === "frequent") score = Math.min(score, .59);
@@ -2006,6 +2010,9 @@ function renderTestingDailyForecast() {
     } else if (openMeteo.confidence) {
       const confidence = openMeteo.confidence;
       score = confidence.level === "strong" ? .9 : confidence.level === "medium" ? .65 : .35;
+      convergenceScore = score;
+      const evolution = weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
+      evolutionDisplayScore = Number.isFinite(Number(evolution.changeRate)) ? Math.max(.2, 1 - Number(evolution.changeRate)) : .55;
       const spreads = [
         Number.isFinite(Number(confidence.temperatureSpread)) ? "température " + format(confidence.temperatureSpread) + " °C" : "",
         Number.isFinite(Number(confidence.windSpread)) ? "vent " + format(confidence.windSpread) + " km/h" : "",
@@ -2013,11 +2020,18 @@ function renderTestingDailyForecast() {
       ].filter(Boolean);
       detail = "Variabilité de l’ensemble : " + (spreads.join(", ") || "à confirmer");
     }
-    const tone = score >= .8 ? "green" : score >= .6 ? "yellow" : score >= .4 ? "orange" : "red";
-    const points = Number.isFinite(score) ? Math.max(1, Math.min(5, Math.round(score * 5))) : 1;
+    convergenceScore = Number.isFinite(convergenceScore) ? convergenceScore : .2;
+    evolutionDisplayScore = Number.isFinite(evolutionDisplayScore) ? evolutionDisplayScore : .2;
+    score = Number.isFinite(score) ? score : .2;
+    const toneForScore = value => value >= .8 ? "green" : value >= .6 ? "yellow" : value >= .4 ? "orange" : "red";
+    const graphicRow = (rowLabel, rowScore) => {
+      const points = Math.max(1, Math.min(5, Math.round(rowScore * 5)));
+      const dots = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < points ? "filled" : "") + '"></i>').join("");
+      return '<span class="daily-confidence-row ' + toneForScore(rowScore) + '"><span>' + rowLabel + '</span><b aria-hidden="true">' + dots + '</b></span>';
+    };
+    const tone = toneForScore(score);
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
-    const dots = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < points ? "filled" : "") + '"></i>').join("");
-    return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '" title="' + escapeText(detail) + '" data-tooltip="' + escapeText(detail) + '"><span aria-hidden="true">' + dots + '</span></span>';
+    return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
   const periodCard = (period, label) => {
     if (!period) return "";
@@ -2060,7 +2074,7 @@ function renderTestingDailyForecast() {
     const rainDetail = periodMetricRow(rainPictogram, (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + " mm", rainDescription, "week-rain-row");
     const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + direction + format(period.windSpeedMax, 0) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + format(gust, 0) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
     const stormDetail = period.storm ? periodMetricRow(periodMetricPictogram("storm", stormStep, Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible"), "", Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon Open-Meteo." : "Orage possible selon Open-Meteo.") : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><div class="daily-period-detail-heading"><strong>Détail — ' + escapeText(label) + '</strong></div><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2072,6 +2086,31 @@ function renderTestingDailyForecast() {
     return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div>' + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
+  const periodDetails = [...target.querySelectorAll(".daily-period-card")];
+  periodDetails.forEach(detail => detail.addEventListener("toggle", () => {
+    const card = detail.closest(".daily-forecast-card");
+    if (!detail.open) {
+      detail.classList.remove("open-left");
+      detail.style.removeProperty("--daily-detail-width");
+      card?.classList.remove("detail-open");
+      return;
+    }
+    periodDetails.forEach(other => {
+      if (other !== detail && other.open) other.open = false;
+    });
+    target.querySelectorAll(".daily-forecast-card.detail-open").forEach(item => item.classList.remove("detail-open"));
+    card?.classList.add("detail-open");
+    const rect = card?.getBoundingClientRect();
+    if (!rect || window.innerWidth <= 620) return;
+    const gap = 12;
+    const margin = 16;
+    const rightSpace = window.innerWidth - rect.right - gap - margin;
+    const leftSpace = rect.left - gap - margin;
+    const openLeft = rightSpace < 260 && leftSpace > rightSpace;
+    const available = Math.max(240, openLeft ? leftSpace : rightSpace);
+    detail.classList.toggle("open-left", openLeft);
+    detail.style.setProperty("--daily-detail-width", Math.min(380, available) + "px");
+  }));
   renderWeekApiLinks();
 }
 
