@@ -2099,7 +2099,7 @@ function renderTestingDailyForecast() {
     if (period.storm) parts.push(Number(period.weatherCode) >= 96 ? "Orage violent possible" : "Orage possible");
     else if (rain >= 5) parts.push(format(rain) + " mm de pluie");
     else if (probability >= 70) parts.push("Pluie probable");
-    if (gust >= 50) parts.push("Rafales " + format(gust, 0) + " km/h");
+    if (gust >= 50) parts.push(gust >= 70 ? "Rafales très fortes" : "Rafales fortes");
     return parts.join(" · ");
   };
   const hazardPictogram = (kind, detail) => kind === "storm"
@@ -2204,6 +2204,9 @@ function renderTestingDailyForecast() {
     const rainVolume = rain >= .1
       ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(format(rain)) + ' millimètres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + format(rain) + ' mm</strong></span>'
       : "";
+    const gustVolume = gustStep > 3
+      ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(format(gust, 0)) + ' kilomètres par heure"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + format(gust, 0) + ' km/h</strong></span>'
+      : "";
     const notable = weatherDescription({ ...period, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax]);
@@ -2222,14 +2225,14 @@ function renderTestingDailyForecast() {
       : "Pas d’orage.";
     const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage"), "", stormDescription, "daily-period-storm-detail");
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
-    // Use one restrained alert tone per slot. Météo-France's day-wide storm
-    // signal stays on the pictogram but does not colour all three periods.
+    // Use one restrained alert tone per slot. A day-wide storm signal colours
+    // the periods yellow; stronger gusts can raise the warning tone.
     const violentStorm = hasOpenMeteoStorm && Number(period.weatherCode) >= 96;
     const alertTone = violentStorm || gust >= 90 ? "red"
-      : gust >= 75 ? "orange"
-      : hasOpenMeteoStorm || gust >= 60 ? "yellow" : "";
+      : gust >= 65 ? "orange"
+      : hasStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
-    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));

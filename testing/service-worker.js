@@ -1,5 +1,5 @@
-const cacheName = "meteo-testing-b20260822215227057";
-const shell = ["/testing/runtime-config.js?v=3.045", "/testing/changelog.html", "/testing/", "/testing/index.html", "/testing/style.css?v=130", "/testing/app.js?v=191", "/testing/analytics.js?v=1", "/testing/manifest.webmanifest", "/testing/contact/", "/testing/contact/index.html", "/testing/contact/contact.css?v=4", "/testing/contact/contact.js?v=1", "/testing/news/", "/testing/news/index.html", "/testing/news/news.css?v=2", "/testing/news/markdown.js?v=1", "/testing/news/news.js?v=3"];
+const cacheName = "meteo-testing-b20260822221613351";
+const shell = ["/testing/runtime-config.js?v=3.046", "/testing/changelog.html", "/testing/", "/testing/index.html", "/testing/style.css?v=130", "/testing/app.js?v=191", "/testing/analytics.js?v=1", "/testing/manifest.webmanifest", "/testing/contact/", "/testing/contact/index.html", "/testing/contact/contact.css?v=4", "/testing/contact/contact.js?v=1", "/testing/news/", "/testing/news/index.html", "/testing/news/news.css?v=2", "/testing/news/markdown.js?v=1", "/testing/news/news.js?v=3"];
 const publicRoots = new Set(["", "index.html", "style.css", "app.js", "analytics.js", "manifest.webmanifest", "runtime-config.js", "about.html", "architecture.svg", "echelle-kilometrique.css", "echelle-kilometrique.js", "changelog", "changelog.html", "contact", "data", "news", "evenements", "evenements.html", "nowcasting-replay.html", "vendor"]);
 
 function publicCacheTarget(url) {
