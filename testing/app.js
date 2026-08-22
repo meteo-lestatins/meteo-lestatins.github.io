@@ -353,6 +353,7 @@ function forecast48HourRangeTitle() {
 }
 
 function set48HourForecastContentOpen(open) {
+  const panel = $("panel-48h");
   const content = $("forecast-48h-content");
   const toggle = $("forecast-48h-title-toggle");
   if (!content || !toggle) return;
@@ -362,6 +363,12 @@ function set48HourForecastContentOpen(open) {
   toggle.title = open ? "Replier les prévisions" : "Déplier les prévisions";
   const chevron = toggle.querySelector(".forecast-title-chevron");
   if (chevron) chevron.textContent = open ? "⌃" : "⌄";
+  if (!open && panel) {
+    panel.hidden = true;
+    panel.removeAttribute("data-focus-date");
+    panel.removeAttribute("data-focus-hour");
+    document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
+  }
 }
 
 function bind48HourForecastTitle() {
@@ -2039,8 +2046,8 @@ function renderTestingDailyForecast() {
     return parts.join(" · ");
   };
   const hazardPictogram = (kind, detail) => kind === "storm"
-    ? stormSignalPictogram(detail, "daily-hazard-pictogram storm", true)
-    : '<span class="daily-hazard-pictogram wind" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>';
+    ? stormSignalPictogram(detail, "daily-hazard-symbol storm")
+    : '<span class="daily-hazard-symbol wind chart-point" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>';
   const periodMetricIcons = {
     cloud: '<path d="M5.5 18a4.5 4.5 0 0 1-.6-9A6.2 6.2 0 0 1 16.7 8a5 5 0 1 1 .8 10H5.5Z"/>',
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
@@ -2173,7 +2180,7 @@ function renderTestingDailyForecast() {
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
     const canOpen48h = dayGap >= 0 && dayGap <= 1;
     const dayHeading = canOpen48h
-      ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span><span class="daily-day-open-icon" aria-hidden="true">↘</span></button>'
+      ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span><span class="daily-day-open-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8M16 7h3v3"/></svg></span></button>'
       : '<div class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></div>';
     return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");

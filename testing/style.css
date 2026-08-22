@@ -245,11 +245,12 @@ button:hover { background: #eef7fb; }
 .daily-day-heading { min-width: 0; display: grid; gap: 2px; }
 .daily-day-heading > strong { color: #173b52; font-size: 18px; letter-spacing: -.02em; }
 .daily-day-heading time { display: block; color: #667b87; font-size: 11px; font-weight: 750; }
-.daily-day-open { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1 1 auto; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.daily-day-open { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1 1 auto; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .daily-day-open:hover { color: #176f9c; background: transparent; }
 .daily-day-open:hover .daily-day-heading > strong { color: #176f9c; }
 .daily-day-open:focus-visible { outline: 2px solid #2b84ad; outline-offset: 4px; border-radius: 4px; }
-.daily-day-open-icon { color: #397a9e; font-size: 17px; line-height: 1; }
+.daily-day-open-icon { width: 23px; height: 23px; display: grid; place-items: center; flex: 0 0 23px; color: #397a9e; }
+.daily-day-open-icon svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .daily-confidence-indicator { --confidence-color: #cf4d47; width: 28px; height: 28px; position: relative; display: grid; place-items: center; flex: 0 0 28px; border: 1px solid color-mix(in srgb, var(--confidence-color) 55%, #c8d7de); border-radius: 50%; color: var(--confidence-color); background: rgba(255, 255, 255, .9); cursor: help; }
 .daily-confidence-dot { width: 12px; height: 12px; display: block; border-radius: 50%; background: var(--confidence-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--confidence-color) 18%, transparent); }
 .daily-confidence-popover { width: 260px; position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; display: none; gap: 9px; padding: 11px 12px; border: 1px solid #c8d7de; border-radius: 11px; color: #27485b; background: #fff; box-shadow: 0 9px 24px rgba(25, 58, 78, .2); }
@@ -270,8 +271,9 @@ button:hover { background: #eef7fb; }
 .daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; border-radius: 0 0 13px 13px; background: #fff; }
 .daily-period-card { min-width: 0; position: relative; background: #fff; }
 .daily-period-card + .daily-period-card { border-top: 1px solid #dbe5e9; }
-.daily-period-card[open]:not(:last-child) { margin-bottom: 22px; border-bottom: 3px solid #a9c0ca; }
-.daily-period-card[open]:not(:last-child) + .daily-period-card { border-top-color: #a9c0ca; }
+.daily-period-card[open]:not(:last-child) { margin-bottom: 44px; border-bottom: 0; }
+.daily-period-card[open]:not(:last-child)::after { content: ""; height: 44px; position: absolute; z-index: 1; right: 0; bottom: -44px; left: 0; box-sizing: border-box; border-top: 1px solid #c8d7de; border-bottom: 1px solid #c8d7de; background: #eef4f6; pointer-events: none; }
+.daily-period-card[open]:not(:last-child) + .daily-period-card { border-top-color: #c8d7de; }
 .daily-period-card summary { min-height: 126px; display: grid; grid-template-columns: 82px minmax(100px, auto) 22px; grid-template-rows: auto auto auto; align-items: center; gap: 4px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
 .daily-period-card summary::-webkit-details-marker { display: none; }
 .daily-period-card summary:hover { background: #f6fafb; }
@@ -279,16 +281,15 @@ button:hover { background: #eef7fb; }
 .daily-period-title strong { color: #173b52; font-size: 14px; }
 .daily-period-icon { width: 76px; height: 58px; position: relative; grid-column: 1; grid-row: 2; display: grid; place-items: center start; padding: 0; }
 .daily-period-icon > img, .daily-period-icon .layered-weather-icon, .daily-period-icon .weather-variant-icon { width: 50px; height: 50px; }
-.daily-period-hazards { position: absolute; z-index: 7; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
-.daily-hazard-pictogram { width: 27px; height: 27px; position: relative; z-index: 6; display: grid; place-items: center; flex: 0 0 27px; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, .94); filter: drop-shadow(0 1px 2px rgba(46, 67, 78, .28)); }
-.daily-hazard-pictogram svg { width: 23px; height: 23px; overflow: visible; }
-.daily-period-hazards .daily-hazard-pictogram.storm { width: 27px; height: 27px; }
-.daily-period-hazards .daily-hazard-pictogram.storm svg { width: 23px; height: 23px; }
-.daily-hazard-pictogram.storm { color: #d38a00; }
-.daily-hazard-pictogram.storm .storm-signal-cloud { fill: #e9eef1; stroke: #50636e; stroke-width: .9; }
-.daily-hazard-pictogram.storm .storm-signal-bolt { fill: #f0a000; stroke: #754600; stroke-width: .7; }
-.daily-hazard-pictogram.wind { color: #7650a8; }
-.daily-hazard-pictogram.wind path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.daily-period-hazards { width: 50px; height: 50px; position: absolute; z-index: 7; top: 4px; left: 0; pointer-events: none; }
+.daily-hazard-symbol { position: absolute; z-index: 6; display: grid; place-items: center; border: 0; background: transparent; cursor: help; pointer-events: auto; }
+.daily-hazard-symbol svg { overflow: visible; }
+.daily-hazard-symbol.storm { width: 25px; height: 29px; top: -2px; right: -6px; filter: drop-shadow(0 1px 1px rgba(93, 67, 5, .28)); }
+.daily-hazard-symbol.storm svg { width: 25px; height: 29px; }
+.daily-hazard-symbol.storm .storm-signal-bolt { fill: #f0a000; stroke: #754600; stroke-width: .7; }
+.daily-hazard-symbol.wind { width: 26px; height: 26px; top: 50%; left: 50%; color: #7650a8; transform: translate(-50%, -50%); filter: drop-shadow(0 1px 1px rgba(67, 45, 95, .22)); }
+.daily-hazard-symbol.wind svg { width: 26px; height: 26px; }
+.daily-hazard-symbol.wind path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .daily-period-temperatures { display: flex; align-items: end; gap: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .daily-period-temperatures span { display: grid; gap: 1px; }
 .daily-period-temperatures small { color: #748690; font-size: 7px; font-weight: 800; line-height: 1; text-transform: uppercase; }
@@ -313,7 +314,10 @@ button:hover { background: #eef7fb; }
 .daily-period-details .week-metric-description { margin-top: 5px; color: #405f70; font-size: 10px; font-weight: 600; line-height: 1.4; }
 .daily-period-details .week-metric-number { color: #243f52; font-weight: 800; }
 .daily-period-wind-arrow { display: inline-block; margin-right: 5px; color: #16805f; font-size: 15px; }
-@media (max-width: 620px) {
+@media (max-width: 1100px) {
+  .daily-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
   .daily-cards-scroll { padding: 14px 16px 0; }
   .daily-cards-grid { grid-template-columns: 1fr; gap: 12px; }
   .daily-period-card summary { padding-inline: 9px; }
@@ -906,7 +910,7 @@ button:hover { background: #eef7fb; }
   .section-heading .section-api-links { margin-left: 0; justify-content: flex-start; }
   .page-section-heading { padding: 18px 16px 12px; }
   .three-hour-summary { overflow-x: visible; }
-  .three-hour-actions { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
+  .three-hour-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   header { min-height: 0; padding: 16px 16px 10px; }
   header .header-subtitle { margin-bottom: 10px; font-size: 10px; }
   h1 { font-size: 31px; }
@@ -1149,5 +1153,13 @@ button:hover { background: #eef7fb; }
   .nowcast-cell-card-button { min-height: 74px; grid-template-columns: 54px minmax(0, 1fr); }
 }
 /* nowcast-container-layout:end */
+
+@media (max-width: 1100px) {
+  .three-hour-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .three-hour-actions { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
 
 .testing-badge{position:fixed;right:8px;bottom:8px;z-index:9999;padding:5px 8px;border-radius:6px;color:#fff;background:#b24b18;font:800 9px system-ui;letter-spacing:.08em;box-shadow:0 2px 7px rgba(61,27,10,.24)}
