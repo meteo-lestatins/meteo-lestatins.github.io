@@ -2068,11 +2068,13 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label) => {
+  const periodCard = (period, label, meteoFranceStorm = false) => {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
-    const hasStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
+    const hasOpenMeteoStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
+    const hasMeteoFranceStorm = Boolean(meteoFranceStorm);
+    const hasStorm = hasOpenMeteoStorm || hasMeteoFranceStorm;
     const icon = displayIcon({
       time: period.time,
       cloudCover: cloud,
@@ -2094,15 +2096,18 @@ function renderTestingDailyForecast() {
     const gustStep = periodGustStep(gust);
     const stormRisk = weekStormRisk(period.time.slice(0, 10));
     const stormStep = hasStorm ? Math.max(3, stormRisk.level) : 0;
-    const stormSources = stormRisk.sources.length ? stormRisk.sources : ["Open-Meteo"];
-    const stormSourceLabel = stormSources.length > 1 ? stormSources.slice(0, -1).join(", ") + " et " + stormSources.at(-1) : stormSources[0];
+    const stormSources = [
+      hasOpenMeteoStorm ? "Open-Meteo" : "",
+      hasMeteoFranceStorm ? "Météo-France" : ""
+    ].filter(Boolean);
+    const stormSourceLabel = stormSources.length > 1 ? stormSources.slice(0, -1).join(", ") + " et " + stormSources.at(-1) : stormSources[0] + " seulement";
     const rainVolume = rain >= .1
       ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(format(rain)) + ' millimètres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + format(rain) + ' mm</strong></span>'
       : "";
     const notable = weatherDescription({ ...period, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax]);
-    const showers = Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82;
+    const showers = (Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82) || hasStorm;
     const skyDescription = conciseSkySummary(cloud);
     const rainDescription = conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary([period.windSpeedMax], [gust], [], [], [period.windDirection]);
@@ -2112,10 +2117,12 @@ function renderTestingDailyForecast() {
     const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %") + showerPlus + '</span>';
     const rainDetail = periodMetricRow(rainPictogram, (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + " mm", rainDescription, "week-rain-row");
     const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + direction + format(period.windSpeedMax, 0) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + format(gust, 0) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
-    const stormDescription = Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + ".";
-    const stormDetail = hasStorm ? periodMetricRow(periodMetricPictogram("storm", stormStep, Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible"), "", stormDescription, "daily-period-storm-detail") : "";
+    const stormDescription = hasStorm
+      ? Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + "."
+      : "Pas d’orage.";
+    const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage"), "", stormDescription, "daily-period-storm-detail");
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + '</span>' + hazardMarkup + '<span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><div class="daily-period-detail-heading"><strong>Détail — ' + escapeText(label) + '</strong></div><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2123,7 +2130,8 @@ function renderTestingDailyForecast() {
     const morning = openMeteo.periods?.morning || null;
     const afternoon = openMeteo.periods?.afternoon || null;
     const evening = openMeteo.periods?.evening || null;
-    const periods = [periodCard(morning, "Matin"), periodCard(afternoon, "Après-midi"), periodCard(evening, "Soir")].filter(Boolean);
+    const meteoFranceStorm = meteoFranceStormForDate(openMeteo.date);
+    const periods = [periodCard(morning, "Matin", meteoFranceStorm), periodCard(afternoon, "Après-midi", meteoFranceStorm), periodCard(evening, "Soir", meteoFranceStorm)].filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
     const shortDate = shortDateFormat.format(dateFromKey(openMeteo.date));
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
