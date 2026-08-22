@@ -1989,20 +1989,25 @@ function renderTestingDailyForecast() {
     const todayNoon = dateFromKey(todayDateKey()).getTime();
     const gap = Math.round((dateFromKey(day.date).getTime() - todayNoon) / 86400000);
     if (gap === 1) return "Demain";
-    if (gap === 2) return "Après-demain";
     const weekday = weekDayFormat.format(dateFromKey(day.date));
     return weekday.charAt(0).toUpperCase() + weekday.slice(1);
   };
   const weatherDescription = period => {
-    if (!period) return "Période terminée ou indisponible";
-    const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
-    const sky = cloud < 15 ? "Dégagé" : cloud < 40 ? "Peu nuageux" : cloud < 70 ? "Variable" : cloud < 90 ? "Nuageux" : "Couvert";
+    if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const probability = Math.max(0, Number(period.precipitationProbabilityMax) || 0);
-    const precipitation = rain >= .1 ? format(rain) + " mm" : probability >= 35 ? "Pluie possible" : "Sec";
-    return sky + " · " + (period.storm ? "Orage possible" : precipitation);
+    const gust = Math.max(0, Number(period.windGustMax) || 0);
+    const parts = [];
+    if (period.storm) parts.push(Number(period.weatherCode) >= 96 ? "Orage violent possible" : "Orage possible");
+    else if (rain >= 5) parts.push(format(rain) + " mm de pluie");
+    else if (probability >= 70) parts.push("Pluie probable");
+    if (gust >= 50) parts.push("Rafales " + format(gust, 0) + " km/h");
+    return parts.join(" · ");
   };
-  const periodCard = (period, label) => {
+  const hazardPictogram = (kind, detail) => kind === "storm"
+    ? stormSignalPictogram(detail, "daily-hazard-pictogram storm", true)
+    : '<span class="daily-hazard-pictogram wind" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>';
+  const periodCard = (period, label, generalHazardKind = "") => {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
@@ -2015,11 +2020,21 @@ function renderTestingDailyForecast() {
     const temperature = format(period.temperatureMin, 0) + "–" + format(period.temperatureMax, 0) + "°";
     const direction = Number.isFinite(Number(period.windDirection))
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
-    const stormDetail = period.storm ? '<div><dt>Orage</dt><dd>Possible sur la période</dd></div>' : "";
+    const gust = Math.max(0, Number(period.windGustMax) || 0);
+    const stormDetail = period.storm ? '<div><dt>Orage</dt><dd>' + (Number(period.weatherCode) >= 96 ? 'Phénomène violent possible' : 'Possible sur la période') + '</dd></div>' : "";
+    const hazardKind = period.storm && generalHazardKind !== "storm"
+      ? "storm"
+      : gust >= 50 && !generalHazardKind ? "wind" : "";
+    const hazardDetail = hazardKind === "storm"
+      ? (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()
+      : "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase();
+    const hazard = hazardKind ? hazardPictogram(hazardKind, hazardDetail) : "";
     const seasonal = seasonalTemperature(period);
-    const seasonalSummary = seasonal ? '<span class="daily-period-season">' + escapeText(seasonal.compact) + '</span>' : "";
+    const seasonalSummary = seasonal && seasonal.label !== "de saison" ? '<span class="daily-period-season">' + escapeText(seasonal.compact) + '</span>' : "";
     const seasonalDetail = seasonal ? '<div><dt>Normale 1991–2020</dt><dd>' + format(period.temperatureNormal, 0) + '° · écart ' + escapeText(signedTemperature(seasonal.anomaly)) + '</dd></div>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Voir les détails</small></span><span class="daily-period-icon weather-icon">' + icon + '</span><span class="daily-period-temperature">' + temperature + '</span><span class="daily-period-copy">' + escapeText(weatherDescription(period)) + seasonalSummary + '</span><span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + seasonalDetail + '<div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
+    const notable = weatherDescription(period);
+    const notableMarkup = notable || seasonalSummary ? '<span class="daily-period-copy">' + escapeText(notable) + seasonalSummary + '</span>' : "";
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Courbes</small></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + seasonalDetail + '<div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2038,13 +2053,36 @@ function renderTestingDailyForecast() {
     const storm = Number(openMeteo.weatherCode) >= 95 || meteoFranceStormForDate(openMeteo.date);
     const rain = Math.max(0, Number(merged.precipitationSum) || 0);
     const icon = displayIcon({ time: openMeteo.time, cloudCover: merged.cloudCover, rain: storm ? Math.max(.5, rain) : rain, rainLevel: rainPictogramStep(rain) });
-    const periods = [periodCard(openMeteo.periods?.morning, "Matin"), periodCard(openMeteo.periods?.afternoon, "Après-midi")].filter(Boolean);
-    const seasonal = dailySeasonalTemperature([openMeteo.periods?.morning, openMeteo.periods?.afternoon]);
-    const seasonalMarkup = seasonal ? '<small class="daily-temperature-reference">' + escapeText(seasonal.compact) + '</small>' : "";
-    const summary = [conciseSkySummary(merged), conciseRainSummary(rain, [merged.precipitationProbabilityMax], openMeteo.rainPeriods, Number(openMeteo.showersSum) >= .1, storm), conciseWindSummary([merged.windSpeedMax], [merged.windGustMax], [], [], [openMeteo.windDirection])].filter(Boolean).join(" ");
-    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div><span class="daily-synthesis-label">Synthèse</span></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span>' + seasonalMarkup + '</div><p>' + escapeText(summary || "Prévision en cours de consolidation.") + '</p></div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
+    const morning = openMeteo.periods?.morning || null;
+    const afternoon = openMeteo.periods?.afternoon || null;
+    const availablePeriods = [morning, afternoon].filter(Boolean);
+    const stormPeriods = availablePeriods.filter(period => period.storm);
+    const severeStorm = [openMeteo.weatherCode, ...availablePeriods.map(period => period.weatherCode)].some(code => Number(code) >= 96);
+    const stormAllDay = availablePeriods.length > 1 && stormPeriods.length === availablePeriods.length;
+    const stormTimingUnknown = storm && !stormPeriods.length;
+    const windyPeriods = availablePeriods.filter(period => Number(period.windGustMax) >= 50);
+    const windAllDay = availablePeriods.length > 1 && windyPeriods.length === availablePeriods.length;
+    const majorWind = Number(merged.windGustMax) >= 70;
+    const windTimingUnknown = Number(merged.windGustMax) >= 50 && !windyPeriods.length;
+    const generalHazardKind = severeStorm || stormAllDay || stormTimingUnknown ? "storm" : majorWind || windAllDay || windTimingUnknown ? "wind" : "";
+    const generalHazardDetail = generalHazardKind === "storm"
+      ? severeStorm ? "Orage violent possible dans la journée" : stormAllDay ? "Orage possible matin et après-midi" : "Orage possible, horaire à préciser"
+      : "Vent fort dans la journée · rafales jusqu’à " + format(merged.windGustMax, 0) + " km/h";
+    const generalHazard = generalHazardKind ? hazardPictogram(generalHazardKind, generalHazardDetail) : "";
+    const periods = [periodCard(morning, "Matin", generalHazardKind), periodCard(afternoon, "Après-midi", generalHazardKind)].filter(Boolean);
+    const seasonal = dailySeasonalTemperature(availablePeriods);
+    const seasonalMarkup = seasonal && seasonal.label !== "de saison" ? '<small class="daily-temperature-reference">' + escapeText(seasonal.compact) + '</small>' : "";
+    const notableSummary = [];
+    if (storm) notableSummary.push(severeStorm
+      ? "Orage violent possible."
+      : stormPeriods.length === 1 ? "Orage possible " + (morning?.storm ? "le matin." : "l’après-midi.") : "Orage possible.");
+    else if (rain >= 5) notableSummary.push(format(rain) + " mm de pluie.");
+    else if (Number(merged.precipitationProbabilityMax) >= 70) notableSummary.push("Pluie probable.");
+    if (Number(merged.windGustMax) >= 50) notableSummary.push("Rafales " + format(merged.windGustMax, 0) + " km/h.");
+    const summaryMarkup = notableSummary.length ? '<p>' + escapeText(notableSummary.join(" ")) + '</p>' : "";
+    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + generalHazard + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span>' + seasonalMarkup + '</div>' + summaryMarkup + '</div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
   }).join("");
-  target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Synthèse quotidienne sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
+  target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   renderWeekApiLinks();
 }
 
