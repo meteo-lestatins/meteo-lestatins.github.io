@@ -240,8 +240,7 @@ button:hover { background: #eef7fb; }
 .daily-cards-scroll { margin: 0; padding: 22px 28px 0; overflow: visible; }
 .daily-cards-forecast { width: 100%; display: block; padding: 0; }
 .daily-cards-grid { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 18px; }
-.daily-forecast-card { min-width: 0; position: relative; overflow: visible; border: 1px solid #c8d7de; border-radius: 14px; color: #193a4e; background: #fff; box-shadow: 0 4px 14px rgba(36, 68, 84, .08); }
-.daily-forecast-card.detail-open { z-index: 40; }
+.daily-forecast-card { min-width: 0; position: relative; overflow: hidden; border: 1px solid #c8d7de; border-radius: 14px; color: #193a4e; background: #fff; box-shadow: 0 4px 14px rgba(36, 68, 84, .08); }
 .daily-forecast-card > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #dbe5e9; border-radius: 13px 13px 0 0; background: #eef4f6; }
 .daily-forecast-card > header h3 { margin: 0; color: #173b52; font-size: 18px; letter-spacing: -.02em; }
 .daily-forecast-card > header time { display: block; margin-top: 2px; color: #667b87; font-size: 11px; font-weight: 750; }
@@ -294,7 +293,7 @@ button:hover { background: #eef7fb; }
 .daily-period-copy { grid-column: 1 / 4; color: #536b78; font-size: 10px; font-weight: 700; line-height: 1.35; }
 .daily-period-chevron { grid-column: 4; grid-row: 1 / 4; color: #397a9e; font-size: 20px; transition: transform .18s ease; }
 .daily-period-card[open] .daily-period-chevron { transform: rotate(180deg); }
-.daily-period-details { padding: 0; }
+.daily-period-details { position: static; width: auto; padding: 0; border: 0; border-top: 1px solid #dbe5e9; border-radius: 0; background: #fff; box-shadow: none; }
 .daily-period-detail-heading { padding: 10px 12px; border-bottom: 1px solid #dbe5e9; color: #173b52; background: #eef4f6; font-size: 12px; }
 .daily-period-details dl { margin: 0; }
 .daily-period-details dl > div { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #edf2f4; font-size: 10px; }
@@ -307,16 +306,10 @@ button:hover { background: #eef7fb; }
 .daily-period-details .week-metric-description { margin-top: 5px; color: #405f70; font-size: 10px; font-weight: 600; line-height: 1.4; }
 .daily-period-details .week-metric-number { color: #243f52; font-weight: 800; }
 .daily-period-wind-arrow { display: inline-block; margin-right: 5px; color: #16805f; font-size: 15px; }
-@media (min-width: 621px) {
-  .daily-period-details { width: var(--daily-detail-width, 360px); position: absolute; z-index: 60; top: 0; left: calc(100% + 12px); overflow: hidden; border: 1px solid #c8d7de; border-radius: 12px; color: #193a4e; background: #fff; box-shadow: 0 10px 28px rgba(25, 58, 78, .22); }
-  .daily-period-card.open-left .daily-period-details { right: calc(100% + 12px); left: auto; }
-}
 @media (max-width: 620px) {
   .daily-cards-scroll { padding: 14px 16px 0; }
   .daily-cards-grid { grid-template-columns: 1fr; gap: 12px; }
-  .daily-forecast-card { overflow: hidden; }
   .daily-period-card summary { padding-inline: 9px; }
-  .daily-period-details { position: static; width: auto; border: 0; border-radius: 0; box-shadow: none; }
 }
 .week-day-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 11px 8px; border-bottom: 1px solid #e0e8ec; background: #f4f8fa; }
 .week-day-head-active { justify-content: flex-start; gap: 4px; }

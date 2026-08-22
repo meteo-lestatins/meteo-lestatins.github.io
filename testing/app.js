@@ -2037,10 +2037,11 @@ function renderTestingDailyForecast() {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
+    const hasStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
     const icon = displayIcon({
       time: period.time,
       cloudCover: cloud,
-      rain: period.storm ? Math.max(.5, rain) : rain,
+      rain: hasStorm ? Math.max(.5, rain) : rain,
       rainLevel: rainPictogramStep(rain)
     });
     const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin, 0) + '°</b></span></span>';
@@ -2048,7 +2049,7 @@ function renderTestingDailyForecast() {
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
     const gust = Math.max(0, Number(period.windGustMax) || 0);
     const hazard = [
-      period.storm
+      hasStorm
         ? hazardPictogram("storm", (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()) : "",
       gust >= 50
         ? hazardPictogram("wind", "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase()) : ""
@@ -2056,16 +2057,19 @@ function renderTestingDailyForecast() {
     const rainStep = rainPictogramStep(rain);
     const windStep = periodWindStep(Number(period.windSpeedMax) || 0);
     const gustStep = periodGustStep(gust);
-    const stormStep = period.storm ? Math.max(3, weekStormRisk(period.time.slice(0, 10)).level) : 0;
+    const stormRisk = weekStormRisk(period.time.slice(0, 10));
+    const stormStep = hasStorm ? Math.max(3, stormRisk.level) : 0;
+    const stormSources = stormRisk.sources.length ? stormRisk.sources : ["Open-Meteo"];
+    const stormSourceLabel = stormSources.length > 1 ? stormSources.slice(0, -1).join(", ") + " et " + stormSources.at(-1) : stormSources[0];
     const rainVolume = rain >= .1
       ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(format(rain)) + ' millimètres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + format(rain) + ' mm</strong></span>'
       : "";
-    const notable = weatherDescription(period);
+    const notable = weatherDescription({ ...period, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax]);
     const showers = Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82;
     const skyDescription = conciseSkySummary(cloud);
-    const rainDescription = conciseRainSummary(rain, [], [], showers, period.storm, probabilitySummary) || "Pas de pluie.";
+    const rainDescription = conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary([period.windSpeedMax], [gust], [], [], [period.windDirection]);
     const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %"), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
@@ -2073,7 +2077,8 @@ function renderTestingDailyForecast() {
     const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %") + showerPlus + '</span>';
     const rainDetail = periodMetricRow(rainPictogram, (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + " mm", rainDescription, "week-rain-row");
     const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + direction + format(period.windSpeedMax, 0) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd><span class="week-metric-number">(' + format(gust, 0) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
-    const stormDetail = period.storm ? periodMetricRow(periodMetricPictogram("storm", stormStep, Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible"), "", Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon Open-Meteo." : "Orage possible selon Open-Meteo.") : "";
+    const stormDescription = Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + ".";
+    const stormDetail = hasStorm ? periodMetricRow(periodMetricPictogram("storm", stormStep, Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible"), "", stormDescription, "daily-period-storm-detail") : "";
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
     return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + '</span>' + hazardMarkup + '<span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><div class="daily-period-detail-heading"><strong>Détail — ' + escapeText(label) + '</strong></div><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
@@ -2089,28 +2094,10 @@ function renderTestingDailyForecast() {
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   const periodDetails = [...target.querySelectorAll(".daily-period-card")];
   periodDetails.forEach(detail => detail.addEventListener("toggle", () => {
-    const card = detail.closest(".daily-forecast-card");
-    if (!detail.open) {
-      detail.classList.remove("open-left");
-      detail.style.removeProperty("--daily-detail-width");
-      card?.classList.remove("detail-open");
-      return;
-    }
+    if (!detail.open) return;
     periodDetails.forEach(other => {
       if (other !== detail && other.open) other.open = false;
     });
-    target.querySelectorAll(".daily-forecast-card.detail-open").forEach(item => item.classList.remove("detail-open"));
-    card?.classList.add("detail-open");
-    const rect = card?.getBoundingClientRect();
-    if (!rect || window.innerWidth <= 620) return;
-    const gap = 12;
-    const margin = 16;
-    const rightSpace = window.innerWidth - rect.right - gap - margin;
-    const leftSpace = rect.left - gap - margin;
-    const openLeft = rightSpace < 260 && leftSpace > rightSpace;
-    const available = Math.max(240, openLeft ? leftSpace : rightSpace);
-    detail.classList.toggle("open-left", openLeft);
-    detail.style.setProperty("--daily-detail-width", Math.min(380, available) + "px");
   }));
   renderWeekApiLinks();
 }
