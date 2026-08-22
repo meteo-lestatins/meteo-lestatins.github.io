@@ -699,6 +699,16 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
   return Math.max(1, Math.min(5, Math.round(Math.sqrt(risk * intensity))));
 }
 
+function rainRateFromAccumulation(amount, durationMilliseconds) {
+  const rain = Math.max(0, Number(amount) || 0);
+  const duration = Number(durationMilliseconds);
+  return Number.isFinite(duration) && duration > 0 ? rain * 3600000 / duration : 0;
+}
+
+function rainIntensityStep(value) {
+  return value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
+}
+
 function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   const rain = kind === "rain";
   const eta = etaMinutes == null ? null : Number(etaMinutes);
@@ -3816,8 +3826,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const symbol = showSymbol ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + nowcastMetricIcons[kind] + '</svg>' : "";
     return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label) + '" title="' + escapeText(label) + '">' + symbol + scale + '</span>';
   };
-  // Intensité radar en mm/h : faible, modérée, forte, très forte, extrême.
-  const rainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const flashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
   const forecastTrend = (start, end, threshold) => {
@@ -4279,12 +4287,34 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : rainArrival
     ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
     : null;
+  const piafPeakRainIntensity = Math.max(0, ...threeHours.map((item, index) => {
+    const intervalEnd = Number(item.intervalEnd ?? item.rainIntervalEnd);
+    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
+    const itemEnd = Number.isFinite(intervalEnd) ? intervalEnd : piafItemEndTime(piaf, item);
+    const previousEnd = index > 0 ? piafItemEndTime(piaf, threeHours[index - 1]) : NaN;
+    const intervalStart = Number.isFinite(explicitStart) && explicitStart < itemEnd
+      ? explicitStart
+      : Number.isFinite(previousEnd) && previousEnd < itemEnd ? previousEnd : itemEnd - 5 * 60000;
+    return rainRateFromAccumulation(item.nowcastPrecipitation ?? item.precipitation, itemEnd - intervalStart);
+  }));
+  const etaPeakRainIntensity = Math.max(0, ...etaRainEvents.flatMap(event => {
+    const profile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
+    return profile.length
+      ? profile.map(segment => Math.max(0, Number(segment.intensity) || 0))
+      : [Math.max(0, Number(event.conditionalIntensity ?? event.maximum) || 0)];
+  }));
+  const peakRainIntensity = Math.max(
+    piafPeakRainIntensity,
+    etaPeakRainIntensity,
+    freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
+  );
+  const rainColorLevel = rainIntensityStep(peakRainIntensity);
   const rainValue = shortTermEventLabel("rain", rainEtaMinutes);
-  const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm";
+  const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainValue, rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
