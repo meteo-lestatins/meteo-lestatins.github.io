@@ -265,18 +265,18 @@ button:hover { background: #eef7fb; }
 .daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; border-radius: 0 0 13px 13px; background: #fff; }
 .daily-period-card { min-width: 0; position: relative; background: #fff; }
 .daily-period-card + .daily-period-card { border-top: 1px solid #dbe5e9; }
-.daily-period-card summary { min-height: 126px; display: grid; grid-template-columns: 72px minmax(80px, auto) 22px; grid-template-rows: auto auto auto; align-items: center; gap: 4px 10px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.daily-period-card summary { min-height: 126px; display: grid; grid-template-columns: 64px 34px minmax(100px, auto) 22px; grid-template-rows: auto auto auto; align-items: center; gap: 4px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
 .daily-period-card summary::-webkit-details-marker { display: none; }
 .daily-period-card summary:hover { background: #f6fafb; }
-.daily-period-title { grid-column: 1 / 3; }
+.daily-period-title { grid-column: 1 / 4; }
 .daily-period-title strong { color: #173b52; font-size: 14px; }
-.daily-period-icon { width: 54px; height: 54px; position: relative; display: grid; place-items: center; padding: 0; }
+.daily-period-icon { width: 54px; height: 54px; position: relative; grid-column: 1; grid-row: 2; display: grid; place-items: center; padding: 0; }
 .daily-period-icon > img, .daily-period-icon .layered-weather-icon, .daily-period-icon .weather-variant-icon { width: 50px; height: 50px; }
-.daily-hazard-pictogram { width: 27px; height: 27px; position: absolute; top: -1px; right: -4px; z-index: 6; display: grid; place-items: center; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, .94); filter: drop-shadow(0 1px 2px rgba(46, 67, 78, .28)); }
-.daily-hazard-pictogram + .daily-hazard-pictogram { right: 26px; }
+.daily-period-hazards { min-height: 58px; grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.daily-hazard-pictogram { width: 27px; height: 27px; position: relative; z-index: 6; display: grid; place-items: center; flex: 0 0 27px; border: 1px solid #fff; border-radius: 50%; background: rgba(255, 255, 255, .94); filter: drop-shadow(0 1px 2px rgba(46, 67, 78, .28)); }
 .daily-hazard-pictogram svg { width: 23px; height: 23px; overflow: visible; }
-.daily-period-icon .daily-hazard-pictogram.storm { width: 27px; height: 27px; }
-.daily-period-icon .daily-hazard-pictogram.storm svg { width: 23px; height: 23px; }
+.daily-period-hazards .daily-hazard-pictogram.storm { width: 27px; height: 27px; }
+.daily-period-hazards .daily-hazard-pictogram.storm svg { width: 23px; height: 23px; }
 .daily-hazard-pictogram.storm { color: #d38a00; }
 .daily-hazard-pictogram.storm .storm-signal-cloud { fill: #e9eef1; stroke: #50636e; stroke-width: .9; }
 .daily-hazard-pictogram.storm .storm-signal-bolt { fill: #f0a000; stroke: #754600; stroke-width: .7; }
@@ -287,12 +287,12 @@ button:hover { background: #eef7fb; }
 .daily-period-temperatures small { color: #748690; font-size: 7px; font-weight: 800; line-height: 1; text-transform: uppercase; }
 .daily-period-temperatures strong { color: #e5572c; font-size: 19px; line-height: 1; }
 .daily-period-temperatures b { color: #2675a8; font-size: 15px; line-height: 1; }
-.daily-period-values { min-width: 0; display: flex; align-items: end; flex-wrap: wrap; gap: 7px 10px; }
+.daily-period-values { min-width: 0; grid-column: 3; grid-row: 2; display: flex; align-items: end; flex-wrap: wrap; gap: 7px 10px; }
 .daily-period-rain-volume { display: inline-flex; align-items: center; gap: 3px; color: #258bc0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .daily-period-rain-volume svg { width: 24px; height: 24px; flex: 0 0 24px; fill: currentColor; }
 .daily-period-rain-volume strong { color: #185f83; font-size: 12px; line-height: 1; }
-.daily-period-copy { grid-column: 1 / 3; color: #536b78; font-size: 10px; font-weight: 700; line-height: 1.35; }
-.daily-period-chevron { grid-column: 3; grid-row: 1 / 4; color: #397a9e; font-size: 20px; transition: transform .18s ease; }
+.daily-period-copy { grid-column: 1 / 4; color: #536b78; font-size: 10px; font-weight: 700; line-height: 1.35; }
+.daily-period-chevron { grid-column: 4; grid-row: 1 / 4; color: #397a9e; font-size: 20px; transition: transform .18s ease; }
 .daily-period-card[open] .daily-period-chevron { transform: rotate(180deg); }
 .daily-period-details { padding: 0; }
 .daily-period-detail-heading { padding: 10px 12px; border-bottom: 1px solid #dbe5e9; color: #173b52; background: #eef4f6; font-size: 12px; }
