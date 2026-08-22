@@ -58,6 +58,7 @@ let nowcastMapAutoExpanded = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
 let nowcastMapRequest = 0;
+let leafletAssetsPromise = null;
 let weekEvolutionState = { signature: "", byDate: new Map() };
 let cellPassageSnapshot = null;
 try {
@@ -77,6 +78,35 @@ const measurableRainThreshold = .05;
 // Échelle commune des pictogrammes de pluie. Elle exprime une quantité
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
+
+function graphIconMarkup(className) {
+  return '<span class="' + className + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8M16 7h3v3"/></svg></span>';
+}
+
+function ensureLeafletAssets() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletAssetsPromise) return leafletAssetsPromise;
+  leafletAssetsPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-leaflet-lazy]')) {
+      const style = document.createElement("link");
+      style.rel = "stylesheet";
+      style.href = new URL("vendor/leaflet/leaflet.css", document.baseURI).href;
+      style.dataset.leafletLazy = "true";
+      document.head.append(style);
+    }
+    const script = document.createElement("script");
+    script.src = new URL("vendor/leaflet/leaflet.js", document.baseURI).href;
+    script.async = true;
+    script.dataset.leafletLazy = "true";
+    script.addEventListener("load", () => window.L ? resolve(window.L) : reject(new Error("Leaflet indisponible")), { once: true });
+    script.addEventListener("error", () => reject(new Error("Chargement de Leaflet impossible")), { once: true });
+    document.head.append(script);
+  }).catch(error => {
+    leafletAssetsPromise = null;
+    throw error;
+  });
+  return leafletAssetsPromise;
+}
 
 const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, vigilance: 30 * 60000, openMeteo: 60 * 60000 };
 const sourceLabels = { arome: "AROME", pearome: "AROME-PI", ensemble: "PEAROME", piaf: "PIAF", radar: "Radar", lightning: "EUMETSAT LI", vigilance: "Vigilance", openMeteo: "Open-Meteo" };
@@ -368,6 +398,7 @@ function set48HourForecastContentOpen(open) {
     panel.removeAttribute("data-focus-date");
     panel.removeAttribute("data-focus-hour");
     document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
+    document.querySelector('[data-summary-target="wind48"]')?.setAttribute("aria-expanded", "false");
   }
 }
 
@@ -418,6 +449,24 @@ function toggleDaily48HourForecast(button) {
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
   set48HourForecastContentOpen(true);
   renderActiveForecast();
+  requestAnimationFrame(() => sync48HourForecastFocus(true));
+}
+
+function open48HourWindForecast() {
+  const panel = $("panel-48h");
+  if (!panel) return;
+  Object.keys(metricOpacities).forEach(metric => {
+    metricOpacities[metric] = metric === "wind" || metric === "gust" ? 100 : 0;
+  });
+  document.querySelectorAll("[data-open-48h-date]").forEach(item => item.setAttribute("aria-expanded", "false"));
+  panel.dataset.focusDate = todayDateKey();
+  panel.dataset.focusHour = "";
+  panel.hidden = false;
+  document.querySelector('[data-summary-target="wind48"]')?.setAttribute("aria-expanded", "true");
+  $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
+  set48HourForecastContentOpen(true);
+  renderActiveForecast();
+  applyMetricOpacities();
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
 
@@ -2180,7 +2229,7 @@ function renderTestingDailyForecast() {
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
     const canOpen48h = dayGap >= 0 && dayGap <= 1;
     const dayHeading = canOpen48h
-      ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span><span class="daily-day-open-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8M16 7h3v3"/></svg></span></button>'
+      ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span>' + graphIconMarkup("daily-day-open-icon") + '</button>'
       : '<div class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></div>';
     return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
@@ -4170,13 +4219,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         + (stormDetails.duration ? '<span class="three-hour-storm-duration">' + escapeText(stormDetails.duration) + '</span>' : '')
         + '</span>'
       : '';
-    const stormTiming = displayedTrend
+    const actionGraph = target ? graphIconMarkup("three-hour-graph-icon") : "";
+    const stormTiming = displayedTrend && !target
       ? '<span class="three-hour-storm-timing">' + trendMarkup(kind, displayedTrend, passageDetail) + '</span>'
       : '';
     const metric = stormLayout
-      ? stormIndicator + stormTiming + stormEta
-      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
-    return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
+      ? stormIndicator + actionGraph + stormTiming + stormEta
+      : nowcastMetricPictogram(kind, level, detail) + actionGraph + (!target && trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
+    const actionLabel = target === "rain" ? "Ouvrir les précipitations sur 3 h" : target === "nowcast" ? "Ouvrir le nowcasting" : target === "wind48" ? "Ouvrir les prévisions de vent sur 48 h" : "";
+    const accessibleDetail = actionLabel ? actionLabel + " — " + detail : detail;
+    return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '" title="' + escapeText(accessibleDetail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
   const threat = radar.threat;
@@ -4597,22 +4649,28 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
-    + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
+    + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend, 'wind48')
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
+      if (button.dataset.summaryTarget === "wind48") {
+        button.setAttribute("aria-controls", "panel-48h");
+        button.setAttribute("aria-expanded", "false");
+        button.addEventListener("click", open48HourWindForecast);
+        return;
+      }
       const details = $(button.dataset.summaryTarget + "-details");
       button.setAttribute("aria-controls", details?.id || "");
       button.setAttribute("aria-expanded", String(details ? !details.hidden : false));
       button.addEventListener('click', () => {
         if (!details) return;
+        if (button.dataset.summaryTarget === "nowcast") {
+          setNowcastOpen(details.hidden, details.hidden);
+          return;
+        }
         details.hidden = !details.hidden;
         button.setAttribute("aria-expanded", String(!details.hidden));
-        if (button.dataset.summaryTarget === "nowcast") {
-          $("header-nowcast-link")?.setAttribute("aria-expanded", String(!details.hidden));
-          $("nowcast-title-toggle")?.setAttribute("aria-expanded", String(!details.hidden));
-        }
       });
     });
   }
@@ -4879,6 +4937,9 @@ function setNowcastOpen(open, scroll = false) {
   link?.setAttribute("aria-expanded", String(open));
   titleToggle?.setAttribute("aria-expanded", String(open));
   document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", String(open));
+  if (open) ensureLeafletAssets()
+    .then(() => initializeNowcastMapBackground(activeNowcastMapRadius))
+    .catch(error => console.warn("Fond de carte Nowcasting indisponible", error));
   if (open && scroll) details.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -4920,6 +4981,5 @@ bindForecastLayout();
 bindHeaderNowcastLink();
 registerServiceWorker();
 renderAppVersion();
-loadTemperatureNormals();
 if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
 else refresh();
