@@ -107,7 +107,7 @@ function refreshSourceIndicators() {
 
 function sourceLink(key, section, label) {
   const state = sourceSyncState(key);
-  const href = (window.METEO_REPLAY ? "../" : "") + "about.html#" + section;
+  const href = (window.METEO_REPLAY?.aboutBase ?? (window.METEO_REPLAY ? "../" : "")) + "about.html#" + section;
   return '<a class="source-link" data-source-status="' + key + '" data-sync="' + state + '" href="' + href + '" title="Voir ' + escapeText(label) + ' dans About · ' + escapeText(sourceSyncTitle(key)) + '">' + label + '</a>';
 }
 
@@ -120,7 +120,7 @@ const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT
 const vigilanceLink = () => sourceLink("vigilance", "api-vigilance", "Vigilance");
 const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
 const shortRainLinks = () => window.METEO_REPLAY
-  ? openMeteoLink() + nowcastDisplayLink()
+  ? (window.METEO_REPLAY.archiveTesting ? radarLink() : openMeteoLink()) + nowcastDisplayLink()
   : sourceLink("piaf", "api-piaf", "Météo-France") + nowcastDisplayLink();
 const threeHourLinks = () => window.METEO_REPLAY ? radarLink() + nowcastDisplayLink() : radarLink()
   + nowcastDisplayLink()
@@ -697,6 +697,92 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
   const intensity = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
   if (!risk || !intensity) return risk;
   return Math.max(1, Math.min(5, Math.round(Math.sqrt(risk * intensity))));
+}
+
+function rainRateFromAccumulation(amount, durationMilliseconds) {
+  const rain = Math.max(0, Number(amount) || 0);
+  const duration = Number(durationMilliseconds);
+  return Number.isFinite(duration) && duration > 0 ? rain * 3600000 / duration : 0;
+}
+
+function rainIntensityStep(value) {
+  return value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
+}
+
+function threeHourTrendIsSignificant(kind, trend) {
+  if (!trend || trend.label === "stable") return false;
+  const change = Math.abs(Number(trend.change) || 0);
+  if (kind === "rain") return change >= .5;
+  if (kind === "gust") return change >= 15;
+  if (kind === "storm") return change >= (trend.basis === "displayed-level" ? 2 : 30);
+  return false;
+}
+
+function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
+  const rain = kind === "rain";
+  const eta = etaMinutes == null ? null : Number(etaMinutes);
+  if (!Number.isFinite(eta) || eta < 0) return rain ? "pas de pluie" : "pas d’orage";
+  if (eta < 1) {
+    if (!rain && Number(activeCount) > 0) {
+      const count = Math.max(1, Math.round(Number(activeCount)));
+      return count + (count > 1 ? " orages en cours" : " orage en cours");
+    }
+    return rain ? "Pluie en cours" : "Orage en cours";
+  }
+  return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
+}
+
+function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
+  const allowedIds = new Set(candidateCellIds || []);
+  const candidates = (events || []).filter(event => {
+    const cellId = event?.cell?.id;
+    return allowedIds.has(cellId)
+      && Number.isFinite(Number(event.eventStart))
+      && Number.isFinite(Number(event.eventEnd))
+      && Number(event.eventEnd) > now;
+  });
+  const activeByCell = new Map();
+  candidates.filter(event => Number(event.eventStart) <= now).forEach(event => {
+    const cellId = event.cell.id;
+    const previous = activeByCell.get(cellId);
+    if (!previous || Number(event.eventEnd) > Number(previous.eventEnd)) activeByCell.set(cellId, event);
+  });
+  const active = [...activeByCell.values()];
+  const activeIds = new Set(active.map(event => event.cell.id));
+  const upcomingByCell = new Map();
+  candidates.filter(event => Number(event.eventStart) > now && !activeIds.has(event.cell.id)).forEach(event => {
+    const cellId = event.cell.id;
+    const previous = upcomingByCell.get(cellId);
+    if (!previous || Number(event.eventStart) < Number(previous.eventStart)) upcomingByCell.set(cellId, event);
+  });
+  const upcoming = [...upcomingByCell.values()];
+  if (active.length) {
+    const event = active.find(item => item.cell.id === preferredCellId)
+      || [...active].sort((left, right) => Number(right.passage) - Number(left.passage))[0];
+    const durationCalculable = active.every(item => Number.isFinite(Number(item.durationMinutes)) && Number(item.durationMinutes) > 0);
+    const latestEnd = Math.max(...active.map(item => Number(item.eventEnd)));
+    return {
+      event,
+      etaMinutes: 0,
+      durationMinutes: durationCalculable ? Math.max(1, Math.ceil((latestEnd - now) / 60000)) : null,
+      activeCount: active.length,
+      upcomingCount: upcoming.length,
+      activeIds: [...activeIds],
+      upcomingIds: [...upcomingByCell.keys()]
+    };
+  }
+  const event = upcoming.find(item => item.cell.id === preferredCellId)
+    || [...upcoming].sort((left, right) => Number(left.eventStart) - Number(right.eventStart))[0]
+    || null;
+  return {
+    event,
+    etaMinutes: event ? Math.max(0, (Number(event.eventStart) - now) / 60000) : null,
+    durationMinutes: Number.isFinite(Number(event?.durationMinutes)) && Number(event.durationMinutes) > 0 ? Number(event.durationMinutes) : null,
+    activeCount: 0,
+    upcomingCount: upcoming.length,
+    activeIds: [],
+    upcomingIds: [...upcomingByCell.keys()]
+  };
 }
 
 function formatRainAmount(value, decimals = 1) {
@@ -2894,11 +2980,12 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const intervalPeriod = item.rainIntervalStart && item.rainIntervalEnd
       ? '\nPériode : ' + hourFormat.format(new Date(item.rainIntervalStart)) + '–' + hourFormat.format(new Date(item.rainIntervalEnd))
       : '';
+    const shortTermPassage = Number(item.rainEtaPassage);
     const shortTermDetail = isShortTermHour
       ? '\nMétéo-France : ' + Number(item.rainBasePiaf || 0).toFixed(2) + ' mm'
         + (Number(item.rainDirectRadarAmendment) > 0 ? '\nRadar aux Tatins : +' + Number(item.rainDirectRadarAmendment).toFixed(2) + ' mm' : '')
         + (Number(item.rainEtaAmendment) > 0 ? '\nCellule(s) ETA si passage : +' + Number(item.rainEtaAmendment).toFixed(2) + ' mm' : '')
-        + (Number.isFinite(Number(item.rainEtaPassage)) ? '\nPassage Nowcasting : ' + Math.round(Number(item.rainEtaPassage)) + ' %' : '')
+        + (Number.isFinite(shortTermPassage) && shortTermPassage < 100 ? '\nPassage Nowcasting : ' + Math.round(shortTermPassage) + ' %' : '')
         + ((item.rainEtaCellIds || []).length ? '\nCellule(s) avec ETA : ' + item.rainEtaCellIds.join(', ') : '')
       : '';
     const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + shortTermDetail + intervalPeriod + (item.rainRadarCellOverPoint ? '\nPluie détectée aux Tatins par le radar' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
@@ -2922,7 +3009,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
       ? '<rect class="overview-rain-nowcast-band" x="' + barStart + '" y="' + (overviewHeight - height) + '" width="' + barWidth + '" height="' + nowcastBandHeight + '"/>'
       : '';
     const nowcastPassage = isShortTermHour && Number.isFinite(Number(item.rainEtaPassage)) ? Math.round(Number(item.rainEtaPassage)) : null;
-    const nowcastPassageLabel = drawBar && nowcastBandHeight > 0 && nowcastPassage != null
+    const nowcastPassageLabel = drawBar && nowcastBandHeight > 0 && nowcastPassage != null && nowcastPassage < 100
       ? '<text class="overview-rain-nowcast-probability" x="' + centerX + '" y="' + Math.max(12, overviewHeight - height - 5) + '" text-anchor="middle">' + nowcastPassage + ' %</text>'
       : '';
     // La probabilité décrit le volume affiché : elle reste dans la zone bleue,
@@ -3365,7 +3452,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return '<g class="range-distance"><circle class="range-ring" cx="' + targetX + '" cy="' + targetY + '" r="' + radius.toFixed(1) + '"></circle><text x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="middle">' + distance + ' km</text></g>';
     }).join('');
     const lightningMarks = (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm), Number(flash.northKm)) <= mapRadiusKm).map(flash => '<g class="lightning-flash" transform="translate(' + (targetX + flash.eastKm * scale).toFixed(1) + ' ' + (targetY - flash.northKm * scale).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path></g>').join('');
-    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g></svg></div>';
+    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
   const etaProjectionCells = nowcastEtaProjectionCells(radarCells);
@@ -3599,7 +3686,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cones + secondaryTracks + cells + lightningMarks + directionChevrons + milestones +
-    '<g class="target-point"><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + targetX + '" y="' + (Number(targetY) + (compactDesktopMap ? 36 : 28)) + '" text-anchor="middle">Les Tatins</text></g>' +
+    '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
     '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
     '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span>' + coneLegend + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
 }
@@ -3720,8 +3807,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const direction = cardinal(bearing).toUpperCase();
     return (direction === "EST" || direction === "OUEST" ? "L’" : "LE ") + direction;
   };
-  const firstPiafRain = (piaf?.values || []).find(item => Number(item.nowcastPrecipitation ?? item.precipitation) >= measurableRainThreshold);
-  const etaSeconds = radar.etaSeconds ?? firstPiafRain?.seconds ?? null;
   const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
   const now = appNow();
   const piafRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.precipitation) || 0)), 0) * 10) / 10;
@@ -3750,8 +3835,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const symbol = showSymbol ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + nowcastMetricIcons[kind] + '</svg>' : "";
     return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label) + '" title="' + escapeText(label) + '">' + symbol + scale + '</span>';
   };
-  // Intensité radar en mm/h : faible, modérée, forte, très forte, extrême.
-  const rainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const flashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
   const forecastTrend = (start, end, threshold) => {
@@ -3766,7 +3849,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const average = group => group.reduce((sum, item) => sum + (Number(value(item)) || 0), 0) / Math.max(1, group.length);
     return { start: average(values.slice(0, count)), end: average(values.slice(-count)) };
   };
-  const trendMarkup = (trend, source) => {
+  const trendMarkup = (kind, trend, source) => {
     const arrow = trend.label === "croissant"
       ? '<path d="M10 14V6m0 0L7 9m3-3 3 3"/>'
       : trend.label === "decroissant"
@@ -3774,7 +3857,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         : '<path d="M6 10h8m0 0-3-3m3 3-3 3"/>';
     const wording = trend.label === "croissant" ? "en hausse" : trend.label === "decroissant" ? "en baisse" : "stable";
     const detail = trend.detail || "Tendance " + wording + " sur les 3 prochaines heures" + (source ? " (" + source + ")" : "");
-    return '<span class="three-hour-trend ' + trend.label + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><b aria-hidden="true"><svg viewBox="0 0 20 20">' + arrow + '</svg></b></span>';
+    const significance = threeHourTrendIsSignificant(kind, trend) ? " significant" : "";
+    return '<span class="three-hour-trend ' + trend.label + significance + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '"><b aria-hidden="true"><svg viewBox="0 0 20 20">' + arrow + '</svg></b></span>';
   };
   // Synthèse pluie : l'intensité fixe le plafond, puis la probabilité module
   // ce niveau sans jamais transformer une pluie très faible en signal fort.
@@ -3791,16 +3875,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const displayedTrend = stormDetails?.trend ? { ...trend, detail: stormDetails.trend } : trend;
     const stormIndicator = nowcastMetricPictogram(kind, stormPassageLevel, passageDetail);
     const stormEta = stormDetails?.eta
-      ? '<span class="three-hour-storm-window" title="' + escapeText(stormDetails.etaDetail || stormDetails.eta) + '"><span class="three-hour-storm-eta">' + escapeText(stormDetails.eta) + '</span>'
+      ? '<span class="three-hour-action-value three-hour-storm-window" title="' + escapeText(stormDetails.etaDetail || stormDetails.eta) + '"><span class="three-hour-storm-eta">' + escapeText(stormDetails.eta) + '</span>'
         + (stormDetails.duration ? '<span class="three-hour-storm-duration">' + escapeText(stormDetails.duration) + '</span>' : '')
         + '</span>'
       : '';
     const stormTiming = displayedTrend
-      ? '<span class="three-hour-storm-timing">' + trendMarkup(displayedTrend, passageDetail) + '</span>'
+      ? '<span class="three-hour-storm-timing">' + trendMarkup(kind, displayedTrend, passageDetail) + '</span>'
       : '';
     const metric = stormLayout
       ? stormIndicator + stormTiming + stormEta
-      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(trend, detail) : '') + (value ? '<b>' + escapeText(value) + '</b>' : '');
+      : nowcastMetricPictogram(kind, level, detail) + (trend ? trendMarkup(kind, trend, detail) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '');
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '"><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
@@ -3811,7 +3895,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const cellDistance = radarCellEdgeDistance;
   const nearbyCells = cells.filter(cell => cellDistance(cell) < 60);
   const nearbyCellIds = new Set(nearbyCells.map(cell => cell.id));
-  const maximumPassageRisk = Math.max(0, ...nearbyCells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
+  const stormCandidateCells = nearbyCells.filter(cell =>
+    nowcastFlashesNearCell(cell, lightning) > 0
+    || Number(cell.risks?.hail) >= 20
+    || Number(cell.risks?.storm) >= 30
+  );
+  const maximumPassageRisk = Math.max(0, ...stormCandidateCells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
   const vigilanceNow = Date.now();
   const vigilancePeriodActive = period =>
     (!period.start || new Date(period.start).getTime() <= vigilanceNow)
@@ -3897,7 +3986,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   };
   // La cellule retenue porte l'indicateur unique risque + intensité. À
   // probabilité égale, la cellule la plus intense est prioritaire.
-  const passageCandidates = nearbyCells
+  const passageCandidates = stormCandidateCells
     .filter(cell => Number(cell.risks?.passage) > 0)
     .map(cell => stormIntensityFor(cell))
     .sort((left, right) => right.passage - left.passage || right.level - left.level || cellDistance(left.cell) - cellDistance(right.cell));
@@ -4070,7 +4159,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       detailMetric("Base ETA", cell.etaBasis === "envelope" ? "cône probable" : cell.etaBasis === "core" ? "noyau cellule" : null),
       detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)
     ];
-    const distance = cellDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const distanceKm = cellDistance(cell);
+    const distance = distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const distanceMarkup = distanceKm > .05
+      ? '<span class="nowcast-cell-distance">' + escapeText(distance) + '</span>'
+      : '';
     const etaMinutes = cell.etaMinutes == null ? null : Number(cell.etaMinutes);
     const etaText = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
       ? etaMinutes < 1 ? "Now" : Math.max(1, Math.round(etaMinutes)) + "min"
@@ -4081,8 +4174,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const eta = etaText
       ? '<span class="nowcast-cell-eta" title="' + (cell.etaBasis === "envelope" ? "ETA possible · " : "") + escapeText(etaDetail) + '">' + escapeText(etaText) + '</span>'
       : '';
-    const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " % · distance " + distance + (etaDetail ? " · " + etaDetail : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" data-nowcast-cell="' + escapeText(cell.id) + '" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><span class="nowcast-cell-distance">' + escapeText(distance) + '</span>' + eta + '</span><span class="nowcast-cell-primary"><b>Passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden><div class="nowcast-cell-detail-hazards"><dt>Intensité détaillée</dt><dd><span class="cell-hazards">' + hazards + '</span></dd></div>' + details.filter(Boolean).join("") + '</dl></article>';
+    const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " %" + (distanceKm > .05 ? " · distance " + distance : "") + (etaDetail ? " · " + etaDetail : "");
+    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" data-nowcast-cell="' + escapeText(cell.id) + '" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong>' + distanceMarkup + eta + '</span><span class="nowcast-cell-primary"><b>Passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden><div class="nowcast-cell-detail-hazards"><dt>Intensité détaillée</dt><dd><span class="cell-hazards">' + hazards + '</span></dd></div>' + details.filter(Boolean).join("") + '</dl></article>';
   };
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
@@ -4121,26 +4214,43 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       // L'affichage reste fonctionnel si le stockage local est indisponible.
     }
   }
-  const stormDetail = "Risque et intensité de l’orage sur 3 h";
-  const relevantStormEtaEvent = relevantStormCell
-    ? etaRainEvents.find(event => event.cell?.id === relevantStormCell.id)
-    : null;
-  const relevantStormEtaMinutes = relevantStormEtaEvent?.etaMinutes == null
+  const stormDetail = relevantStormIntensity
+    ? "Orage sur 3 h · passage " + maximumPassageRisk + " % · intensité " + stormIntensityLevel + "/5"
+      + " · pluie " + relevantStormIntensity.rainLevel + "/5"
+      + " · grêle " + relevantStormIntensity.hailLevel + "/5"
+      + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
+    : "pas d’orage";
+  const stormEtaSelection = nowcastStormEtaSelection(
+    etaRainEvents,
+    passageCandidates.map(candidate => candidate.cell.id),
+    now,
+    relevantStormCell?.id
+  );
+  const relevantStormEtaEvent = stormEtaSelection.event;
+  const relevantStormEtaMinutes = stormEtaSelection.etaMinutes == null
     ? relevantStormCell?.etaMinutes == null ? null : Number(relevantStormCell.etaMinutes)
-    : Number(relevantStormEtaEvent.etaMinutes);
-  const relevantStormDurationMinutes = Number(relevantStormEtaEvent?.durationMinutes);
-  const stormEtaLabel = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180
-    ? relevantStormEtaMinutes < 1 ? "Orage en cours" : "Dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + "min"
-    : "";
-  const stormDurationLabel = Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
+    : Number(stormEtaSelection.etaMinutes);
+  const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
+  const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
+  const stormEtaLabel = shortTermEventLabel("storm", hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount);
+  const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
     : "";
-  const stormEtaDetail = stormEtaLabel && relevantStormCell
-    ? "Cellule " + relevantStormCell.id
-      + " · bord à " + cellDistance(relevantStormCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
+  const stormUpcomingText = stormEtaSelection.upcomingCount > 0
+    ? stormEtaSelection.upcomingCount + " à venir"
+    : "";
+  const stormDurationLabel = [stormDurationText, stormUpcomingText].filter(Boolean).join(" · ");
+  const stormEtaCell = relevantStormEtaEvent?.cell || relevantStormCell;
+  const stormEtaDetail = hasStormEta && stormEtaCell
+    ? (stormEtaSelection.activeCount > 0
+      ? stormEtaSelection.activeCount + " cellule" + (stormEtaSelection.activeCount > 1 ? "s" : "") + " en cours"
+      : "Cellule " + stormEtaCell.id)
+      + (stormEtaSelection.activeCount > 0 ? " : " + stormEtaSelection.activeIds.join(", ") : "")
+      + " · bord à " + cellDistance(stormEtaCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
       + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + " min")
       + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
+      + (stormEtaSelection.upcomingCount > 0 ? " (cellules " + stormEtaSelection.upcomingIds.join(", ") + ")" : "")
     : "";
   const stormTrendWording = stormTrend.pendingConfirmation
     ? "stable, éloignement à confirmer"
@@ -4162,12 +4272,59 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
-  const rainValue = formatRainAmount(rainAmount) + " mm";
-  const rainDetail = "Intensité de la pluie sur 3 h";
+  const rainArrival = rainTrendSteps.map((step, index) => {
+    const item = threeHours[index];
+    const intervalEnd = piafItemEndTime(piaf, item);
+    const fallbackStart = now + Math.max(0, (Number(item?.seconds) || 300) - 300) * 1000;
+    const intervalStart = Number.isFinite(intervalEnd) ? intervalEnd - 5 * 60000 : fallbackStart;
+    return { precipitation: Number(step.precipitation) || 0, intervalStart, intervalEnd };
+  }).find(item => item.precipitation >= possibleDrizzleThreshold
+    && (!Number.isFinite(item.intervalEnd) || item.intervalEnd >= now - 60000));
+  const radarObservedAt = Date.parse(radar?.observedAt || "");
+  const currentRadarRainRate = Number(radar?.currentPrecipitation);
+  const freshRadarRainAtTarget = Number.isFinite(radarObservedAt)
+    && now >= radarObservedAt - 5 * 60000
+    && now - radarObservedAt <= sourceFreshness.radar
+    && Number.isFinite(currentRadarRainRate)
+    && currentRadarRainRate >= .1;
+  const activeEtaRainAtTarget = etaRainEvents.some(event => {
+    const profile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
+    if (profile.length) return profile.some(segment => segment.start <= now && segment.end > now && Number(segment.intensity) >= .1);
+    return event.eventStart <= now && event.eventEnd > now && Number(event.conditionalIntensity) >= .1;
+  });
+  const rainEtaMinutes = freshRadarRainAtTarget || activeEtaRainAtTarget
+    ? 0
+    : rainArrival
+    ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
+    : null;
+  const piafPeakRainIntensity = Math.max(0, ...threeHours.map((item, index) => {
+    const intervalEnd = Number(item.intervalEnd ?? item.rainIntervalEnd);
+    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
+    const itemEnd = Number.isFinite(intervalEnd) ? intervalEnd : piafItemEndTime(piaf, item);
+    const previousEnd = index > 0 ? piafItemEndTime(piaf, threeHours[index - 1]) : NaN;
+    const intervalStart = Number.isFinite(explicitStart) && explicitStart < itemEnd
+      ? explicitStart
+      : Number.isFinite(previousEnd) && previousEnd < itemEnd ? previousEnd : itemEnd - 5 * 60000;
+    return rainRateFromAccumulation(item.nowcastPrecipitation ?? item.precipitation, itemEnd - intervalStart);
+  }));
+  const etaPeakRainIntensity = Math.max(0, ...etaRainEvents.flatMap(event => {
+    const profile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
+    return profile.length
+      ? profile.map(segment => Math.max(0, Number(segment.intensity) || 0))
+      : [Math.max(0, Number(event.conditionalIntensity ?? event.maximum) || 0)];
+  }));
+  const peakRainIntensity = Math.max(
+    piafPeakRainIntensity,
+    etaPeakRainIntensity,
+    freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
+  );
+  const rainColorLevel = rainIntensityStep(peakRainIntensity);
+  const rainValue = shortTermEventLabel("rain", rainEtaMinutes);
+  const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainValue, rainAmount <= 0 ? 0 : rainAmount <= 1 ? 1 : rainAmount < 10 ? 2 : rainAmount < 25 ? 3 : rainAmount < 50 ? 4 : 5, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('gust', 'max ' + maximumGust + ' km/h', maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5, gustDetail, windTrend)
     + '</div></section>';
@@ -4269,12 +4426,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     marker.addEventListener("focusin", () => showMappedCell(marker));
     marker.addEventListener("focusout", () => hideMappedCell(marker));
   });
-  if (threat) bindChartTooltips();
+  bindChartTooltips();
 }
 
 function renderPiaf(piaf, radar = null) {
   if (!piaf?.values?.length) return;
   const isOpenMeteo = piaf.source === "openmeteo";
+  const precipitationSourceLabel = piaf.source === "radar-archive" ? "Radar archivé" : "PIAF";
   const isTimedForecast = isOpenMeteo || piaf.source === "arome";
   const runTime = piafRunTime(piaf);
   const piafBaseTime = new Date(Number.isFinite(runTime) ? runTime : piaf.fetchedAt || Date.now());
@@ -4344,7 +4502,7 @@ function renderPiaf(piaf, radar = null) {
     const slotTime = hourFormat.format(slotTimes[index]);
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
-    const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · PIAF " + precipitation.toFixed(2) + " mm" + periodDetail;
+    const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail;
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");

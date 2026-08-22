@@ -1,16 +1,21 @@
-const cacheName = "meteo-main-v3-018-r1";
-const shell = ["/about.html", "/architecture.svg", "/echelle-kilometrique.css?v=8", "/echelle-kilometrique.js?v=13", "/runtime-config.js?v=3.018", "/changelog.html", "/", "/index.html", "/style.css?v=144", "/app.js?v=193", "/analytics.js?v=1", "/manifest.webmanifest", "/contact/", "/contact/index.html", "/contact/contact.css?v=4", "/contact/contact.js?v=1", "/news/", "/news/index.html", "/news/news.css?v=2", "/news/news.js?v=2", "/evenements.html", "/evenements/2026-08-04-grele-les-tatins.html", "/evenements/evenements.css?v=2", "/evenements/event-player.js?v=3", "/evenements/data/2026-08-04-grele-les-tatins.json", "/evenements/data/2026-08-04-grele-les-tatins-radar.json", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
+const cacheName = "meteo-main-v3-026-r1";
+const shell = ["/about.html", "/architecture.svg", "/echelle-kilometrique.css?v=8", "/echelle-kilometrique.js?v=13", "/runtime-config.js?v=3.026", "/changelog.html", "/", "/index.html", "/style.css?v=147", "/app.js?v=197", "/analytics.js?v=1", "/manifest.webmanifest", "/contact/", "/contact/index.html", "/contact/contact.css?v=4", "/contact/contact.js?v=1", "/news/", "/news/index.html", "/news/news.css?v=2", "/news/markdown.js?v=1", "/news/news.js?v=3", "/evenements.html", "/evenements/2026-08-04-grele-les-tatins.html", "/evenements/evenements.css?v=2", "/evenements/event-player.js?v=3", "/evenements/data/2026-08-04-grele-les-tatins.json", "/evenements/data/2026-08-04-grele-les-tatins-radar.json", "/vendor/leaflet/leaflet.css", "/vendor/leaflet/leaflet.js"];
+const publicRoots = new Set(["", "index.html", "style.css", "app.js", "analytics.js", "manifest.webmanifest", "runtime-config.js", "about.html", "architecture.svg", "echelle-kilometrique.css", "echelle-kilometrique.js", "changelog", "changelog.html", "contact", "news", "evenements", "evenements.html", "nowcasting-replay.html", "vendor"]);
+
+function publicCacheTarget(url) {
+  const scopePath = new URL(self.registration.scope).pathname;
+  if (url.origin !== location.origin || !url.pathname.startsWith(scopePath)) return false;
+  const relativePath = url.pathname.slice(scopePath.length).replace(/^\/+/, "");
+  const root = relativePath.split("/", 1)[0];
+  return publicRoots.has(root);
+}
+
 self.addEventListener("install", event => event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (
-    url.origin !== location.origin ||
-    url.pathname.startsWith("/api/") ||
-    url.pathname === "/usage-guard" ||
-    url.pathname.startsWith("/usage-guard/")
-  ) return;
+  if (!publicCacheTarget(url)) return;
   if (event.request.mode === "navigate" || url.pathname.endsWith("/changelog") || url.pathname.endsWith("/changelog.html")) {
     const network = fetch(event.request).then(async response => {
       if (response.ok) await (await caches.open(cacheName)).put(event.request, response.clone());
