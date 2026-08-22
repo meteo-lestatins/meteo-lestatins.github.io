@@ -876,6 +876,11 @@ button:hover { background: #eef7fb; }
 }
 
 @media (max-width: 600px) {
+  .section-api-links { gap: 4px; }
+  .section-api-links .source-link { padding: 3px 6px; font-size: 10px; line-height: 1.2; }
+  .section-api-links .source-link[data-source-status]::before { width: 5px; height: 5px; margin-right: 4px; box-shadow: 0 0 0 1px rgba(196, 59, 53, .12); }
+  .section-api-links .source-link[data-sync="ready"]::before { box-shadow: 0 0 0 1px rgba(63, 155, 88, .13); }
+  .section-api-links .source-link[data-sync="loading"]::before { box-shadow: 0 0 0 1px rgba(232, 154, 33, .14); }
   .now-value[data-mobile-label], .now-averse-period[data-mobile-label] { font-size: 0; }
   .now-value[data-mobile-label]::after { content: attr(data-mobile-label); font-size: 10px; }
   .now-averse-period[data-mobile-label] { margin-inline: 1px; padding-inline: 1px; }
