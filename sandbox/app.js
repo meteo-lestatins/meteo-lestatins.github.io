@@ -702,7 +702,7 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
 function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   const rain = kind === "rain";
   const eta = etaMinutes == null ? null : Number(etaMinutes);
-  if (!Number.isFinite(eta) || eta < 0) return rain ? "Pas de pluie prévue" : "Pas d’orage prévu";
+  if (!Number.isFinite(eta) || eta < 0) return rain ? "pas de pluie" : "pas d’orage";
   if (eta < 1) {
     if (!rain && Number(activeCount) > 0) {
       const count = Math.max(1, Math.round(Number(activeCount)));
@@ -4201,7 +4201,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + " · pluie " + relevantStormIntensity.rainLevel + "/5"
       + " · grêle " + relevantStormIntensity.hailLevel + "/5"
       + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
-    : "Pas d’orage prévu sur 3 h";
+    : "pas d’orage";
   const stormEtaSelection = nowcastStormEtaSelection(
     etaRainEvents,
     passageCandidates.map(candidate => candidate.cell.id),
