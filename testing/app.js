@@ -1354,7 +1354,7 @@ function conciseRainSummary(amount, probabilities, periods, showers = false, sto
     : rain < 5 ? "en faible quantité"
     : rain < 15 ? "en quantité modérée"
     : rain < 30 ? "en forte quantité" : "en très forte quantité";
-  const plural = showers;
+  const plural = showers && !storm;
   const likelihood = probability.kind === "unknown" && rain > 0 ? "" : plural ? {
     "Prévue": "", "Très probable": "très probables", "Probable": "probables", "Possible": "possibles", "Envisagée": "envisagées", "Peu probable": "peu probables", "Très peu probable": "très peu probables", "Incertain": "incertaines", "À confirmer": "à confirmer"
   }[probability.text] : {
@@ -2230,7 +2230,7 @@ function renderTestingDailyForecast() {
     const violentStorm = hasOpenMeteoStorm && Number(period.weatherCode) >= 96;
     const alertTone = violentStorm || gust >= 90 ? "red"
       : gust >= 65 ? "orange"
-      : hasStorm || gustStep > 3 ? "yellow" : "";
+      : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
     return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
@@ -2688,7 +2688,7 @@ async function ensureWeekForecast() {
     url.searchParams.set("wind_speed_unit", "kmh");
     // Keep one model over the whole forecast. Open-Meteo's automatic
     // best-match currently introduces artificial gust jumps at model seams.
-    url.searchParams.set("models", "ecmwf_ifs025");
+    url.searchParams.set("models", "ecmwf_ifs");
     url.searchParams.set("hourly", "temperature_2m,apparent_temperature,precipitation,rain,showers,precipitation_probability,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m");
     url.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,precipitation_probability_max,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset");
     const ensembleUrl = new URL("https://ensemble-api.open-meteo.com/v1/ensemble");
