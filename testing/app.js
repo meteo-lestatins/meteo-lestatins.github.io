@@ -1999,7 +1999,6 @@ function renderTestingDailyForecast() {
     const direction = Number.isFinite(Number(period.windDirection))
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
     const gust = Math.max(0, Number(period.windGustMax) || 0);
-    const stormDetail = period.storm ? '<div><dt>Orage</dt><dd>' + (Number(period.weatherCode) >= 96 ? 'Phénomène violent possible' : 'Possible sur la période') + '</dd></div>' : "";
     const hazard = [
       period.storm
         ? hazardPictogram("storm", (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()) : "",
@@ -2010,16 +2009,12 @@ function renderTestingDailyForecast() {
     const windStep = periodWindStep(Number(period.windSpeedMax) || 0);
     const gustStep = periodGustStep(gust);
     const stormStep = period.storm ? Math.max(3, weekStormRisk(period.time.slice(0, 10)).level) : 0;
-    const metrics = '<span class="daily-period-metrics">'
-      + periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %")
-      + periodMetricPictogram("rain", rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %")
-      + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h")
-      + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h")
-      + periodMetricPictogram("storm", stormStep, period.storm ? "Orage possible" : "Pas d’orage")
-      + '</span>';
+    const rainVolume = rain >= .1
+      ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(format(rain)) + ' millimètres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + format(rain) + ' mm</strong></span>'
+      : "";
     const notable = weatherDescription(period);
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
-    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-temperature">' + temperature + '</span>' + notableMarkup + metrics + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazard + '</span><span class="daily-period-values">' + temperature + rainVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>' + periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %") + '</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>' + periodMetricPictogram("rain", rainStep, "Pluie " + format(rain) + " mm · probabilité " + format(period.precipitationProbabilityMax, 0) + " %") + '</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>' + periodMetricPictogram("wind", windStep, "Vent " + format(period.windSpeedMax, 0) + " km/h") + '</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + format(gust, 0) + " km/h") + '</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div><div><dt>' + periodMetricPictogram("storm", stormStep, period.storm ? "Orage possible" : "Pas d’orage") + '</dt><dd>' + (period.storm ? (Number(period.weatherCode) >= 96 ? 'Phénomène violent possible' : 'Possible sur la période') : 'Non prévu') + '</dd></div></dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const cards = openMeteoDays.map(openMeteo => {
