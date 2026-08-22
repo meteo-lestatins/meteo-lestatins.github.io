@@ -151,6 +151,7 @@ function renderWeekApiLinks() {
   container.innerHTML = sourceLink("arome", "api-arpege", "ARPEGE")
     + sourceLink("ensemble", "api-pe-arpege", "PE-ARPEGE")
     + sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
+  container.hidden = true;
   refreshSourceIndicators();
 }
 
@@ -1479,6 +1480,30 @@ function normalizeOpenMeteoDays(daily, hourly) {
     const remainingRain = samples.reduce((sum, sample) => sum + sample.rain, 0);
     const remainingShowers = samples.reduce((sum, sample) => sum + sample.showers, 0);
     const remainingDirection = directions.length ? (Math.atan2(directions.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), directions.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
+    const periodSummary = periodKeys => {
+      const periodSamples = samples.filter(sample => periodKeys.includes(solarPeriod(sample, sunrise, sunset)));
+      if (!periodSamples.length) return null;
+      const values = key => finite(periodSamples, key);
+      const temperatures = values("temperature");
+      const clouds = values("cloudCover");
+      const winds = values("windSpeed");
+      const gusts = values("windGust");
+      const periodDirections = values("windDirection");
+      const direction = periodDirections.length ? (Math.atan2(periodDirections.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), periodDirections.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
+      return {
+        time: periodSamples[Math.floor(periodSamples.length / 2)]?.time || date + "T12:00",
+        weatherCode: representativeCode(periodSamples),
+        temperatureMin: temperatures.length ? Math.min(...temperatures) : null,
+        temperatureMax: temperatures.length ? Math.max(...temperatures) : null,
+        cloudCover: average(clouds),
+        precipitationSum: periodSamples.reduce((sum, sample) => sum + sample.precipitation, 0),
+        precipitationProbabilityMax: Math.max(...periodSamples.map(sample => sample.probability), 0),
+        windSpeedMax: winds.length ? Math.max(...winds) : null,
+        windGustMax: gusts.length ? Math.max(...gusts) : null,
+        windDirection: direction,
+        storm: periodSamples.some(sample => sample.weatherCode >= 95)
+      };
+    };
     return {
       date,
       time: date + "T12:00",
@@ -1512,7 +1537,11 @@ function normalizeOpenMeteoDays(daily, hourly) {
       sunset,
       rainPeriods: [...new Set(rainSamples.map(sample => sample.period))],
       windPeriod,
-      gustPeriod
+      gustPeriod,
+      periods: {
+        morning: periodSummary(["morning"]),
+        afternoon: periodSummary(["afternoon", "late_afternoon"])
+      }
     };
   }).filter(Boolean);
 }
@@ -1867,7 +1896,82 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
   };
 }
 
+function renderTestingDailyForecast() {
+  const target = $("week-forecast");
+  if (!target) return;
+  const format = (value, digits = 1) => value != null && Number.isFinite(Number(value))
+    ? Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits }) : "—";
+  const finite = values => values.filter(value => value != null && value !== "").map(Number).filter(Number.isFinite);
+  const mean = values => {
+    const valid = finite(values);
+    return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
+  };
+  const dateFromKey = dateKey => new Date(dateKey + "T12:00:00");
+  const relativeDayLabel = (day, index) => {
+    if (index === 0 && day.date === todayDateKey()) {
+      const start = day.forecastStart || weekForecastStartKey();
+      const hour = start.slice(11, 16).replace(":", "h").replace(/h00$/, "h");
+      return new Date(appNow()).getHours() < 12 ? "Aujourd’hui" : "Aujourd’hui, à partir de " + hour;
+    }
+    const todayNoon = dateFromKey(todayDateKey()).getTime();
+    const gap = Math.round((dateFromKey(day.date).getTime() - todayNoon) / 86400000);
+    if (gap === 1) return "Demain";
+    if (gap === 2) return "Après-demain";
+    return weekDayFormat.format(dateFromKey(day.date));
+  };
+  const weatherDescription = period => {
+    if (!period) return "Période terminée ou indisponible";
+    const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
+    const sky = cloud < 15 ? "Dégagé" : cloud < 40 ? "Peu nuageux" : cloud < 70 ? "Variable" : cloud < 90 ? "Nuageux" : "Couvert";
+    const rain = Math.max(0, Number(period.precipitationSum) || 0);
+    const probability = Math.max(0, Number(period.precipitationProbabilityMax) || 0);
+    const precipitation = rain >= .1 ? format(rain) + " mm" : probability >= 35 ? "Pluie possible" : "Sec";
+    return sky + " · " + (period.storm ? "Orage possible" : precipitation);
+  };
+  const periodCard = (period, label) => {
+    if (!period) return "";
+    const rain = Math.max(0, Number(period.precipitationSum) || 0);
+    const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
+    const icon = displayIcon({
+      time: period.time,
+      cloudCover: cloud,
+      rain: period.storm ? Math.max(.5, rain) : rain,
+      rainLevel: rainPictogramStep(rain)
+    });
+    const temperature = format(period.temperatureMin, 0) + "–" + format(period.temperatureMax, 0) + "°";
+    const direction = Number.isFinite(Number(period.windDirection))
+      ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
+    const stormDetail = period.storm ? '<div><dt>Orage</dt><dd>Possible sur la période</dd></div>' : "";
+    return '<details class="daily-period-card"><summary><span class="daily-period-title"><strong>' + label + '</strong><small>Voir les détails</small></span><span class="daily-period-icon weather-icon">' + icon + '</span><span class="daily-period-temperature">' + temperature + '</span><span class="daily-period-copy">' + escapeText(weatherDescription(period)) + '</span><span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl><div><dt>Ciel</dt><dd>' + format(cloud, 0) + ' %</dd></div><div><dt>Pluie</dt><dd>' + (rain > 0 && rain < .1 ? "&lt; 0,1" : format(rain)) + ' mm · ' + format(period.precipitationProbabilityMax, 0) + ' %</dd></div><div><dt>Vent</dt><dd>' + direction + format(period.windSpeedMax, 0) + ' km/h</dd></div><div><dt>Rafales</dt><dd>' + format(period.windGustMax, 0) + ' km/h</dd></div>' + stormDetail + '</dl></div></details>';
+  };
+  const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
+  const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
+  const cards = openMeteoDays.map((openMeteo, index) => {
+    const meteoFrance = meteoFranceByDate.get(openMeteo.date) || null;
+    const merged = {
+      ...openMeteo,
+      temperatureMin: mean([openMeteo.temperatureMin, meteoFrance?.temperatureMin]),
+      temperatureMax: mean([openMeteo.temperatureMax, meteoFrance?.temperatureMax]),
+      cloudCover: mean([openMeteo.cloudCoverMean ?? openMeteo.cloudCover, meteoFrance?.cloudCoverMean ?? meteoFrance?.cloudCover]),
+      precipitationSum: mean([openMeteo.precipitationSum, meteoFrance?.precipitationSum]),
+      precipitationProbabilityMax: mean([openMeteo.precipitationProbabilityMax, meteoFrance?.precipitationProbabilityMax]),
+      windSpeedMax: mean([openMeteo.windSpeedMax, meteoFrance?.windSpeedMax]),
+      windGustMax: mean([openMeteo.windGustMax, meteoFrance?.windGustMax])
+    };
+    const storm = Number(openMeteo.weatherCode) >= 95 || meteoFranceStormForDate(openMeteo.date);
+    const rain = Math.max(0, Number(merged.precipitationSum) || 0);
+    const icon = displayIcon({ time: openMeteo.time, cloudCover: merged.cloudCover, rain: storm ? Math.max(.5, rain) : rain, rainLevel: rainPictogramStep(rain) });
+    const periods = [periodCard(openMeteo.periods?.morning, "Matin"), periodCard(openMeteo.periods?.afternoon, "Après-midi")].filter(Boolean);
+    const summary = [conciseSkySummary(merged), conciseRainSummary(rain, [merged.precipitationProbabilityMax], openMeteo.rainPeriods, Number(openMeteo.showersSum) >= .1, storm), conciseWindSummary([merged.windSpeedMax], [merged.windGustMax], [], [], [openMeteo.windDirection])].filter(Boolean).join(" ");
+    return '<article class="daily-forecast-card"><header><div><h3>' + escapeText(relativeDayLabel(openMeteo, index)) + '</h3><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDateFormat.format(dateFromKey(openMeteo.date))) + '</time></div><span class="daily-synthesis-label">Synthèse</span></header><div class="daily-forecast-overview"><div class="daily-forecast-icon weather-icon">' + icon + '</div><div class="daily-forecast-temperatures"><span><small>Min.</small><b>' + format(merged.temperatureMin, 0) + '°</b></span><span><small>Max.</small><strong>' + format(merged.temperatureMax, 0) + '°</strong></span></div><p>' + escapeText(summary || "Prévision en cours de consolidation.") + '</p></div><div class="daily-period-grid' + (periods.length === 1 ? ' single' : '') + '">' + periods.join("") + '</div></article>';
+  }).join("");
+  target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Synthèse quotidienne sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
+  renderWeekApiLinks();
+}
+
 function renderWeekForecast() {
+  renderTestingDailyForecast();
+  return;
   const number = value => value != null && Number.isFinite(Number(value)) ? Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "—";
   const metricIcons = {
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
