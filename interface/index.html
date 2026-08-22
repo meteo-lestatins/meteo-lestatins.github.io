@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.basemaps.cartocdn.com; connect-src 'self' https://api.open-meteo.com https://ensemble-api.open-meteo.com https://nicolas.sindelar.fr; manifest-src 'self'; worker-src 'self'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8fafb">
+  <link rel="stylesheet" href="style.css?v=114">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <title>Interface · Météo les Tatins</title>
+</head>
+<body><span class="interface-badge" aria-label="Nouvelle interface en test">INTERFACE TEST</span>
+<main>
+  <header>
+    <div>
+      <h1>Météo les Tatins</h1>
+      <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="#nowcast-details" id="header-nowcast-link" aria-controls="nowcast-details" aria-expanded="false">nowcasting</a></p>
+    </div>
+    <div class="header-meta">
+      <a id="app-version" class="app-version" href="changelog" title="Consulter les changements des versions" hidden></a>
+    </div>
+  </header>
+  <section id="vigilance-alert" class="vigilance-alert" aria-live="polite" hidden></section>
+  <a id="news-alert" class="vigilance-alert news-alert" href="news/" aria-live="polite" hidden><span id="news-alert-message"></span><span class="news-alert-arrow" aria-hidden="true">→</span></a>
+  <section id="cell-approach-alert" class="vigilance-alert cell-approach-alert" aria-live="polite" hidden></section>
+  <section class="three-hour-overview" aria-labelledby="three-hour-title">
+    <div class="section-heading">
+      <h2 id="three-hour-title">Dans les 3 h</h2>
+      <div id="three-hour-api-links" class="section-api-links" aria-label="API de la synthèse sur 3 heures"></div>
+    </div>
+    <div id="three-hour-summary" class="three-hour-summary" aria-live="polite"></div>
+  </section>
+  <section id="panel-rain" class="rain-section three-hour-details" aria-label="Détails des prévisions sur 3 heures">
+    <div id="rain-details" class="three-hour-detail" hidden>
+      <div class="rain-section-heading">
+        <div class="rain-section-tools"><div id="rain-api-links" class="section-api-links" aria-label="Sources de la prévision de pluie"></div></div>
+      </div>
+      <div id="now-chart" class="now-chart"><div id="rain-bars" class="rain-bars"></div></div>
+      <div id="rain-axis" class="rain-axis" aria-label="Heures des précipitations"></div>
+    </div>
+    <div id="nowcast-details" class="three-hour-detail" hidden>
+      <div class="section-heading page-section-heading nowcast-heading"><h2><button id="nowcast-title-toggle" type="button" aria-controls="nowcast-details" aria-expanded="true">Nowcasting <span aria-hidden="true">⌃</span></button></h2><div id="nowcast-api-links" class="section-api-links" aria-label="API du nowcasting"></div></div>
+      <div id="radar-nowcast" class="radar-nowcast" aria-live="polite"></div>
+    </div>
+  </section>
+  <section id="panel-48h" class="forecast-section page-forecast-section" aria-labelledby="forecast-48h-title">
+    <div class="section-heading page-section-heading">
+      <h2 id="forecast-48h-title">Prévisions 48 h</h2>
+      <div id="forecast-api-links" class="section-api-links" aria-label="API des prévisions sur 48 heures"></div>
+    </div>
+    <div id="forecast-controls" class="forecast-controls" aria-label="Courbes affichées"></div>
+    <div class="forecast-horizontal-row"><div id="forecast-horizontal-scroll" class="forecast-horizontal-scroll" aria-label="Défilement commun des prévisions"><div id="forecast-horizontal-track"></div></div></div>
+    <div id="forecast-overview" class="forecast-overview" aria-label="Vue globale des prévisions"></div>
+    <div id="forecast-panels" class="forecast-panels" aria-live="polite"></div>
+  </section>
+  <section id="panel-week" class="week-section page-forecast-section" aria-labelledby="forecast-week-title">
+    <div class="section-heading page-section-heading">
+      <h2 id="forecast-week-title">Prévisions semaine</h2>
+      <div id="week-api-links" class="section-api-links week-tab-sources" aria-label="API des prévisions de la semaine"></div>
+    </div>
+    <div class="week-horizontal-row"><div id="week-horizontal-scroll" class="week-horizontal-scroll" aria-label="Défilement horizontal des prévisions de la semaine"><div id="week-horizontal-track"></div></div></div>
+    <div class="week-scroll" aria-label="Défilement des prévisions sur 7 jours">
+      <div id="week-forecast" class="week-forecast" aria-live="polite"><p class="week-loading">Chargement des prévisions hebdomadaires Open‑Meteo…</p></div>
+    </div>
+  </section>
+</main>
+<div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
+<script src="runtime-config.js?v=3.027"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="analytics.js?v=1"></script>
+<script src="app.js?v=175"></script>
+</body>
+</html>
