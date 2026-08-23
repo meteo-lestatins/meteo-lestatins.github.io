@@ -493,6 +493,24 @@ const vigilancePhenomenonIds = {
   "Vagues-submersion": 9
 };
 
+function vigilanceWarningWindow(alert) {
+  const hasTimeline = Array.isArray(alert?.timeline) && alert.timeline.length > 0;
+  const sourcePeriods = hasTimeline
+    ? alert.timeline.filter(period => Number(period.colorId) >= 2)
+    : Number(alert?.colorId) >= 2 ? [{ colorId: alert.colorId, start: alert.start, end: alert.end }] : [];
+  const periods = sourcePeriods.map(period => ({
+    ...period,
+    startTime: period.start ? new Date(period.start).getTime() : NaN,
+    endTime: period.end ? new Date(period.end).getTime() : NaN
+  })).filter(period => Number.isFinite(period.startTime) && Number.isFinite(period.endTime));
+  if (!periods.length) return null;
+  return {
+    colorId: Math.max(...periods.map(period => Number(period.colorId))),
+    start: periods.reduce((earliest, period) => period.startTime < earliest.startTime ? period : earliest).start,
+    end: periods.reduce((latest, period) => period.endTime > latest.endTime ? period : latest).end
+  };
+}
+
 function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
   const slotStart = new Date(dateKey + "T" + String(startHour).padStart(2, "0") + ":00:00").getTime();
   const slotEnd = new Date(dateKey + "T" + String(endHour).padStart(2, "0") + ":00:00").getTime();
@@ -534,10 +552,10 @@ function renderVigilance(vigilance) {
   const banner = $("vigilance-alert");
   const alerts = vigilance?.alerts || [];
   const now = Date.now();
-  const visibleAlerts = alerts.filter(alert => {
-    const end = alert.end ? new Date(alert.end).getTime() : Infinity;
-    return Number(alert.colorId) >= 2 && now < end;
-  });
+  const visibleAlerts = alerts.map(alert => {
+    const warningWindow = vigilanceWarningWindow(alert);
+    return warningWindow ? { ...alert, ...warningWindow } : null;
+  }).filter(alert => alert && now < new Date(alert.end).getTime());
   banner.hidden = visibleAlerts.length === 0;
   if (!visibleAlerts.length) {
     banner.innerHTML = "";
@@ -551,7 +569,9 @@ function renderVigilance(vigilance) {
     const phenomenon = alert.label === "Orages" ? "Orage" : alert.label;
     const title = "Vigilance " + level + " " + phenomenon;
     const period = alert.start ? "Du " + start + " au " + end : "En cours jusqu’au " + end;
-    return '<a class="vigilance-banner" data-level="' + level + '" href="https://vigilance.meteofrance.fr/fr/drome" target="_blank" rel="noreferrer" aria-label="' + escapeText(title + ". " + period + ". Ouvrir la vigilance Météo-France pour la Drôme") + '"><strong>' + escapeText(title) + '</strong><span>' + escapeText(period) + '</span><span class="vigilance-banner-arrow" aria-hidden="true">↗</span></a>';
+    const phenomenonId = Number(alert.id) || vigilancePhenomenonIds[alert.label] || 0;
+    const pictogram = phenomenonId ? '<span class="vigilance-banner-icon daily-vigilance-icon type-' + phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span>' : "";
+    return '<a class="vigilance-banner" data-level="' + level + '" href="https://vigilance.meteofrance.fr/fr/drome" target="_blank" rel="noreferrer" aria-label="' + escapeText(title + ". " + period + ". Ouvrir la vigilance Météo-France pour la Drôme") + '">' + pictogram + '<strong>' + escapeText(title) + '</strong><span>' + escapeText(period) + '</span><span class="vigilance-banner-arrow" aria-hidden="true">↗</span></a>';
   }).join("");
 }
 
