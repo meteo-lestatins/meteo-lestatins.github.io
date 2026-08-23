@@ -481,6 +481,55 @@ function open48HourWindForecast() {
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
 
+const vigilancePhenomenonIds = {
+  "Vent violent": 1,
+  "Pluie-inondation": 2,
+  Orages: 3,
+  Crues: 4,
+  "Neige-verglas": 5,
+  Canicule: 6,
+  "Grand froid": 7,
+  Avalanches: 8,
+  "Vagues-submersion": 9
+};
+
+function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
+  const slotStart = new Date(dateKey + "T" + String(startHour).padStart(2, "0") + ":00:00").getTime();
+  const slotEnd = new Date(dateKey + "T" + String(endHour).padStart(2, "0") + ":00:00").getTime();
+  if (!Number.isFinite(slotStart) || !Number.isFinite(slotEnd)) return [];
+  return (vigilance?.alerts || []).map(alert => {
+    const periods = (Array.isArray(alert.timeline) && alert.timeline.length
+      ? alert.timeline
+      : [{ colorId: alert.colorId, start: alert.start, end: alert.end }])
+      .filter(period => {
+        const start = new Date(period.start).getTime();
+        const end = new Date(period.end).getTime();
+        return Number(period.colorId) >= 2 && Number.isFinite(start) && Number.isFinite(end) && start < slotEnd && end > slotStart;
+      });
+    if (!periods.length) return null;
+    const strongest = periods.reduce((selected, period) => Number(period.colorId) > Number(selected.colorId) ? period : selected);
+    return {
+      phenomenonId: Number(alert.id) || vigilancePhenomenonIds[alert.label] || 0,
+      label: alert.label || "Phénomène",
+      colorId: Number(strongest.colorId),
+      start: strongest.start,
+      end: strongest.end
+    };
+  }).filter(alert => alert?.phenomenonId)
+    .sort((left, right) => right.colorId - left.colorId || left.phenomenonId - right.phenomenonId);
+}
+
+function vigilanceSlotIcons(alerts) {
+  if (!alerts.length) return "";
+  const levels = { 2: "jaune", 3: "orange", 4: "rouge" };
+  return '<span class="daily-vigilance-icons">' + alerts.map(alert => {
+    const level = levels[alert.colorId] || "jaune";
+    const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
+    const description = "Vigilance " + level + " " + alert.label + period;
+    return '<span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><i aria-hidden="true"></i></span>';
+  }).join("") + "</span>";
+}
+
 function renderVigilance(vigilance) {
   const banner = $("vigilance-alert");
   const alerts = vigilance?.alerts || [];
@@ -2219,7 +2268,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, meteoFranceStorm = false) => {
+  const periodCard = (period, label, meteoFranceStorm = false, vigilanceAlerts = []) => {
     if (!period) return "";
     const rain = Math.max(0, Number(period.precipitationSum) || 0);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
@@ -2284,7 +2333,7 @@ function renderTestingDailyForecast() {
       : gust >= 65 ? "orange"
       : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
-    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong></span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2293,7 +2342,12 @@ function renderTestingDailyForecast() {
     const afternoon = openMeteo.periods?.afternoon || null;
     const evening = openMeteo.periods?.evening || null;
     const meteoFranceStorm = meteoFranceStormForDate(openMeteo.date);
-    const periods = [periodCard(morning, "Matin", meteoFranceStorm), periodCard(afternoon, "Après-midi", meteoFranceStorm), periodCard(evening, "Soir", meteoFranceStorm)].filter(Boolean);
+    const vigilance = latestForecastData?.vigilance || null;
+    const periods = [
+      periodCard(morning, "Matin", meteoFranceStorm, vigilanceAlertsForSlot(vigilance, openMeteo.date, 6, 12)),
+      periodCard(afternoon, "Après-midi", meteoFranceStorm, vigilanceAlertsForSlot(vigilance, openMeteo.date, 12, 18)),
+      periodCard(evening, "Soir", meteoFranceStorm, vigilanceAlertsForSlot(vigilance, openMeteo.date, 18, 22))
+    ].filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
     const shortDate = shortDateFormat.format(dateFromKey(openMeteo.date));
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
@@ -5117,6 +5171,7 @@ function applyDashboardPayload(payload) {
     if (vigilanceStamp !== lastVigilanceStamp) {
       lastVigilanceStamp = vigilanceStamp;
       renderVigilance(data?.vigilance);
+      renderWeekForecast();
     }
     // Désactivé temporairement : ne plus afficher systématiquement sous la
     // vigilance le bandeau « Perturbation en approche ». La fonction est
