@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="echelle-kilometrique.css?v=8">
+  <link rel="stylesheet" href="echelle-kilometrique.css?v=9">
   <title>Météo les Tatins &gt; About</title>
 </head>
 <body>
@@ -15,7 +15,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.060</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.061</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -46,8 +46,8 @@
 <ul><li>API <code>DPVigilance/v1/cartevigilance/encours</code> au format JSON.</li><li>Les phénomènes, périodes et couleurs du département configuré sont extraits pour l’alerte affichée sur le site.</li></ul>
 <h3 id="api-eumetsat-li"><a href="https://data.eumetsat.int/product/EO%3AEUM%3ADAT%3A0691">EUMETSAT MTG Lightning Imager</a></h3>
 <ul><li>Collection utilisée : <code>EO:EUM:DAT:0691</code>.</li><li>Authentification OAuth 2.0 par <code>client_credentials</code>.</li><li>Le catalogue fournit le produit récent et son lien NetCDF4.</li><li>NetCDF4 reposant sur HDF5, le fichier est lu avec <code>h5wasm</code>.</li><li>Les éclairs sont filtrés dans un rayon local, puis convertis en distance et position par rapport aux Tatins.</li><li>Ces observations corroborent l’activité électrique des cellules suivies par le radar.</li></ul>
-<h3 id="api-open-meteo"><a href="https://open-meteo.com/en/docs">Open-Meteo</a></h3>
-<ul><li>API JSON sans clé.</li><li>Données demandées : température, précipitations, probabilité de pluie, code météo, nébulosité, vent, rafales, lever et coucher du soleil.</li><li>Les codes météo 95 à 99 fournissent le signal orageux Open-Meteo utilisé dans les frises et la synthèse.</li><li>Le repère saisonnier des températures est une table locale générée à partir de la réanalyse ERA5-Land 1991–2020 : chaque heure prévue est comparée à la médiane de la même heure dans une fenêtre climatologique de 15 jours.</li><li>Pas de temps utilisés : 15 minutes, horaire et quotidien.</li><li>Fuseau demandé : <code>Europe/Paris</code>.</li><li>Cette source sert de comparaison et de repli.</li></ul>
+<h3 id="api-open-meteo"><a href="https://open-meteo.com/en/docs/ecmwf-api">Open-Meteo · ECMWF IFS HRES</a></h3>
+<ul><li>API JSON sans clé.</li><li>Pour la prévision quotidienne et la frise 48 h, le modèle demandé est <strong>ECMWF IFS HRES</strong>, sur sa maille native d’environ <strong>9 × 9 km</strong>, afin de conserver un même scénario homogène.</li><li>Le modèle est actualisé toutes les 6 heures. Sa résolution temporelle native est horaire jusqu’à 90 heures, puis de 3 heures jusqu’à 144 heures et de 6 heures ensuite ; Open-Meteo interpole ces échéances pour fournir la série horaire utilisée par l’interface.</li><li>Données demandées : température, précipitations, probabilité de pluie, code météo, nébulosité, vent, rafales, lever et coucher du soleil.</li><li>Les codes météo 95 à 99 fournissent le signal orageux Open-Meteo utilisé dans les frises et la synthèse.</li><li>Les quatre premiers jours sont corroborés avec la prévision Météo-France ARPEGE ; IFS HRES reste la source homogène jusqu’au huitième jour.</li><li>Le repère saisonnier des températures est une table locale générée à partir de la réanalyse ERA5-Land 1991–2020 : chaque heure prévue est comparée à la médiane de la même heure dans une fenêtre climatologique de 15 jours.</li><li>Fuseau demandé : <code>Europe/Paris</code>.</li><li>Le choix IFS HRES concerne la prévision quotidienne et la frise 48 h.</li></ul>
 <h3>Cache et fréquence d’actualisation</h3>
 <div class="technical-table-scroll"><table><thead><tr><th>Donnée</th><th>Durée cible du cache serveur</th></tr></thead><tbody><tr><td>PIAF</td><td>4 min</td></tr><tr><td>Radar</td><td>4 min</td></tr><tr><td>Radar polarimétrique PAM</td><td>cycle de 5 min, uniquement lors d’une activité significative</td></tr><tr><td>Foudre EUMETSAT</td><td>5 min</td></tr><tr><td>AROME</td><td>60 min</td></tr><tr><td>PE-AROME, probabilités</td><td>3 h</td></tr><tr><td>PE-AROME, ensemble</td><td>6 h</td></tr><tr><td>Vigilance</td><td>30 min</td></tr><tr><td>Open-Meteo</td><td>30 min</td></tr><tr><td>ARPEGE et PE-ARPEGE</td><td>6 h</td></tr></tbody></table></div>
 <p>Lorsqu’une actualisation échoue ou reste trop incomplète, la dernière acquisition complète est conservée et continue d’être servie, même après l’expiration de sa durée cible, jusqu’à ce qu’un remplacement exploitable soit disponible.</p>
@@ -105,14 +105,21 @@
 </section>
 <section class="technical-chapter">
 <h2>Prévision semaine</h2>
-<h3>Agrégation des périodes</h3>
-<p>Pour une période choisie, les températures minimale et maximale sont prises sur tous les pas concernés, la pluie est cumulée et la nébulosité est moyennée. Pour la journée en cours, seules les heures restant à prévoir sont utilisées ; une journée complète utilise les agrégats quotidiens du modèle. Le vent et les rafales retiennent leurs maxima sur la période. Dans la synthèse entre sources, ces valeurs sont moyennées entre modèles et la direction utilise une moyenne circulaire, afin que 350° et 10° donnent 0° plutôt que 180°.</p>
+<p>La vue présente les <strong>sept prochains jours</strong> sous forme de cartes disposées sur trois colonnes, puis deux et une lorsque la largeur disponible diminue. Chaque journée est directement découpée en trois créneaux : <strong>matin de 6 h à 12 h</strong>, <strong>après-midi de 12 h à 18 h</strong> et <strong>soir de 18 h à 22 h</strong>.</p>
+<h3>Sources et horizon</h3>
+<ul><li><strong>ECMWF IFS HRES</strong>, obtenu par Open-Meteo, fournit le scénario horaire homogène utilisé pour les pictogrammes, températures, précipitations, nébulosité, vent, rafales et codes météo des sept cartes affichées. Huit jours sont demandés à l’API pour garantir cette fenêtre malgré le changement de journée.</li><li><strong>ARPEGE Météo-France</strong> corrobore les échéances disponibles, notamment les températures, la pluie, les nuages, le vent, les rafales et le signal convectif des quatre premiers jours.</li><li><strong>DWD ICON-EPS</strong> fournit, via l’API d’ensemble Open-Meteo, les dispersions de température, précipitations et vent utilisées pour estimer l’incertitude lorsque la comparaison Météo-France n’est pas encore exploitable.</li></ul>
+<p>La journée en cours est recalculée au fil du temps. Les valeurs principales de chaque créneau sont agrégées sur ses heures : minimum et maximum de température, cumul de précipitations, probabilité maximale, nébulosité moyenne, vent et rafales maximaux, avec une direction moyenne circulaire.</p>
+<h3>Lecture des cartes</h3>
+<p>Le pictogramme principal conserve les différents degrés d’ensoleillement, de couverture nuageuse et de précipitations. L’éclair est solidaire du nuage à droite lorsqu’un orage est prévu ; le symbole de vent est centré sur le nuage et n’apparaît en surcouche qu’en cas de rafales fortes. Un cumul d’au moins 0,1 mm est indiqué par une goutte à côté des températures ; les rafales les plus marquées sont affichées au même endroit.</p>
+<p>Le texte replié ne mentionne que les phénomènes particuliers : pluie significative, orage ou fortes rafales. Une coloration jaune, orange ou rouge reste réservée aux créneaux qui le justifient, avec une intensité volontairement sobre.</p>
+<p>Aujourd’hui et Demain donnent accès à la frise 48 h ECMWF IFS HRES 9 km fournie par Open-Meteo, avec toutes les courbes visibles. Un second clic la replie ; Demain positionne la frise à 7 h. Le bouton graphique des rafales ouvre la même frise sur les courbes de vent.</p>
+<h3>Détail d’un créneau</h3>
+<p>Un clic sur Matin, Après-midi ou Soir développe verticalement les indicateurs complets : nébulosité, pluie ou averses, vent et rafales, puis orage. Chaque ligne associe un pictogramme à une graduation sur cinq, une valeur utile et un commentaire concis. La ligne Orage est <strong>toujours présente</strong>, y compris avec 0/5 et « Pas d’orage ». Un seul créneau peut être ouvert à la fois.</p>
+<h3>Confiance générale</h3>
+<p>Le rond placé dans le bandeau de chaque journée résume la confiance générale par une couleur verte, jaune, orange ou rouge. Au survol ou au clavier, trois lignes sur cinq détaillent séparément la <strong>convergence des modèles</strong>, l’<strong>évolution des prévisions</strong> et la <strong>confiance</strong>.</p>
+<p>Lorsque les données ARPEGE sont disponibles, le score privilégie l’accord ECMWF–ARPEGE et tient aussi compte de la stabilité des ensembles et de l’évolution récente. Un désaccord important sur la pluie ou l’orage limite volontairement le niveau affiché. Sinon, la dispersion ICON-EPS sert d’indication d’incertitude.</p>
 <h3>Risque orageux semaine</h3>
-<p>La graduation repose sur les deux signaux orageux prévisionnels disponibles, Open-Meteo et Météo-France. AROME fournit le signal jusqu’à 48 heures, puis ARPEGE prolonge l’analyse convective sur la prévision semaine Météo-France.</p>
-<p>Dans la vue d’un <strong>modèle individuel</strong>, l’échéance n’intervient pas. Un signal resté stable dans les prévisions récentes vaut <strong>5/5</strong>. Chaque changement récent retire un point, sans jamais descendre sous <strong>3/5</strong>. En l’absence d’un historique suffisant, le niveau reste également à <strong>3/5</strong>.</p>
-<p>La <strong>synthèse</strong> conserve une graduation distincte fondée sur le nombre de sources, l’échéance et la stabilité :</p>
-<div class="technical-table-scroll"><table><thead><tr><th>Échéance du jour concerné</th><th>Une source</th><th>Deux sources</th></tr></thead><tbody><tr><td>De 3 à 6 jours</td><td>1/5</td><td>3/5</td></tr><tr><td>À deux jours</td><td>2/5</td><td>4/5</td></tr><tr><td>Aujourd’hui ou demain</td><td>3/5</td><td>5/5</td></tr></tbody></table></div>
-<p>L’historique récent des prévisions module ensuite la convergence de la synthèse : un changement du signal orage retire un point et des apparitions ou disparitions répétées en retirent deux. Dans les vues propres à chaque source, l’éclair matérialise directement son signal. Dans la synthèse 48 h, il est affiché dès que le risque hebdomadaire atteint 3/5.</p>
+<p>La graduation repose sur les deux signaux orageux prévisionnels disponibles, <strong>Open-Meteo ECMWF IFS HRES</strong> et Météo-France. La ligne Orage croise les codes 95 à 99 d’ECMWF IFS HRES avec le signal convectif Météo-France. Sans signal, elle reste à 0/5. Avec un signal, le niveau dépend de la proximité de l’échéance, de l’accord entre les sources et des apparitions ou disparitions observées dans les prévisions récentes. Les détails précisent toujours la ou les sources à l’origine du signal ; un code 96 à 99 est qualifié de phénomène violent possible.</p>
 </section>
 <section class="technical-chapter">
 <h2>Techniques / Sécurité / Confidentialité</h2>
@@ -126,6 +133,6 @@
   <script src="runtime-config.js"></script>
   <script src="analytics.js?v=1"></script>
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="echelle-kilometrique.js?v=13"></script>
+  <script src="echelle-kilometrique.js?v=14"></script>
 </body>
 </html>
