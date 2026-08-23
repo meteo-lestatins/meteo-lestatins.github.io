@@ -85,6 +85,16 @@ button:hover { background: #eef7fb; }
 .forecast-tab-panel[hidden] { display: none; }
 .vigilance-alert { margin: 16px 28px 0; padding: 0; overflow: hidden; border: 1px solid #cdd9df; border-radius: 8px; color: #243443; background: #fff; }
 .vigilance-alert[hidden] { display: none; }
+.vigilance-alert:has(.vigilance-banner) { display: grid; gap: 8px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
+.vigilance-banner { min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 10px 16px; border: 1px solid rgba(36, 52, 67, .28); border-radius: 8px; color: #252000; font-size: 14px; line-height: 1.35; text-decoration: none; box-shadow: 0 2px 8px rgba(34, 58, 70, .08); }
+.vigilance-banner strong { font-weight: 850; }
+.vigilance-banner span { font-weight: 700; }
+.vigilance-banner-arrow { margin-left: auto; font-size: 18px; line-height: 1; }
+.vigilance-banner[data-level="jaune"] { background: #f7cf31; }
+.vigilance-banner[data-level="orange"] { color: #2a1800; background: #f58b20; }
+.vigilance-banner[data-level="rouge"] { color: #fff; background: #bd2525; }
+.vigilance-banner:hover, .vigilance-banner:focus-visible { filter: brightness(.96); }
+.vigilance-banner:focus-visible { outline: 3px solid #1688bf; outline-offset: 2px; }
 .news-alert { min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 10px 16px; color: #243443; font-size: 14px; font-weight: 800; line-height: 1.35; text-decoration: none; box-shadow: 0 2px 8px rgba(34, 58, 70, .08); }
 .news-alert:hover, .news-alert:focus-visible { color: #126f98; border-color: #9ebdcb; background: #fafdff; }
 .news-alert-arrow { margin-left: auto; color: #397a9e; font-size: 20px; line-height: 1; }

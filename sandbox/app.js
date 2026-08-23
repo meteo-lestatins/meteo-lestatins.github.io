@@ -485,32 +485,25 @@ function renderVigilance(vigilance) {
   const banner = $("vigilance-alert");
   const alerts = vigilance?.alerts || [];
   const now = Date.now();
-  const visibleAlerts = alerts.filter(alert => Number(alert.colorId) >= 2);
-  const activeAlerts = visibleAlerts.filter(alert => !alert.start || new Date(alert.start).getTime() <= now && (!alert.end || now < new Date(alert.end).getTime()));
-  const upcomingAlerts = visibleAlerts.filter(alert => alert.start && new Date(alert.start).getTime() > now);
-  const hasParticularVigilance = activeAlerts.length > 0 || upcomingAlerts.length > 0;
-  banner.hidden = !hasParticularVigilance;
-  if (!hasParticularVigilance) {
+  const visibleAlerts = alerts.filter(alert => {
+    const end = alert.end ? new Date(alert.end).getTime() : Infinity;
+    return Number(alert.colorId) >= 2 && now < end;
+  });
+  banner.hidden = visibleAlerts.length === 0;
+  if (!visibleAlerts.length) {
     banner.innerHTML = "";
-    banner.removeAttribute("data-level");
     return;
   }
-  const highest = Math.max(1, ...activeAlerts.map(alert => Number(alert.colorId) || 2));
-  banner.dataset.level = highest >= 4 ? "red" : highest >= 3 ? "orange" : highest >= 2 ? "yellow" : "green";
-  const level = highest >= 4 ? "rouge" : highest >= 3 ? "orange" : highest >= 2 ? "jaune" : "green";
-  const detail = alert => {
+  banner.innerHTML = visibleAlerts.map(alert => {
+    const colorId = Number(alert.colorId);
+    const level = colorId >= 4 ? "rouge" : colorId >= 3 ? "orange" : "jaune";
     const start = alert.start ? dateTimeFormat.format(new Date(alert.start)) : "en cours";
-    const end = alert.end ? dateTimeFormat.format(new Date(alert.end)) : "non précisée";
-    const timeline = (alert.timeline || []).filter(item => item.start && item.end);
-    const totalDuration = Math.max(1, ...timeline.map(item => Math.max(1, new Date(item.end) - new Date(item.start))));
-    const bar = timeline.length ? '<div class="vigilance-timeline" aria-label="Chronologie de ' + escapeText(alert.label) + '">' + timeline.map(item => '<span class="timeline-segment ' + escapeText(item.color) + '" style="flex-grow:' + (Math.max(1, new Date(item.end) - new Date(item.start)) / totalDuration).toFixed(3) + '" title="' + escapeText(item.color) + '"></span>').join("") + '</div>' : '';
-    return '<li data-alert-level="' + escapeText(alert.color) + '"><strong>' + escapeText(alert.label) + '</strong><span>Du ' + escapeText(start) + ' au ' + escapeText(end) + '</span>' + bar + '</li>';
-  };
-  const commentary = activeAlerts.map(alert => alert.commentary).find(Boolean);
-  const activeMarkup = activeAlerts.length ? '<ul class="vigilance-details">' + activeAlerts.map(detail).join("") + '</ul>' : '';
-  const upcomingMarkup = upcomingAlerts.length ? '<section class="vigilance-upcoming"><strong>Vigilance à venir</strong><ul class="vigilance-details">' + upcomingAlerts.map(detail).join("") + '</ul></section>' : '';
-  const title = activeAlerts.length ? 'Vigilance ' + level + ' en cours' : 'Pas de vigilance particulière';
-  banner.innerHTML = '<details class="vigilance-disclosure"><summary><span class="vigilance-summary-title">' + title + '</span><span class="vigilance-summary-place">Drôme (26)</span><span class="vigilance-chevron" aria-hidden="true">⌄</span></summary><div class="vigilance-content"><div class="vigilance-title"><strong>' + title + '</strong><span>Drôme (26)</span></div>' + activeMarkup + upcomingMarkup + (commentary ? '<p>' + escapeText(commentary) + '</p>' : '') + '<a href="https://vigilance.meteofrance.fr/" target="_blank" rel="noreferrer">Voir le bulletin Météo-France ↗</a></div></details>';
+    const end = alert.end ? dateTimeFormat.format(new Date(alert.end)) : "durée non précisée";
+    const phenomenon = alert.label === "Orages" ? "Orage" : alert.label;
+    const title = "Vigilance " + level + " " + phenomenon;
+    const period = alert.start ? "Du " + start + " au " + end : "En cours jusqu’au " + end;
+    return '<a class="vigilance-banner" data-level="' + level + '" href="https://vigilance.meteofrance.fr/fr/drome" target="_blank" rel="noreferrer" aria-label="' + escapeText(title + ". " + period + ". Ouvrir la vigilance Météo-France pour la Drôme") + '"><strong>' + escapeText(title) + '</strong><span>' + escapeText(period) + '</span><span class="vigilance-banner-arrow" aria-hidden="true">↗</span></a>';
+  }).join("");
 }
 
 const eclipsePeak = new Date("2026-08-12T20:23:00+02:00").getTime();
