@@ -123,7 +123,7 @@ button:hover { background: #eef7fb; }
 .vigilance-details strong { font-size: 16px; }
 .vigilance-details span, .vigilance-alert p { font-size: 13px; line-height: 1.45; }
 .vigilance-alert p { max-width: 960px; margin: 16px 0 0; }
-.vigilance-alert a { display: inline-block; margin-top: 14px; color: inherit; font-size: 13px; font-weight: 800; }
+.vigilance-content a { display: inline-block; margin-top: 14px; color: inherit; font-size: 13px; font-weight: 800; }
 .vigilance-upcoming { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(0,0,0,.22); }
 .vigilance-upcoming > strong { font-size: 14px; }
 .vigilance-upcoming .vigilance-details { margin-top: 9px; }
