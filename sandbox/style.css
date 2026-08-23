@@ -87,8 +87,8 @@ button:hover { background: #eef7fb; }
 .vigilance-alert[hidden] { display: none; }
 .vigilance-alert:has(.vigilance-banner) { display: grid; gap: 8px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .vigilance-banner { min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 10px 16px; border: 1px solid rgba(36, 52, 67, .28); border-radius: 8px; color: #252000; font-size: 14px; line-height: 1.35; text-decoration: none; box-shadow: 0 2px 8px rgba(34, 58, 70, .08); }
-.vigilance-banner strong { font-weight: 850; }
-.vigilance-banner span { font-weight: 700; }
+.vigilance-banner strong { font-size: 14px; font-weight: 850; text-transform: uppercase; }
+.vigilance-banner span { font-size: 13px; font-weight: 700; }
 .vigilance-banner-arrow { margin-left: auto; font-size: 18px; line-height: 1; }
 .vigilance-banner[data-level="jaune"] { background: #f7cf31; }
 .vigilance-banner[data-level="orange"] { color: #2a1800; background: #f58b20; }
