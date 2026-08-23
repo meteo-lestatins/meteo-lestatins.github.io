@@ -33,7 +33,7 @@
     </g>
     <g transform="translate(55 425)">
       <rect class="box source" width="205" height="82" rx="14"/>
-      <text class="node-title" x="102.5" y="49" text-anchor="middle">Open-Meteo</text>
+      <text class="node-title" x="102.5" y="31" text-anchor="middle">Open-Meteo</text><text class="node-label" x="102.5" y="50" text-anchor="middle">ECMWF IFS HRES</text><text class="node-label" x="102.5" y="67" text-anchor="middle">≈ 9 km</text>
     </g>
   </g>
 
