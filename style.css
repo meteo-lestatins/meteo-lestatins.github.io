@@ -909,7 +909,7 @@ button:hover { background: #eef7fb; }
 .now-cell-overlay:hover .now-cell-overlay-fill { filter: saturate(1.12); }
 .now-cell-overlay:focus-visible { outline: 2px solid #1686b5; outline-offset: -2px; }
 .now-no-rain-period { grid-column: 1 / -1; grid-row: 1; align-self: center; justify-self: center; z-index: 3; padding: 4px 9px; border-radius: 999px; color: #607784; background: rgba(247, 250, 252, .92); font-size: 11px; font-weight: 750; pointer-events: none; }
-.now-bar { width: 100%; min-height: 0; border-radius: 2px 2px 0 0; background: transparent; }
+.now-bar { position: absolute; right: 0; bottom: 0; left: 0; width: 100%; min-height: 0; border-radius: 2px 2px 0 0; background: transparent; }
 .now-bar.active { background: #2b91c6; }
 .now-slice.radar-adjusted .now-bar.active { background: linear-gradient(180deg, #1c79a8, #2b91c6); box-shadow: inset 1px 0 rgba(255, 255, 255, .22); }
 .now-slice.trace .now-bar.active { background: rgba(43,145,198,.3); box-shadow: none; }
