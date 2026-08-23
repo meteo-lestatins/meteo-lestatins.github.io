@@ -866,8 +866,17 @@ function shortTermRainTrend(values, sourceDetail = "PIAF") {
 function stormRiskIntensityStep(riskLevel, intensityLevel) {
   const risk = Math.max(0, Math.min(5, Math.round(Number(riskLevel) || 0)));
   const intensity = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  if (!risk || !intensity) return risk;
-  return Math.max(1, Math.min(5, Math.round(Math.sqrt(risk * intensity))));
+  const combined = Math.max(risk, intensity);
+  return intensity >= 5 ? 5 : Math.min(4, combined);
+}
+
+function stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) {
+  const rain = Math.max(0, Math.min(5, Math.round(Number(rainLevel) || 0)));
+  const hail = Math.max(0, Math.min(5, Math.round(Number(hailLevel) || 0)));
+  const lightning = Math.max(0, Math.min(5, Math.round(Number(lightningLevel) || 0)));
+  const additionalHazard = Math.max(hail, lightning);
+  if (rain >= 5 && additionalHazard > 0) return 5;
+  return Math.max(Math.min(4, rain), additionalHazard);
 }
 
 function rainRateFromAccumulation(amount, durationMilliseconds) {
@@ -4142,8 +4151,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const mapHailRisk = polarimetricHailRisk(cell);
     const hailLevel = mapHailRisk == null ? 0 : mapProbabilityStep(mapHailRisk);
     const lightningLevel = mapFlashCountStep(mapFlashesNearCell(cell));
-    const weightedIntensityLevel = rainLevel * .4 + hailLevel * .3 + lightningLevel * .3;
-    const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
+    const cellIntensityLevel = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
     const linkLength = Math.max(1, Math.hypot(tatinsX - cellX, tatinsY - cellY));
     const linkX = (tatinsX - cellX) / linkLength;
     const linkY = (tatinsY - cellY) / linkLength;
@@ -4504,9 +4512,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const rainLevel = rainSynthesisStep(intenseRainRisk, rain);
     const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
     const lightningLevel = lightningIntensityStep(flashes);
-    const availableWeight = hailRisk == null ? .7 : 1;
-    const weightedLevel = (rainLevel * .4 + hailLevel * .3 + lightningLevel * .3) / availableWeight;
-    const level = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedLevel))) : 0;
+    const level = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
     return { cell, passage, rain, intenseRainRisk, hailRisk, flashes, rainLevel, hailLevel, lightningLevel, level };
   };
   // La cellule retenue porte l'indicateur unique risque + intensité. À
@@ -4662,9 +4668,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
     const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
     const lightningLevel = flashCountStep(flashes);
-    const availableWeight = hailRisk == null ? .7 : 1;
-    const weightedIntensityLevel = (rainLevel * .4 + hailLevel * .3 + lightningLevel * .3) / availableWeight;
-    const cellIntensityLevel = rainLevel || hailLevel || lightningLevel ? Math.max(1, Math.min(5, Math.round(weightedIntensityLevel))) : 0;
+    const cellIntensityLevel = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
     const hazards = hazardMetric("hail", riskTone(hailRisk), hailLabel, hailPictogram)
       + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""), rainPictogram)
       + (window.METEO_REPLAY ? "" : hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram));
