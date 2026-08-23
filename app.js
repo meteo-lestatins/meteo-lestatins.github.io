@@ -2863,12 +2863,43 @@ function piafItemEndTime(piaf, item) {
   return Number.isFinite(runTime) && Number.isFinite(seconds) ? runTime + seconds * 1000 : NaN;
 }
 
-function piafQuarterHourRain(piaf) {
+function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null) {
+  const values = sourceValues || piaf?.values || [];
+  const events = etaEvents || nowcastEtaRainEvents(radar);
+  return values.map(item => {
+    const intervalEnd = piafItemEndTime(piaf, item);
+    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
+    const intervalStart = Number.isFinite(explicitStart) && explicitStart < intervalEnd
+      ? explicitStart
+      : intervalEnd - 5 * 60000;
+    const basePrecipitation = Math.max(0, Number(item.precipitation) || 0);
+    const radarAdjustedPrecipitation = Math.max(basePrecipitation, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
+    const etaPrecipitation = Number.isFinite(intervalStart) && Number.isFinite(intervalEnd)
+      ? nowcastEtaRainAmount(events, intervalStart, intervalEnd)
+      : 0;
+    // L'extrapolation radar au point et le profil de la cellule décrivent la
+    // même pluie. On conserve la plus forte estimation au lieu de les sommer.
+    const totalPrecipitation = Math.max(basePrecipitation, radarAdjustedPrecipitation, etaPrecipitation);
+    return {
+      ...item,
+      intervalStart,
+      intervalEnd,
+      basePrecipitation,
+      radarAdjustedPrecipitation,
+      etaPrecipitation,
+      totalPrecipitation,
+      effectiveRadarAmendment: Math.max(0, radarAdjustedPrecipitation - basePrecipitation),
+      effectiveEtaAmendment: Math.max(0, totalPrecipitation - radarAdjustedPrecipitation)
+    };
+  });
+}
+
+function piafQuarterHourRain(piaf, radar = null) {
   const runTime = piafRunTime(piaf);
   const fiveMinutes = 5 * 60000;
   const quarterHour = 15 * 60000;
   const buckets = new Map();
-  for (const item of piaf.values || []) {
+  for (const item of piafRainSteps(piaf, radar)) {
     const endTime = piafItemEndTime(piaf, item);
     if (!Number.isFinite(endTime) || !Number.isFinite(Number(item.precipitation))) continue;
     const bucketEnd = (Math.floor((endTime - 1) / quarterHour) + 1) * quarterHour;
@@ -2888,8 +2919,13 @@ function piafQuarterHourRain(piaf) {
       endTime: bucketEnd,
       seconds: Number.isFinite(runTime) ? (intervalEnd - runTime) / 1000 : Number(items.at(-1).seconds),
       precipitation: sum("precipitation"),
-      nowcastPrecipitation: has("nowcastPrecipitation") ? sum("nowcastPrecipitation") : undefined,
+      nowcastPrecipitation: sum("totalPrecipitation"),
       radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
+      radarAdjustedPrecipitation: sum("radarAdjustedPrecipitation"),
+      etaPrecipitation: sum("etaPrecipitation"),
+      effectiveRadarAmendment: sum("effectiveRadarAmendment"),
+      effectiveEtaAmendment: sum("effectiveEtaAmendment"),
+      totalPrecipitation: sum("totalPrecipitation"),
       radarCellOverPoint: items.some(item => item.radarCellOverPoint),
       probability: has("probability") ? Math.max(...items.filter(item => Number.isFinite(Number(item.probability))).map(item => Number(item.probability))) : null,
       intervalStart,
@@ -2904,30 +2940,28 @@ function piafHourlyRain(piaf, radar = null) {
   const hour = 60 * 60000;
   const etaEvents = nowcastEtaRainEvents(radar);
   const buckets = new Map();
-  for (const item of piaf.values || []) {
-    const endTime = piafItemEndTime(piaf, item);
-    const basePrecipitation = Math.max(0, Number(item.precipitation) || 0);
-    const adjustedPrecipitation = Math.max(basePrecipitation, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
+  for (const item of piafRainSteps(piaf, radar, piaf?.values || [], etaEvents)) {
+    const endTime = item.intervalEnd;
     if (!Number.isFinite(endTime)) continue;
     // Un pas terminé exactement à H:00 appartient à l'heure précédente.
     const hourStart = Math.floor((endTime - 1) / hour) * hour;
     if (!buckets.has(hourStart)) buckets.set(hourStart, []);
-    buckets.get(hourStart).push({ ...item, endTime, basePrecipitation, adjustedPrecipitation });
+    buckets.get(hourStart).push({ ...item, endTime });
   }
   return new Map([...buckets.entries()].sort(([left], [right]) => left - right).map(([hourStart, items]) => {
     items.sort((left, right) => left.endTime - right.endTime);
     const intervalStart = items[0].endTime - fiveMinutes;
     const intervalEnd = items.at(-1).endTime;
     const basePiaf = Math.round(items.reduce((total, item) => total + item.basePrecipitation, 0) * 100) / 100;
-    const radarAdjusted = Math.round(items.reduce((total, item) => total + item.adjustedPrecipitation, 0) * 100) / 100;
-    const directRadarAmendment = Math.max(0, Math.round((radarAdjusted - basePiaf) * 100) / 100);
+    const directRadarAmendment = Math.round(items.reduce((total, item) => total + item.effectiveRadarAmendment, 0) * 100) / 100;
+    const etaAmendment = Math.round(items.reduce((total, item) => total + item.effectiveEtaAmendment, 0) * 100) / 100;
+    const totalRain = Math.round(items.reduce((total, item) => total + item.totalPrecipitation, 0) * 100) / 100;
     const hourEvents = etaEvents.filter(event => event.eventEnd > hourStart && event.eventStart < hourStart + hour);
-    const etaAmendment = nowcastEtaRainAmount(hourEvents, hourStart, hourStart + hour);
     const nowcastAmendment = Math.round((directRadarAmendment + etaAmendment) * 100) / 100;
     const etaPassage = hourEvents.length ? Math.max(...hourEvents.map(event => Number(event.passage) || 0)) : null;
     const radarCellOverPoint = items.some(item => item.radarCellOverPoint);
     return [hourStart, {
-      rain: Math.round((basePiaf + nowcastAmendment) * 100) / 100,
+      rain: totalRain,
       rainBasePiaf: basePiaf,
       rainNowcastAmendment: nowcastAmendment,
       rainDirectRadarAmendment: directRadarAmendment,
@@ -4290,13 +4324,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   };
   const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
   const now = appNow();
-  const piafRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.precipitation) || 0)), 0) * 10) / 10;
-  const radarAdjustedRainAmount = Math.round(threeHours.reduce((sum, item) => sum + (Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0)), 0) * 10) / 10;
-  const directRadarRainAmendment = Math.max(0, Math.round((radarAdjustedRainAmount - piafRainAmount) * 10) / 10);
   const etaRainEvents = nowcastEtaRainEvents(radar);
-  const etaRainAmendment = nowcastEtaRainAmount(etaRainEvents, now, now + 3 * 3600000);
+  const threeHourRainSteps = piafRainSteps(piaf, radar, threeHours, etaRainEvents);
+  const piafRainAmount = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.basePrecipitation, 0) * 10) / 10;
+  const directRadarRainAmendment = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.effectiveRadarAmendment, 0) * 10) / 10;
+  const etaRainAmendment = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.effectiveEtaAmendment, 0) * 10) / 10;
   const nowcastRainAmendment = Math.round((directRadarRainAmendment + etaRainAmendment) * 10) / 10;
-  const rainAmount = Math.round((piafRainAmount + nowcastRainAmendment) * 10) / 10;
+  const rainAmount = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.totalPrecipitation, 0) * 10) / 10;
   const upcomingWind = (arome?.hours || []).filter(item => {
     const time = new Date(item.time).getTime();
     return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
@@ -4509,17 +4543,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && currentObservation - previousObservation <= 45 * 60000
       ? cellPassageSnapshot
       : null;
-  const rainTrendSteps = threeHours.map(item => {
-    const intervalEnd = piafItemEndTime(piaf, item);
-    const etaRain = Number.isFinite(intervalEnd)
-      ? nowcastEtaRainAmount(etaRainEvents, intervalEnd - 5 * 60000, intervalEnd)
-      : 0;
-    return {
-      seconds: item.seconds,
-      precipitation: Math.max(0, Number(item.nowcastPrecipitation ?? item.precipitation) || 0) + etaRain,
-      etaRain
-    };
-  });
+  const rainTrendSteps = threeHourRainSteps.map(item => ({
+    seconds: item.seconds,
+    precipitation: item.totalPrecipitation,
+    etaRain: item.effectiveEtaAmendment
+  }));
   const rainTrendUsesEta = rainTrendSteps.slice(0, 12).some(item => item.etaRain > 0);
   const rainTrendUsesRadar = threeHours.slice(0, 12).some(item => item.radarCellOverPoint);
   const rainTrendSource = rainTrendUsesEta
@@ -4816,25 +4844,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : rainArrival
     ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
     : null;
-  const piafPeakRainIntensity = Math.max(0, ...threeHours.map((item, index) => {
-    const intervalEnd = Number(item.intervalEnd ?? item.rainIntervalEnd);
-    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
-    const itemEnd = Number.isFinite(intervalEnd) ? intervalEnd : piafItemEndTime(piaf, item);
-    const previousEnd = index > 0 ? piafItemEndTime(piaf, threeHours[index - 1]) : NaN;
-    const intervalStart = Number.isFinite(explicitStart) && explicitStart < itemEnd
-      ? explicitStart
-      : Number.isFinite(previousEnd) && previousEnd < itemEnd ? previousEnd : itemEnd - 5 * 60000;
-    return rainRateFromAccumulation(item.nowcastPrecipitation ?? item.precipitation, itemEnd - intervalStart);
-  }));
-  const etaPeakRainIntensity = Math.max(0, ...etaRainEvents.flatMap(event => {
-    const profile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
-    return profile.length
-      ? profile.map(segment => Math.max(0, Number(segment.intensity) || 0))
-      : [Math.max(0, Number(event.conditionalIntensity ?? event.maximum) || 0)];
-  }));
+  // L'indicateur et la frise doivent raconter la même chose. Un pixel très
+  // intense qui ne coupe le point que quelques secondes ne doit plus produire
+  // 3/5 tandis que son pas de cinq minutes reste presque nul.
+  const projectedPeakRainIntensity = Math.max(0, ...threeHourRainSteps.map(item =>
+    rainRateFromAccumulation(item.totalPrecipitation, item.intervalEnd - item.intervalStart)
+  ));
   const peakRainIntensity = Math.max(
-    piafPeakRainIntensity,
-    etaPeakRainIntensity,
+    projectedPeakRainIntensity,
     freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
   );
   const rainColorLevel = rainIntensityStep(peakRainIntensity);
@@ -4964,7 +4981,7 @@ function renderPiaf(piaf, radar = null) {
   piafBaseTime.setMilliseconds(0);
   // PIAF arrive toutes les 5 minutes. La frise publique regroupe trois pas
   // afin de présenter des cumuls exacts de 15 minutes issus du même run.
-  const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf);
+  const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf, radar);
   const slotTimes = values.map(item => item.slotTime || (isTimedForecast ? new Date(item.time) : new Date(piafBaseTime.getTime() + item.seconds * 1000)));
   const precipitationFor = item => Number(item.nowcastPrecipitation ?? item.precipitation) || 0;
   const slotIntervalFor = (item, index) => {
@@ -5037,13 +5054,12 @@ function renderPiaf(piaf, radar = null) {
   const cellPeriods = values.map((item, index) => {
     const entries = cellEtaSlots.get(index) || [];
     entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
-    const etaRain = Math.round(entries.reduce((total, entry) => total + Math.max(0, Number(entry.etaRain) || 0), 0) * 100) / 100;
     const basePiaf = Math.max(0, Number(item.precipitation) || 0);
-    const radarAdjusted = Math.max(basePiaf, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
-    const radarAmendment = Math.round(Math.max(0, radarAdjusted - basePiaf) * 100) / 100;
+    const radarAmendment = Math.round(Math.max(0, Number(item.effectiveRadarAmendment) || 0) * 100) / 100;
+    const etaRain = Math.round(Math.max(0, Number(item.effectiveEtaAmendment) || 0) * 100) / 100;
     const nowcastAmendment = Math.round((radarAmendment + etaRain) * 100) / 100;
     if (nowcastAmendment <= 0) return '';
-    const totalRain = Math.round((basePiaf + nowcastAmendment) * 100) / 100;
+    const totalRain = Math.round(Math.max(basePiaf, Number(item.totalPrecipitation) || 0) * 100) / 100;
     const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
     const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
     const totalHeight = Math.min(100, Math.max(3, totalRain / fullScaleRain * 100));

@@ -897,8 +897,8 @@ button:hover { background: #eef7fb; }
 .no-storm { grid-column: 1 / -1; }
 .no-storm strong { color: #113d57; font-size: 17px; }
 .now-chart { height: 160px; margin: 0 28px; position: relative; border-top: 1px solid #d7d7d7; border-bottom: 2px solid #8397a3; background: linear-gradient(to top, #f7fafc, #fff); }
-.rain-bars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(36, minmax(0, 1fr)); align-items: stretch; column-gap: 1px; }
-.now-slice { min-width: 0; position: relative; display: flex; align-items: flex-end; }
+.rain-bars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(36, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); align-items: stretch; column-gap: 1px; }
+.now-slice { min-width: 0; height: 100%; position: relative; display: flex; align-items: flex-end; }
 .now-value { position: absolute; left: 50%; z-index: 2; transform: translateX(-50%); color: #59656c; font-size: 8px; font-weight: 750; white-space: nowrap; }
 .now-value { bottom: 3px; }
 .now-slice.averse-risk .now-value { bottom: 26px; z-index: 4; }
