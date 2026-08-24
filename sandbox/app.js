@@ -1043,6 +1043,16 @@ function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0) {
     .replace(/^(\d+) orages?/, (_, count) => count + " " + (Number(count) > 1 ? plural : singular.toLowerCase()));
 }
 
+function shortTermGustLabel(intensityLevel) {
+  const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
+  return level >= 5 ? "Rafales violentes"
+    : level >= 4 ? "Rafales très fortes"
+    : level >= 3 ? "Rafales fortes"
+    : level >= 2 ? "Rafales modérées"
+    : level >= 1 ? "Rafales faibles"
+    : "Pas de rafales";
+}
+
 function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
   const allowedIds = new Set(candidateCellIds || []);
   const candidates = (events || []).filter(event => {
@@ -5273,10 +5283,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
   const gustLevel = maximumGust <= 0 ? 0 : maximumGust < 35 ? 1 : maximumGust < 55 ? 2 : maximumGust < 75 ? 3 : maximumGust < 100 ? 4 : 5;
   const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
+  const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: hailArrivalLabel || stormEtaLabel, duration: stormDurationLabel, etaDetail: hailArrivalDetail || stormEtaDetail })
-    + summaryAction('gust', 'max ' + maximumGust + ' km/h', gustLevel, gustDetail, windTrend, 'wind48', null, null, gustColorLevel)
+    + summaryAction('gust', gustValue, gustLevel, gustDetail, windTrend, 'wind48', null, null, gustColorLevel)
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
