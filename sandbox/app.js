@@ -5331,11 +5331,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : stormForecastSourceCount > 0 || orangeVigilanceActive
         ? "Orage possible"
         : "pas d’orage";
-  const stormDurationText = hasStormEta && relevantStormDurationBeyondHorizon
-    ? "Durée plus de 3 h"
-    : hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
-      ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
-      : "";
+  const stormDurationText = hasStormEta && !relevantStormDurationBeyondHorizon
+    && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
+    ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
+    : "";
   const stormUpcomingText = stormEtaSelection.upcomingCount > 1
     ? stormEtaSelection.upcomingCount + " cellules à venir"
     : "";
