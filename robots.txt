@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /sandbox/
+Disallow: /testing/
 
 Sitemap: https://meteo-lestatins.github.io/sitemap.xml
