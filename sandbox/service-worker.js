@@ -1,4 +1,4 @@
-const cacheName = "meteo-sandbox-b20260824021411835";
+const cacheName = "meteo-sandbox-b20260824023227104";
 const shell = ["/sandbox/about.html", "/sandbox/architecture.svg", "/sandbox/echelle-kilometrique.css?v=9", "/sandbox/echelle-kilometrique.js?v=14", "/sandbox/runtime-config.js?v=3.076", "/sandbox/changelog.html", "/sandbox/", "/sandbox/index.html", "/sandbox/style.css?v=152", "/sandbox/app.js?v=205", "/sandbox/analytics.js?v=1", "/sandbox/manifest.webmanifest", "/sandbox/vendor/meteo-france-vigilance-sprites.png", "/sandbox/contact/", "/sandbox/contact/index.html", "/sandbox/contact/contact.css?v=4", "/sandbox/contact/contact.js?v=1", "/sandbox/news/", "/sandbox/news/index.html", "/sandbox/news/news.css?v=2", "/sandbox/news/markdown.js?v=1", "/sandbox/news/news.js?v=3"];
 const publicRoots = new Set(["", "index.html", "style.css", "app.js", "analytics.js", "manifest.webmanifest", "runtime-config.js", "about.html", "architecture.svg", "echelle-kilometrique.css", "echelle-kilometrique.js", "changelog", "changelog.html", "contact", "data", "news", "evenements", "evenements.html", "nowcasting-replay.html", "vendor"]);
 

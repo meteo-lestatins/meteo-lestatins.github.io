@@ -1756,6 +1756,18 @@ function normalizeOpenMeteoDays(daily, hourly) {
       })).filter(item => Number.isFinite(item.temperature) && item.normal);
       const temperatureAnomalies = temperatureReferences.map(item => item.temperature - item.normal.median);
       const direction = periodDirections.length ? (Math.atan2(periodDirections.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), periodDirections.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
+      const timedRain = periodSamples.map(sample => ({
+        hour: Number(sample.time.slice(11, 13)) + .5,
+        amount: Math.max(0, Number(sample.precipitation) || 0)
+      })).filter(sample => sample.amount >= possibleDrizzleThreshold);
+      const timedRainTotal = timedRain.reduce((sum, sample) => sum + sample.amount, 0);
+      const weightedRainHour = timedRainTotal > 0
+        ? timedRain.reduce((sum, sample) => sum + sample.hour * sample.amount, 0) / timedRainTotal
+        : null;
+      const rainTiming = weightedRainHour == null ? null
+        : weightedRainHour < slot.startHour + (slot.endHour - slot.startHour) / 3 ? "start"
+        : weightedRainHour >= slot.startHour + (slot.endHour - slot.startHour) * 2 / 3 ? "end"
+        : "middle";
       return {
         time: periodSamples[Math.floor(periodSamples.length / 2)]?.time || date + "T12:00",
         weatherCode: representativeCode(periodSamples),
@@ -1767,6 +1779,7 @@ function normalizeOpenMeteoDays(daily, hourly) {
         windSpeedMax: winds.length ? Math.max(...winds) : null,
         windGustMax: gusts.length ? Math.max(...gusts) : null,
         windDirection: direction,
+        rainTiming,
         storm: periodSamples.some(sample => sample.weatherCode >= 95),
         temperatureNormal: average(temperatureReferences.map(item => item.normal.median)),
         temperatureAnomaly: average(temperatureAnomalies),
@@ -2332,7 +2345,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
+  const periodCard = (period, label, slot, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
     if (!period) return "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2346,6 +2359,7 @@ function renderTestingDailyForecast() {
       Math.max(0, Number(period.precipitationProbabilityMax) || 0),
       Math.max(0, Number(meteoFranceRain?.probability) || 0)
     );
+    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax, meteoFranceRain?.probability]);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
     const hasOpenMeteoStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
     const hasMeteoFranceStorm = Boolean(meteoFranceStorm);
@@ -2385,13 +2399,47 @@ function renderTestingDailyForecast() {
       : "";
     const notable = weatherDescription({ ...period, precipitationSum: rain, precipitationProbabilityMax: rainProbability, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
-    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax, meteoFranceRain?.probability]);
     const showers = (Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82) || hasStorm;
     const skyDescription = conciseSkySummary(cloud);
-    const rainModelDetail = rainDisagreement
-      ? " Cumuls selon les modèles : Open-Meteo " + rainAmountText(openMeteoRain) + " mm, Météo-France " + rainAmountText(meteoFranceRainAmount) + " mm."
-      : "";
-    const rainDescription = (conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.") + rainModelDetail;
+    const quantityBand = value => value < 1 ? "très faible" : value < 5 ? "faible" : value < 15 ? "modérée" : value < 30 ? "forte" : "très forte";
+    const lowQuantity = quantityBand(rainLow);
+    const highQuantity = quantityBand(rain);
+    const quantitySummary = rainLow <= 0
+      ? "en quantité " + highQuantity + " au maximum"
+      : "en quantité " + lowQuantity + (lowQuantity === highQuantity ? "" : " à " + highQuantity);
+    const periodNoun = slot.key === "morning" ? "matinée" : slot.key === "afternoon" ? "après-midi" : slot.key === "evening" ? "soirée" : "nuit";
+    const timingSummary = period.rainTiming === "start" ? "en début de " + periodNoun
+      : period.rainTiming === "middle" ? "au milieu de " + periodNoun
+      : period.rainTiming === "end" ? "en fin de " + periodNoun : "";
+    const pluralRain = showers && !hasStorm;
+    const likelihood = (pluralRain ? {
+      "Prévue": "",
+      "Très probable": " très probables",
+      "Probable": " probables",
+      "Possible": " possibles",
+      "Envisagée": " envisagées",
+      "Peu probable": " peu probables",
+      "Très peu probable": " très peu probables",
+      "Incertain": " incertaines",
+      "À confirmer": " à confirmer"
+    } : {
+      "Prévue": "",
+      "Très probable": " très probable",
+      "Probable": " probable",
+      "Possible": " possible",
+      "Envisagée": " envisagée",
+      "Peu probable": " peu probable",
+      "Très peu probable": " très peu probable",
+      "Incertain": " incertaine",
+      "À confirmer": " à confirmer"
+    })[probabilitySummary.text] ?? "";
+    const rainSubject = hasStorm ? "Pluie orageuse" : pluralRain ? "Averses" : "Pluie";
+    const disagreementSummary = rainSubject + likelihood + (timingSummary ? " " + timingSummary + "," : "") + " " + quantitySummary + ".";
+    // La synthèse reste qualitative. Les valeurs exactes restent dans le
+    // pictogramme et son détail accessible.
+    const rainDescription = rainDisagreement
+      ? disagreementSummary
+      : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary([period.windSpeedMax], [gust], [], [], [period.windDirection]);
     const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %"), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
@@ -2426,6 +2474,7 @@ function renderTestingDailyForecast() {
     const periods = forecastDailySlots.map(slot => periodCard(
       openMeteo.periods?.[slot.key] || null,
       slotLabel(slot),
+      slot,
       meteoFranceStormForPeriod(openMeteo.date, slot),
       vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
       meteoFranceRainForPeriod(openMeteo.date, slot)
