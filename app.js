@@ -5055,7 +5055,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, nowcastCellRepresentativeRain(cell, radar.currentPrecipitation)) : 0;
     const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""));
     const hailLabel = "Grêle : " + polarimetricHailLabel(cell);
-    const hailPictogram = nowcastMetricPictogram("hail", hailRisk == null ? 0 : probabilityStep(hailRisk), hailLabel);
+    const hailPictogram = nowcastMetricPictogram("hail", hailRisk == null ? 0 : probabilityStep(hailRisk), hailLabel, true, hailRisk != null);
     const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
     const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
     const lightningLevel = flashCountStep(flashes);
