@@ -304,7 +304,7 @@ button:hover { background: #eef7fb; }
 .daily-vigilance-badge[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-badge[data-level="orange"] { background: #f58b20; }
 .daily-vigilance-badge[data-level="rouge"] { color: #fff; background: #bd2525; }
-.daily-vigilance-badge > strong { color: inherit; font-size: 8px; font-weight: 900; letter-spacing: .02em; }
+.daily-vigilance-badge > strong { color: inherit; font-size: 9px; font-weight: 900; letter-spacing: .02em; }
 .daily-vigilance-badge .daily-vigilance-icon { width: 24px; height: 24px; flex-basis: 24px; border: 0; border-radius: 0; box-shadow: none; }
 .daily-vigilance-icon { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; overflow: hidden; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); }
 .daily-vigilance-icon[data-level="jaune"] { background: #f7cf31; }
