@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://nicolas.sindelar.fr; form-action 'self'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique des versions · Météo les Tatins</title><style>:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424;background:#fff}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#fff}.site-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 28px 12px;border-bottom:1px solid #d4d4d4}.site-header h1{margin:0;font-size:38px;line-height:1;letter-spacing:-.03em}.site-header h1 a{color:#242424;text-decoration:none}.header-subtitle{margin:7px 0 0;color:#e99512;font-size:15px;font-weight:850;letter-spacing:.02em}.header-subtitle a{color:inherit;text-underline-offset:3px}.app-version{margin-top:45px;color:#8a969c;font-size:10px;font-weight:700;line-height:1;text-decoration:none}.changelog-main{padding:22px 28px;overflow:auto}.changelog-main pre{width:max-content;min-width:100%;margin:0;white-space:pre;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}@media(max-width:760px){.site-header{padding:16px 16px 10px}.site-header h1{font-size:31px}.header-subtitle{margin-bottom:10px;font-size:10px}.app-version{margin-top:38px}.changelog-main{padding:16px}}</style><script src="runtime-config.js?v=3.085" defer></script><script src="analytics.js?v=1" defer></script></head><body><header class="site-header"><div><h1><a href="index.html">Météo les Tatins</a></h1><p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p></div><a class="app-version" href="changelog.html">v3.085</a></header><main class="changelog-main"><pre>09/08/2026 22:30 — v1.001 — Mise en ligne, premiers tests.
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://nicolas.sindelar.fr; form-action 'self'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique des versions · Météo les Tatins</title><style>:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424;background:#fff}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#fff}.site-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 28px 12px;border-bottom:1px solid #d4d4d4}.site-header h1{margin:0;font-size:38px;line-height:1;letter-spacing:-.03em}.site-header h1 a{color:#242424;text-decoration:none}.header-subtitle{margin:7px 0 0;color:#e99512;font-size:15px;font-weight:850;letter-spacing:.02em}.header-subtitle a{color:inherit;text-underline-offset:3px}.app-version{margin-top:45px;color:#8a969c;font-size:10px;font-weight:700;line-height:1;text-decoration:none}.changelog-main{padding:22px 28px;overflow:auto}.changelog-main pre{width:max-content;min-width:100%;margin:0;white-space:pre;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}@media(max-width:760px){.site-header{padding:16px 16px 10px}.site-header h1{font-size:31px}.header-subtitle{margin-bottom:10px;font-size:10px}.app-version{margin-top:38px}.changelog-main{padding:16px}}</style><script src="runtime-config.js?v=3.086" defer></script><script src="analytics.js?v=1" defer></script></head><body><header class="site-header"><div><h1><a href="index.html">Météo les Tatins</a></h1><p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p></div><a class="app-version" href="changelog.html">v3.086</a></header><main class="changelog-main"><pre>09/08/2026 22:30 — v1.001 — Mise en ligne, premiers tests.
 09/08/2026 22:40 — v1.002 — Première version : prévisions, radar, foudre, administration, caches et outils de lancement.
 09/08/2026 23:10 — v1.003 — Configuration
 09/08/2026 23:45 — v1.004 — Ajout des scripts de déploiement et mise en place de l'administration.
@@ -307,57 +307,58 @@
 22/08/2026 11:54 — v3.029 — Températures quotidiennes comparées aux normales horaires locales 1991–2020.
 22/08/2026 12:11 — v3.030 — Cartes quotidiennes alignées et épurées, avec priorité aux orages et vents forts par créneau.
 22/08/2026 12:50 — v3.031 — Sources API masquées et températures qualifiées sans référence climatologique visible.
-22/08/2026 13:02 — v3.032 — Cartes quotidiennes de largeur uniforme, sans qualificatif thermique visible et avec signaux orage et vent cumulables.
-22/08/2026 14:58 — v3.033 — Prévisions quotidiennes découpées en matin, après-midi et soir, avec synthèse cohérente et températures maximales mises en avant.
-22/08/2026 15:38 — v3.034 — Journées sur trois colonnes et trois lignes verticales, sans synthèse supérieure, avec pictogrammes et indices météo sur 5.
-22/08/2026 16:03 — v3.035 — Grille quotidienne maintenue sur trois colonnes, cumuls de pluie visibles, détails météo indexés sur 5 et encadrés à trois heures empilés sur smartphone.
-22/08/2026 16:25 — v3.036 — Confiance générale colorée par journée et détails de créneau alignés sur les synthèses météo de sandbox et main.
-22/08/2026 16:49 — v3.037 — Confiance générale en un point avec détail graphique au survol et panneaux météo déployés latéralement par créneau.
-22/08/2026 17:04 — v3.038 — Signaux orage et rafales séparés du pictogramme météo, empilés dans une colonne dédiée avant les températures.
-22/08/2026 17:10 — v3.039 — Détails de créneau redéployés verticalement, avec ligne orage explicite, niveau sur 5 et commentaire des sources.
-22/08/2026 17:21 — v3.040 — Clic sur Aujourd’hui ou Demain pour ouvrir la frise 48 h et la positionner sur la journée choisie.
-22/08/2026 17:34 — v3.041 — Ligne orage toujours visible avec niveau sur 5 et signal Météo-France, averses orageuses marquées d’un +, pictogrammes d’alerte replacés sur l’icône météo et détails mieux séparés.
-22/08/2026 17:49 — v3.042 — Frise horaire titrée par sa plage de dates, repliable depuis son titre et positionnée à 7 h lors de l’ouverture depuis Demain.
-22/08/2026 18:29 — v3.043 — Pictogrammes météo dynamiques avec vent centré et éclair superposé, grille responsive sur trois, deux puis une colonne, accès graphique à la frise, repli complet et séparation de détail agrandie.
-22/08/2026 18:48 — v3.044 — Pictogrammes quotidiens agrandis avec vent affiné, accès graphiques uniformisés dont rafales vers la frise 48 h centrée sur le vent, et chargement allégé pour les faibles débits.
-22/08/2026 19:11 — v3.045 — Pictogrammes quotidiens doublés, éclair replacé comme sur Main, vent centré sur le nuage, tendances conservées, accès graphique à droite avec repli au second clic, rafales stabilisées, alertes de créneau sobres et chargement allégé sur connexion ou PC lent.
-22/08/2026 22:02 — v3.046 — Textes des créneaux agrandis, rafales supérieures à 3/5 affichées après le cumul de pluie et alertes affinées en jaune dès 50 km/h puis orange dès 65 km/h.
-22/08/2026 22:23 — v3.047 — Jaune des créneaux orageux rendu nettement visible et absence de cumul reformulée en « sans cumul défini ».
-22/08/2026 22:35 — v3.048 — Prévision quotidienne Testing passée à ECMWF IFS HRES 9 km, avec modèle et résolution documentés dans About.
-22/08/2026 22:39 — v3.049 — Accord singulier rétabli pour la pluie orageuse et jaune réservé aux orages précisément positionnés ou aux rafales supérieures à 3/5.
-22/08/2026 22:40 — v3.050 — Couleurs d’alerte harmonisées entre les créneaux quotidiens et la synthèse 3 h, avec jaune plus transparent, orange renforcé et bandes latérales supprimées.
-22/08/2026 22:46 — v3.051 — Section Prévision semaine de l’About Testing réécrite pour documenter les créneaux, sources, détails, alertes, frise et indicateur de confiance.
-22/08/2026 22:53 — v3.052 — Frise 48 h alignée sur Open-Meteo ECMWF IFS HRES 9 km, ouverture d’Aujourd’hui ou Demain avec toutes les courbes et navigation des pages d’information harmonisée.
-22/08/2026 23:09 — v3.053 — Pointe terminale retirée du pictogramme des frises afin de ne plus suggérer une tendance, carte Aujourd’hui corrigée à 23 h, prévisions quotidiennes affichées plus rapidement et créneaux fixés à 6–12 h, 12–18 h et 18–22 h sans traiter la nuit.
-22/08/2026 23:41 — v3.054 — Replay Testing enrichi de messages pluie, orage et grêle avec heure d’arrivée, durée, annulation et défilement vertical dans les trois encadrés existants.
-22/08/2026 23:57 — v3.055 — Feuille de style du replay privé chargée indépendamment de Leaflet afin de restaurer son interface complète après déploiement serveur.
-23/08/2026 00:33 — v3.056 — Messages pluie du replay fondés sur les projections radar au point sans déduction par simple ETA, annulations confirmées sur deux images et transition verticale progressive vers le passage suivant avec durées centrées.
-23/08/2026 01:27 — v3.057 — Replay Testing réaligné sur les archives radar : ETA et distances absentes distinguées de zéro, orages proches signalés sans horaire inventé, cumuls pluie corrigés, annulations raréfiées et transitions verticales visibles entre états.
-23/08/2026 01:39 — v3.058 — Cellules orageuses proches qualifiées en possible ou probable selon leur risque de passage, avec apport de proximité limité à 3/5 même au plus près.
-23/08/2026 01:43 — v3.059 — Orages proches sans ETA résumés uniquement par leur distance et passages disparus reformulés en pluie ou orage requalifié.
-23/08/2026 01:55 — v3.060 — Grêle calculée uniquement par polarisation PAM avec arrivée projetée par cellule, ETA et absence d’évaluation explicitée ; analyse PAM limitée à 50 % de charge CPU, messages 3 h maintenus en transition verticale et présentation mobile harmonisée.
-23/08/2026 02:20 — v3.061 — About Sandbox aligné sur Testing avec ECMWF IFS HRES, sa maille 9 km et le schéma d’architecture actualisé ; lignes des créneaux hebdomadaires réduites d’un tiers sans modifier la typographie.
-23/08/2026 03:17 — v3.062 — Durées orageuses du replay fondées sur la traversée réelle au point ciblé, avec maintien de 180+min pour les passages réellement longs ; cumuls, intensités et hauteurs des barres de pluie rendus cohérents entre replay, Sandbox et Main sans double comptage radar.
-23/08/2026 03:37 — v3.063 — Qualification « Orage violent » du replay alignée sur l’indicateur visible : autorisée à 4/5 et 5/5, jamais à 3/5.
-23/08/2026 03:40 — v3.064 — Intensité orage calculée en « et/ou » : pluie extrême plafonnée à 4/5 seule, niveau 5/5 avec grêle ou éclairs.
-23/08/2026 03:58 — v3.065 — About actualisé avec le calcul orage en « et/ou », la qualification des niveaux et les durées fondées sur la traversée radar réelle.
-23/08/2026 04:05 — v3.066 — Barres de cumul du replay ancrées explicitement au bas de la frise afin que leur hauteur reflète les valeurs élevées archivées.
-23/08/2026 04:11 — v3.067 — Passages pluie et orage disparus signalés comme requalifiés après deux images, y compris pendant un passage ou lorsqu’un autre phénomène reste prévu.
-23/08/2026 04:16 — v3.068 — Qualification « orage violent » du replay fondée sur l’intensité détaillée pluie, grêle et foudre, jamais sur la seule probabilité de passage.
-23/08/2026 04:28 — v3.069 — Politique de sécurité du replay alignée sur son rendu dynamique afin de restituer les hauteurs réelles des cumuls et projections sur la frise.
-23/08/2026 07:22 — v3.070 — Vigilances futures affichées dans des bandeaux distincts jaune, orange ou rouge, avec période et accès direct à la page Météo-France de la Drôme.
-23/08/2026 07:30 — v3.071 — Présentation des bandeaux de vigilance réalignée sur la typographie et la hiérarchie visuelle de l’interface.
-23/08/2026 07:34 — v3.072 — Espacement rétabli entre l’intitulé et la période des vigilances, avec flèche d’accès alignée à droite.
-23/08/2026 07:53 — v3.073 — Pictogrammes officiels des vigilances Météo-France ajoutés aux créneaux concernés des prévisions quotidiennes, sans modifier leur fond.
-23/08/2026 08:04 — v3.074 — Période du bandeau de vigilance limitée aux seuls segments jaune, orange ou rouge de la chronologie Météo-France.
-23/08/2026 08:09 — v3.075 — Pictogramme du phénomène ajouté au début de chaque bandeau de vigilance pour rendre son lien plus immédiatement identifiable.
-24/08/2026 01:57 — v3.076 — Chaque journée enchaîne Matin, Après-midi, Soir puis Nuit vers le lendemain, avec synthèse qualitative, cumuls Open-Meteo et Météo-France réservés au pictogramme, horaires orageux raccordés à la frise 48 h et écarts entre modèles visibles.
-24/08/2026 02:45 — v3.077 — La frise 48 h s’ouvre désormais sur Météo-France sans se recentrer lors des actualisations, les détails ouverts restent en place, les nuits gardent leur transition de dates au survol, les vigilances de créneau affichent VIGILANCE avant leur pictogramme dans un badge coloré et le cône de probabilité nowcasting gagne légèrement en intensité.
-24/08/2026 02:57 — v3.078 — Prévisions semaine fiabilisées, vigilances explicites et cône nowcasting renforcé.
-24/08/2026 03:12 — v3.079 — Couleur des créneaux calculée séparément de la vigilance à partir des orages, rafales, probabilités et cumuls centraux sur 3 et 6 heures.
-24/08/2026 03:20 — v3.080 — Les pluies ordinaires et leur seule probabilité ne colorent plus les créneaux ; les niveaux jaune, orange et rouge sont réservés aux phénomènes significatifs à violents.
-24/08/2026 03:24 — v3.081 — Les couleurs Attention, Sérieux et Alerte reposent sur des scénarios Open-Meteo et Météo-France séparés, le vent moyen comme les rafales, des seuils progressifs et la concomitance pluie-orage-vent ; le libellé VIGILANCE est aussi plus lisible.
-24/08/2026 03:52 — v3.082 — About précise le sens commun des couleurs météo entre prévision semaine et orage-nowcasting : jaune Attention, orange Sérieux et rouge Alerte grave, indépendamment de la confiance et de la vigilance officielle.
-24/08/2026 03:56 — v3.083 — L’orange et le rouge orage-nowcasting exigent désormais un impact local à la fois probable et intense ; About documente ce croisement et les quatre créneaux de prévision incluant la nuit.
-24/08/2026 04:02 — v3.084 — Le bloc Détails techniques des API de la page About est désormais replié par défaut et s’ouvre à la demande.
-24/08/2026 04:12 — v3.085 — Seul le chapitre Détails techniques des API est replié dans About ; les sections Nowcasting, Prévision semaine et Techniques restent visibles en dessous.</pre></main></body></html>
+22/08/2026 13:02 — v3.032 — Cartes quotidiennes uniformisées et signaux orage/vent cumulables.
+22/08/2026 14:58 — v3.033 — Prévisions découpées en matin, après-midi et soir.
+22/08/2026 15:38 — v3.034 — Prévisions en trois colonnes avec indices météo sur 5.
+22/08/2026 16:03 — v3.035 — Cumuls visibles et synthèses 3 h améliorées sur mobile.
+22/08/2026 16:25 — v3.036 — Confiance colorée par journée et détails harmonisés.
+22/08/2026 16:49 — v3.037 — Confiance résumée par un point et détails latéraux.
+22/08/2026 17:04 — v3.038 — Signaux orage et rafales séparés du pictogramme principal.
+22/08/2026 17:10 — v3.039 — Détails verticaux avec ligne orage et niveau sur 5.
+22/08/2026 17:21 — v3.040 — Aujourd’hui et Demain ouvrent la frise 48 h au jour choisi.
+22/08/2026 17:34 — v3.041 — Ligne orage permanente et pictogrammes d’alerte clarifiés.
+22/08/2026 17:49 — v3.042 — Frise 48 h repliable, datée et centrée à 7 h pour Demain.
+22/08/2026 18:29 — v3.043 — Pictogrammes dynamiques et grille responsive.
+22/08/2026 18:48 — v3.044 — Pictogrammes agrandis et accès au vent sur la frise 48 h.
+22/08/2026 19:11 — v3.045 — Pictogrammes, rafales et repli de la frise stabilisés.
+22/08/2026 22:02 — v3.046 — Textes agrandis et couleurs des rafales renforcées.
+22/08/2026 22:23 — v3.047 — Jaune orage renforcé et absence de cumul mieux formulée.
+22/08/2026 22:35 — v3.048 — Prévisions quotidiennes passées à ECMWF IFS HRES 9 km.
+22/08/2026 22:39 — v3.049 — Jaune réservé aux orages localisés et aux fortes rafales.
+22/08/2026 22:40 — v3.050 — Couleurs harmonisées entre prévisions et synthèse 3 h.
+22/08/2026 22:46 — v3.051 — Prévision semaine documentée dans About.
+22/08/2026 22:53 — v3.052 — Frise 48 h alignée sur ECMWF IFS HRES 9 km.
+22/08/2026 23:09 — v3.053 — Créneaux fiabilisés et prévisions quotidiennes accélérées.
+22/08/2026 23:41 — v3.054 — Replay enrichi d’ETA, durées, annulations et transitions.
+22/08/2026 23:57 — v3.055 — Interface du replay restaurée après déploiement serveur.
+23/08/2026 00:33 — v3.056 — Replay fondé sur les projections radar et annulations confirmées.
+23/08/2026 01:27 — v3.057 — ETA, cumuls et transitions du replay fiabilisés.
+23/08/2026 01:39 — v3.058 — Orages proches qualifiés selon leur risque de passage.
+23/08/2026 01:43 — v3.059 — Orages sans ETA décrits par distance et passages requalifiés.
+23/08/2026 01:55 — v3.060 — Grêle fondée sur PAM et analyse limitée en charge serveur.
+23/08/2026 02:20 — v3.061 — About et architecture alignés sur ECMWF IFS HRES 9 km.
+23/08/2026 03:17 — v3.062 — Durées et cumuls du replay alignés sur la traversée réelle.
+23/08/2026 03:37 — v3.063 — « Orage violent » réservé aux niveaux 4/5 et 5/5.
+23/08/2026 03:40 — v3.064 — Intensité orage en « et/ou », avec grêle ou éclairs pour 5/5.
+23/08/2026 03:58 — v3.065 — Calcul orage et durées radar documentés dans About.
+23/08/2026 04:05 — v3.066 — Barres de cumul du replay ancrées au bas de la frise.
+23/08/2026 04:11 — v3.067 — Passages disparus requalifiés après deux images radar.
+23/08/2026 04:16 — v3.068 — « Orage violent » fondé sur l’intensité, pas la seule probabilité.
+23/08/2026 04:28 — v3.069 — Sécurité du replay adaptée au rendu dynamique des cumuls.
+23/08/2026 07:22 — v3.070 — Vigilances futures affichées par couleur et période.
+23/08/2026 07:30 — v3.071 — Bandeaux de vigilance harmonisés avec l’interface.
+23/08/2026 07:34 — v3.072 — Espacement et flèche des vigilances corrigés.
+23/08/2026 07:53 — v3.073 — Pictogrammes de vigilance ajoutés aux créneaux concernés.
+23/08/2026 08:04 — v3.074 — Périodes de vigilance limitées aux segments non verts.
+23/08/2026 08:09 — v3.075 — Pictogramme du phénomène ajouté aux bandeaux de vigilance.
+24/08/2026 01:57 — v3.076 — Prévisions semaine complétées par les nuits et doubles sources.
+24/08/2026 02:45 — v3.077 — Frise Météo-France et vigilances de créneau clarifiées.
+24/08/2026 02:57 — v3.078 — Prévisions semaine et vigilances fiabilisées.
+24/08/2026 03:12 — v3.079 — Couleurs de créneau séparées de la vigilance officielle.
+24/08/2026 03:20 — v3.080 — Couleurs réservées aux phénomènes météo significatifs.
+24/08/2026 03:24 — v3.081 — Couleurs multicritères et rafales AROME intégrées.
+24/08/2026 03:52 — v3.082 — Sens des couleurs météo précisé dans About.
+24/08/2026 03:56 — v3.083 — Gravité orage-nowcasting fondée sur l’impact local.
+24/08/2026 04:02 — v3.084 — Détails techniques d’About repliés par défaut.
+24/08/2026 04:12 — v3.085 — Seules les API sont repliées dans About.
+24/08/2026 04:18 — v3.086 — Changelog raccourci depuis v3.032.</pre></main></body></html>
