@@ -18,6 +18,7 @@ const dayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "2-d
 const weekDayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "Europe/Paris" });
 const shortDateFormat = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "Europe/Paris" });
 const dateTimeFormat = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+const nightPeriodDateFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" });
 let lastAromeStamp = 0;
 let lastPiafStamp = 0;
 let lastRadarStamp = 0;
@@ -27,7 +28,8 @@ let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
 let dashboardSync = { status: "loading", error: null };
-let activeForecastSource = "openmeteo";
+const defaultForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
+let activeForecastSource = defaultForecastSource;
 let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
@@ -444,7 +446,7 @@ function toggleDaily48HourForecast(button) {
   }
   const tomorrow = new Date(todayDateKey() + "T12:00:00");
   tomorrow.setDate(tomorrow.getDate() + 1);
-  activeForecastSource = "openmeteo";
+  activeForecastSource = defaultForecastSource;
   Object.keys(metricOpacities).forEach(metric => { metricOpacities[metric] = 100; });
   panel.dataset.focusDate = dateKey;
   panel.dataset.focusHour = dateKey === forecastDateKey(tomorrow) ? "7" : "";
@@ -454,7 +456,6 @@ function toggleDaily48HourForecast(button) {
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
   set48HourForecastContentOpen(true);
   renderActiveForecast();
-  void ensureOpenMeteoEnsemble();
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
 
@@ -540,12 +541,14 @@ function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
 function vigilanceSlotIcons(alerts) {
   if (!alerts.length) return "";
   const levels = { 2: "jaune", 3: "orange", 4: "rouge" };
-  return '<span class="daily-vigilance-icons">' + alerts.map(alert => {
+  const strongestLevel = levels[Math.max(...alerts.map(alert => alert.colorId))] || "jaune";
+  const icons = alerts.map(alert => {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
     return '<span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><i aria-hidden="true"></i></span>';
-  }).join("") + "</span>";
+  }).join("");
+  return '<span class="daily-vigilance-icons" data-level="' + strongestLevel + '">' + icons + '<strong aria-hidden="true">VIGILANCE</strong></span>';
 }
 
 function renderVigilance(vigilance) {
@@ -2345,7 +2348,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, slot, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
+  const periodCard = (period, label, labelTitle, slot, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
     if (!period) return "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2459,26 +2462,34 @@ function renderTestingDailyForecast() {
       : gust >= 65 ? "orange"
       : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
-    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
+    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
   const cards = openMeteoDays.map(openMeteo => {
     const vigilance = latestForecastData?.vigilance || null;
-    const slotLabel = slot => {
-      if (slot.key !== "night") return slot.label;
-      const nextDate = dateFromKey(slotDateKey(openMeteo.date, slot));
-      const weekday = weekDayFormat.format(nextDate);
-      return "Nuit → " + weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    const slotPresentation = slot => {
+      if (slot.key !== "night") return { label: slot.label, title: "" };
+      const startDate = dateFromKey(openMeteo.date);
+      const endDate = dateFromKey(slotDateKey(openMeteo.date, slot));
+      return {
+        label: "Nuit",
+        title: "Nuit du " + nightPeriodDateFormat.format(startDate) + " au " + nightPeriodDateFormat.format(endDate) + " matin"
+      };
     };
-    const periods = forecastDailySlots.map(slot => periodCard(
-      openMeteo.periods?.[slot.key] || null,
-      slotLabel(slot),
-      slot,
-      meteoFranceStormForPeriod(openMeteo.date, slot),
-      vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
-      meteoFranceRainForPeriod(openMeteo.date, slot)
-    )).filter(Boolean);
+    const periods = forecastDailySlots.map(slot => {
+      const presentation = slotPresentation(slot);
+      return periodCard(
+        openMeteo.periods?.[slot.key] || null,
+        presentation.label,
+        presentation.title,
+        slot,
+        meteoFranceStormForPeriod(openMeteo.date, slot),
+        vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
+        meteoFranceRainForPeriod(openMeteo.date, slot)
+      );
+    }).filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
     const shortDate = shortDateFormat.format(dateFromKey(openMeteo.date));
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
