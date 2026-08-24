@@ -545,7 +545,7 @@ function vigilanceSlotIcons(alerts) {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
-    return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span><strong>VIGILANCE</strong></span>';
+    return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>VIGILANCE</strong><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span></span>';
   }).join("") + "</span>";
 }
 
@@ -2225,6 +2225,8 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
 function renderTestingDailyForecast() {
   const target = $("week-forecast");
   if (!target) return;
+  const openPeriodKeys = new Set([...target.querySelectorAll(".daily-period-card[open][data-period-key]")]
+    .map(detail => detail.dataset.periodKey));
   const format = (value, digits = 1) => value != null && Number.isFinite(Number(value))
     ? Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits }) : "—";
   const dateFromKey = dateKey => new Date(dateKey + "T12:00:00");
@@ -2346,7 +2348,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, labelTitle, slot, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
+  const periodCard = (period, label, labelTitle, slot, periodKey, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
     if (!period) return "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2461,7 +2463,7 @@ function renderTestingDailyForecast() {
       : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
     const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
-    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card' + alertClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
@@ -2483,6 +2485,7 @@ function renderTestingDailyForecast() {
         presentation.label,
         presentation.title,
         slot,
+        openMeteo.date + ":" + slot.key,
         meteoFranceStormForPeriod(openMeteo.date, slot),
         vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
         meteoFranceRainForPeriod(openMeteo.date, slot)
@@ -2499,6 +2502,7 @@ function renderTestingDailyForecast() {
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   const periodDetails = [...target.querySelectorAll(".daily-period-card")];
+  periodDetails.forEach(detail => { detail.open = openPeriodKeys.has(detail.dataset.periodKey); });
   periodDetails.forEach(detail => detail.addEventListener("toggle", () => {
     if (!detail.open) return;
     periodDetails.forEach(other => {
@@ -3957,7 +3961,6 @@ function bindSharedHorizontalScroll(width, onScroll = () => {}) {
     const chart = panel.querySelector(".chart-scroll");
     if (chart) chart.scrollLeft = master.scrollLeft;
   }));
-  if (!$("panel-48h").hidden && $("panel-48h").dataset.focusDate) requestAnimationFrame(() => sync48HourForecastFocus());
 }
 
 function bindChartTooltips() {
@@ -4504,6 +4507,9 @@ function initializeNowcastMapBackground(mapRadiusKm) {
 function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const element = $("radar-nowcast");
   const summaryElement = $("three-hour-summary");
+  const expandedCellDetailIds = new Set([...element.querySelectorAll('.nowcast-cell-card-button[aria-expanded="true"]')]
+    .map(button => button.getAttribute("aria-controls"))
+    .filter(Boolean));
   if (!radar) {
     if (summaryElement) summaryElement.innerHTML = "";
     element.innerHTML = '<strong>Radar</strong><span>Acquisition de la première trame en cours…</span>';
@@ -5080,6 +5086,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   }
   const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 60 ? ' active' : '') + '" type="button" data-nowcast-radius="60" aria-pressed="' + (activeNowcastMapRadius === 60) + '">60 km</button></div>';
   element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius) + '</div>' + cellsPanel + '</div>';
+  element.querySelectorAll(".nowcast-cell-card-button").forEach(button => {
+    const detailsId = button.getAttribute("aria-controls");
+    if (!expandedCellDetailIds.has(detailsId)) return;
+    button.setAttribute("aria-expanded", "true");
+    const details = document.getElementById(detailsId);
+    if (details) details.hidden = false;
+  });
   initializeNowcastMapBackground(activeNowcastMapRadius);
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
