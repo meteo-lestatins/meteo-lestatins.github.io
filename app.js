@@ -1009,7 +1009,58 @@ function onlyDrizzleInThreeHours(steps) {
 
 function rainIntensityLabel(intensityLevel = 0) {
   const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  return level >= 5 ? "Pluie très forte" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
+  return level >= 5 ? "Pluie violente" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
+}
+
+function rainPhaseForStep(step) {
+  const amount = Math.max(0, Number(step?.totalPrecipitation) || 0);
+  if (amount < possibleDrizzleThreshold) return null;
+  if (amount < .2) return { drizzle: true, level: 0 };
+  const duration = Number(step?.intervalEnd) - Number(step?.intervalStart);
+  return { drizzle: false, level: rainIntensityStep(rainRateFromAccumulation(amount, duration)) };
+}
+
+function rainPhaseLabel(phase) {
+  return phase?.dry ? "Fin de l’épisode de pluie" : phase?.drizzle ? "Gouttes" : rainIntensityLabel(phase?.level);
+}
+
+function rainPhaseRank(phase) {
+  if (!phase || phase.dry) return -1;
+  if (phase.drizzle) return 0;
+  const level = Math.max(0, Math.min(5, Math.round(Number(phase.level) || 0)));
+  return level >= 5 ? 4 : level >= 4 ? 3 : level >= 3 ? 2 : 1;
+}
+
+function nextRainPhaseTransition(steps, now, currentPhase) {
+  if (!currentPhase) return null;
+  const currentRank = rainPhaseRank(currentPhase);
+  const timeline = [...(steps || [])]
+    .filter(step => Number.isFinite(Number(step?.intervalStart)) && Number(step?.intervalStart) > now)
+    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
+  for (const step of timeline) {
+    const phase = rainPhaseForStep(step);
+    const etaMinutes = Math.max(1, Math.ceil((Number(step.intervalStart) - now) / 60000));
+    if (!phase) return { currentPhase, nextPhase: { dry: true, drizzle: false, level: 0 }, step, etaMinutes };
+    // Les baisses d’intensité n’ont pas d’intérêt dans le résumé : tant que
+    // l’épisode continue, on attend soit une intensification, soit sa fin.
+    if (!currentPhase.drizzle && rainPhaseRank(phase) <= currentRank) continue;
+    // Pour des gouttes, la première pluie mesurable reste l’unique cas où
+    // l’on raconte explicitement les deux étapes avec « puis ».
+    if (currentPhase.drizzle && phase.drizzle) continue;
+    return { currentPhase, nextPhase: phase, step, etaMinutes };
+  }
+  return null;
+}
+
+function shortTermRainTransitionLabel(transition, passageRisk = 100) {
+  if (!transition) return "";
+  const eta = " dans " + compactMinutesLabel(transition.etaMinutes);
+  if (transition.nextPhase?.dry) return "Fin de l’épisode de pluie" + eta;
+  const next = rainPhaseLabel(transition.nextPhase);
+  const qualifier = shortTermRiskQualifier(passageRisk);
+  return transition.currentPhase?.drizzle
+    ? "Gouttes puis " + next.toLowerCase() + qualifier + eta
+    : next + qualifier + eta;
 }
 
 function shortTermRiskQualifier(risk) {
@@ -1041,9 +1092,9 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   if (eta < 1) {
     if (!rain && Number(activeCount) > 0) {
       const count = Math.max(1, Math.round(Number(activeCount)));
-      return count + (count > 1 ? " orages en cours" : " orage en cours");
+      return count + (count > 1 ? " orages" : " orage");
     }
-    return rain ? "Pluie en cours" : "Orage en cours";
+    return rain ? "Pluie" : "Orage";
   }
   return (rain ? "Pluie" : "Orage") + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
@@ -1053,7 +1104,7 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0,
     const label = rainIntensityLabel(intensityLevel);
     const eta = etaMinutes == null ? null : Number(etaMinutes);
     if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
-    if (eta < 1) return label + " en cours";
+    if (eta < 1) return label;
     return label + shortTermRiskQualifier(passageRisk) + " dans " + compactMinutesLabel(Math.max(1, eta));
   }
   const eta = etaMinutes == null ? null : Number(etaMinutes);
@@ -5272,12 +5323,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormEtaCell = relevantStormEtaEvent?.cell || relevantStormCell;
   const stormEtaDetail = hasStormEta && stormEtaCell
     ? (stormEtaSelection.activeCount > 0
-      ? stormEtaSelection.activeCount + " cellule" + (stormEtaSelection.activeCount > 1 ? "s" : "") + " en cours"
+      ? stormEtaSelection.activeCount + " cellule" + (stormEtaSelection.activeCount > 1 ? "s actives" : " active")
       : "Cellule " + stormEtaCell.id)
       + (stormEtaSelection.activeCount > 0 ? " : " + stormEtaSelection.activeIds.join(", ") : "")
       + " · bord à " + cellDistance(stormEtaCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
-      + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + compactMinutesLabel(Math.max(1, relevantStormEtaMinutes)))
+      + " · " + (relevantStormEtaMinutes < 1 ? "orage actif" : "ETA dans " + compactMinutesLabel(Math.max(1, relevantStormEtaMinutes)))
       + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
       + (stormEtaSelection.upcomingCount > 0 ? " (cellules " + stormEtaSelection.upcomingIds.join(", ") + ")" : "")
     : "";
@@ -5339,10 +5390,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
   );
   const drizzleOnly = onlyDrizzleInThreeHours(threeHourRainSteps);
+  const rainArrivalIndex = upcomingRainSteps.indexOf(rainArrival);
+  const measurableRainArrivalIndex = upcomingRainSteps.indexOf(measurableRainArrival);
   const dropsThenRain = Boolean(rainArrival
     && rainArrival.totalPrecipitation < .2
     && measurableRainArrival
-    && measurableRainArrival.intervalStart > rainArrival.intervalStart);
+    && measurableRainArrival.intervalStart > rainArrival.intervalStart
+    && rainArrivalIndex >= 0
+    && measurableRainArrivalIndex > rainArrivalIndex
+    && upcomingRainSteps.slice(rainArrivalIndex, measurableRainArrivalIndex)
+      .every(step => Number(step.totalPrecipitation) >= possibleDrizzleThreshold));
   const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
   // La couleur signale le pic des 3 h, mais le texte décrit le premier pas
   // qui arrive réellement. Une pluie soutenue prévue plus tard ne doit pas
@@ -5355,9 +5412,23 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? currentRadarRainRate
     : rainLabelStepIntensity;
   const rainLabelLevel = drizzleOnly ? 0 : rainIntensityStep(rainLabelIntensity);
-  const rainValue = dropsThenRain
+  const currentRainPhase = rainEtaMinutes < 1
+    ? freshRadarRainAtTarget
+      ? { drizzle: false, level: rainIntensityStep(currentRadarRainRate) }
+      : rainPhaseForStep(rainArrival)
+    : null;
+  const rainTransition = nextRainPhaseTransition(upcomingRainSteps, now, currentRainPhase);
+  const rainTransitionPassageRisk = rainPassageForStep(rainTransition?.step, etaRainEvents, possibleDrizzleThreshold);
+  const rainValue = rainTransition
+    ? shortTermRainTransitionLabel(rainTransition, rainTransitionPassageRisk)
+    : dropsThenRain
     ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainLabelLevel, measurableRainPassageRisk)
-    : shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainLabelLevel, rainPassageRisk);
+    : shortTermRainLabel(
+        rainEtaMinutes,
+        drizzleOnly || (rainEtaMinutes >= 1 && Number(rainArrival?.totalPrecipitation) < .2),
+        rainLabelLevel,
+        rainPassageRisk
+      );
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
