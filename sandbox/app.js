@@ -81,6 +81,20 @@ const measurableRainThreshold = .05;
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
 
+function forecastSlotAlertTone({ hasStorm = false, violentStorm = false, gust = 0, probability = 0, representativeRain = 0, representativeRain3h = 0 } = {}) {
+  const gustValue = Math.max(0, Number(gust) || 0);
+  const probabilityValue = Math.max(0, Number(probability) || 0);
+  const rainValue = Math.max(0, Number(representativeRain) || 0);
+  const rain3hValue = Math.max(0, Number(representativeRain3h) || 0);
+  const rainIsProbable = probabilityValue >= 70;
+  if (violentStorm || gustValue >= 90 || (rainIsProbable && (rain3hValue >= 20 || rainValue >= 30))) return "red";
+  if (gustValue >= 65
+    || (hasStorm && rainIsProbable && rainValue >= 5)
+    || (rainIsProbable && (rain3hValue >= 10 || rainValue >= 15))) return "orange";
+  if (hasStorm || gustValue >= 50 || probabilityValue >= 50 || rainValue >= 2) return "yellow";
+  return "";
+}
+
 function graphIconMarkup(className) {
   return '<span class="' + className + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M5 17l4-5 4 3 6-8"/></svg></span>';
 }
@@ -1762,6 +1776,10 @@ function normalizeOpenMeteoDays(daily, hourly) {
         amount: Math.max(0, Number(sample.precipitation) || 0)
       })).filter(sample => sample.amount >= possibleDrizzleThreshold);
       const timedRainTotal = timedRain.reduce((sum, sample) => sum + sample.amount, 0);
+      const peakRain3h = periodSamples.reduce((peak, _, startIndex) => Math.max(
+        peak,
+        periodSamples.slice(startIndex, startIndex + 3).reduce((sum, sample) => sum + Math.max(0, Number(sample.precipitation) || 0), 0)
+      ), 0);
       const weightedRainHour = timedRainTotal > 0
         ? timedRain.reduce((sum, sample) => sum + sample.hour * sample.amount, 0) / timedRainTotal
         : null;
@@ -1776,6 +1794,7 @@ function normalizeOpenMeteoDays(daily, hourly) {
         temperatureMax: temperatures.length ? Math.max(...temperatures) : null,
         cloudCover: average(clouds),
         precipitationSum: periodSamples.reduce((sum, sample) => sum + sample.precipitation, 0),
+        peakRain3h,
         precipitationProbabilityMax: Math.max(...periodSamples.map(sample => sample.probability), 0),
         windSpeedMax: winds.length ? Math.max(...winds) : null,
         windGustMax: gusts.length ? Math.max(...gusts) : null,
@@ -2282,8 +2301,18 @@ function renderTestingDailyForecast() {
       return forecastDateKey(midpoint) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
     });
     if (!periods.length) return null;
+    const hourlyMeans = periods.flatMap(item => {
+      const durationHours = Math.max(1, Math.round(Number(item.durationHours) || 1));
+      const hourlyMean = Math.max(0, Number(item.ensembleMean) || 0) / durationHours;
+      return Array.from({ length: durationHours }, () => hourlyMean);
+    });
+    const peak3h = hourlyMeans.reduce((peak, _, startIndex) => Math.max(
+      peak,
+      hourlyMeans.slice(startIndex, startIndex + 3).reduce((sum, amount) => sum + amount, 0)
+    ), 0);
     return {
       amount: periods.reduce((sum, item) => sum + Math.max(0, Number(item.ensembleMean) || 0), 0),
+      peak3h,
       probability: Math.max(...periods.map(item => Math.max(0, Number(item.probability) || 0))),
       source: "Météo-France (PEAROME)"
     };
@@ -2455,12 +2484,22 @@ function renderTestingDailyForecast() {
       : "Pas d’orage.";
     const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage"), "", stormDescription, "daily-period-storm-detail");
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
-    // Use one restrained alert tone per slot; stronger gusts can raise it.
-    // The Météo-France storm pictogram is scoped above to this slot only.
+    // La couleur interne combine les phénomènes prévus sans reprendre la
+    // couleur de vigilance officielle. La valeur centrale PE-AROME est
+    // prioritaire : une borne haute d'incertitude ne relève jamais le niveau.
     const violentStorm = hasOpenMeteoStorm && Number(period.weatherCode) >= 96;
-    const alertTone = violentStorm || gust >= 90 ? "red"
-      : gust >= 65 ? "orange"
-      : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
+    const representativeRain = meteoFranceRainAmount ?? openMeteoRain;
+    const representativeRain3h = Number.isFinite(Number(meteoFranceRain?.peak3h))
+      ? Number(meteoFranceRain.peak3h)
+      : Math.max(0, Number(period.peakRain3h) || 0);
+    const alertTone = forecastSlotAlertTone({
+      hasStorm,
+      violentStorm,
+      gust,
+      probability: rainProbability,
+      representativeRain,
+      representativeRain3h
+    });
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
     const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
     return '<details class="daily-period-card' + alertClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
