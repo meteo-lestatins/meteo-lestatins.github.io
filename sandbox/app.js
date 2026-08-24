@@ -1019,8 +1019,12 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
 }
 
-function shortTermRainLabel(etaMinutes, drizzleOnly = false) {
-  if (!drizzleOnly) return shortTermEventLabel("rain", etaMinutes);
+function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0) {
+  if (!drizzleOnly) {
+    const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
+    const label = level >= 5 ? "Pluie très forte" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
+    return shortTermEventLabel("rain", etaMinutes).replace(/^Pluie/, label);
+  }
   const eta = etaMinutes == null ? null : Number(etaMinutes);
   if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
   return eta < 1
@@ -5252,7 +5256,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   );
   const drizzleOnly = onlyDrizzleInThreeHours(threeHourRainSteps);
   const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
-  const rainValue = shortTermRainLabel(rainEtaMinutes, drizzleOnly);
+  const rainValue = shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainColorLevel);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
