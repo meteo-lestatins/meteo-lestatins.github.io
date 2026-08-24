@@ -1029,9 +1029,11 @@ function rainIntensityLabel(intensityLevel = 0) {
 function rainPhaseForStep(step) {
   const amount = Math.max(0, Number(step?.totalPrecipitation) || 0);
   if (amount < possibleDrizzleThreshold) return null;
-  if (amount < .2) return { drizzle: true, level: 0 };
+  const basePrecipitation = Number(step?.basePrecipitation);
+  const nowcastOnly = Number.isFinite(basePrecipitation) && Math.max(0, basePrecipitation) < possibleDrizzleThreshold;
+  if (amount < .2) return { drizzle: true, level: 0, nowcastOnly };
   const duration = Number(step?.intervalEnd) - Number(step?.intervalStart);
-  return { drizzle: false, level: rainIntensityStep(rainRateFromAccumulation(amount, duration)) };
+  return { drizzle: false, level: rainIntensityStep(rainRateFromAccumulation(amount, duration)), nowcastOnly };
 }
 
 function rainPhaseLabel(phase) {
@@ -1048,13 +1050,25 @@ function rainPhaseRank(phase) {
 function nextRainPhaseTransition(steps, now, currentPhase) {
   if (!currentPhase) return null;
   const currentRank = rainPhaseRank(currentPhase);
+  let dropsUntilDry = Boolean(currentPhase.drizzle);
+  let dropsPossibleUntilDry = Boolean(currentPhase.drizzle && currentPhase.nowcastOnly);
   const timeline = [...(steps || [])]
     .filter(step => Number.isFinite(Number(step?.intervalStart)) && Number(step?.intervalStart) > now)
     .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
   for (const step of timeline) {
     const phase = rainPhaseForStep(step);
     const etaMinutes = Math.max(1, Math.ceil((Number(step.intervalStart) - now) / 60000));
-    if (!phase) return { currentPhase, nextPhase: { dry: true, drizzle: false, level: 0 }, step, etaMinutes };
+    if (!phase) return { currentPhase, nextPhase: { dry: true, drizzle: false, level: 0 }, step, etaMinutes, dropsUntilDry, dropsPossibleUntilDry };
+    if (!currentPhase.drizzle && phase.drizzle) {
+      dropsPossibleUntilDry = dropsUntilDry ? dropsPossibleUntilDry && phase.nowcastOnly : phase.nowcastOnly;
+      dropsUntilDry = true;
+      continue;
+    }
+    if (currentPhase.drizzle && phase.drizzle) dropsPossibleUntilDry &&= phase.nowcastOnly;
+    if (!phase.drizzle) {
+      dropsUntilDry = false;
+      dropsPossibleUntilDry = false;
+    }
     // Les baisses d’intensité n’ont pas d’intérêt dans le résumé : tant que
     // l’épisode continue, on attend soit une intensification, soit sa fin.
     if (!currentPhase.drizzle && rainPhaseRank(phase) <= currentRank) continue;
@@ -1069,6 +1083,8 @@ function nextRainPhaseTransition(steps, now, currentPhase) {
 function shortTermRainTransitionLabel(transition, passageRisk = 100) {
   if (!transition) return "";
   const eta = " dans " + compactMinutesLabel(transition.etaMinutes);
+  if (transition.nextPhase?.dry && transition.dropsUntilDry && transition.dropsPossibleUntilDry) return "Gouttes possibles pendant encore " + compactMinutesLabel(transition.etaMinutes);
+  if (transition.nextPhase?.dry && transition.dropsUntilDry) return "Gouttes pendant encore " + compactMinutesLabel(transition.etaMinutes);
   if (transition.nextPhase?.dry) return "Fin de l’épisode de pluie" + eta;
   const next = rainPhaseLabel(transition.nextPhase);
   const qualifier = shortTermRiskQualifier(passageRisk);
