@@ -5256,8 +5256,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
-  const gustLevel = maximumGust <= 0 ? 0 : maximumGust < 20 ? 1 : maximumGust < 35 ? 2 : maximumGust < 50 ? 3 : maximumGust < 70 ? 4 : 5;
-  const gustColorLevel = maximumGust < 40 ? 0 : maximumGust < 60 ? 3 : maximumGust < 100 ? 4 : 5;
+  const gustLevel = maximumGust <= 0 ? 0 : maximumGust < 35 ? 1 : maximumGust < 55 ? 2 : maximumGust < 75 ? 3 : maximumGust < 100 ? 4 : 5;
+  const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: hailArrivalLabel || stormEtaLabel, duration: stormDurationLabel, etaDetail: hailArrivalDetail || stormEtaDetail })
