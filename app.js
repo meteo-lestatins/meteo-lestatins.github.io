@@ -520,6 +520,11 @@ const vigilancePhenomenonIds = {
   "Vagues-submersion": 9
 };
 
+function isLocalVigilanceAlert(alert) {
+  const phenomenonId = Number(alert?.id) || vigilancePhenomenonIds[alert?.label] || 0;
+  return phenomenonId !== 4 && alert?.label !== "Crues";
+}
+
 function vigilanceWarningWindow(alert) {
   const hasTimeline = Array.isArray(alert?.timeline) && alert.timeline.length > 0;
   const sourcePeriods = hasTimeline
@@ -542,7 +547,7 @@ function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
   const slotStart = new Date(dateKey + "T" + String(startHour).padStart(2, "0") + ":00:00").getTime();
   const slotEnd = new Date(dateKey + "T" + String(endHour).padStart(2, "0") + ":00:00").getTime();
   if (!Number.isFinite(slotStart) || !Number.isFinite(slotEnd)) return [];
-  return (vigilance?.alerts || []).map(alert => {
+  return (vigilance?.alerts || []).filter(isLocalVigilanceAlert).map(alert => {
     const periods = (Array.isArray(alert.timeline) && alert.timeline.length
       ? alert.timeline
       : [{ colorId: alert.colorId, start: alert.start, end: alert.end }])
@@ -577,7 +582,7 @@ function vigilanceSlotIcons(alerts) {
 
 function renderVigilance(vigilance) {
   const banner = $("vigilance-alert");
-  const alerts = vigilance?.alerts || [];
+  const alerts = (vigilance?.alerts || []).filter(isLocalVigilanceAlert);
   const now = Date.now();
   const visibleAlerts = alerts.map(alert => {
     const warningWindow = vigilanceWarningWindow(alert);

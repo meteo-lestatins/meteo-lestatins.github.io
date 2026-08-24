@@ -300,24 +300,24 @@ button:hover { background: #eef7fb; }
 .daily-period-title { grid-column: 1 / 3; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
 .daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 3px; }
-.daily-vigilance-badge { height: 26px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 1px; overflow: hidden; padding-left: 5px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); color: #302d1e; line-height: 1; }
+.daily-vigilance-badge { height: 26px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; overflow: hidden; padding: 0 4px 0 6px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); color: #302d1e; line-height: 1; }
 .daily-vigilance-badge[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-badge[data-level="orange"] { background: #f58b20; }
 .daily-vigilance-badge[data-level="rouge"] { color: #fff; background: #bd2525; }
 .daily-vigilance-badge > strong { color: inherit; font-size: 9px; font-weight: 900; letter-spacing: .02em; }
-.daily-vigilance-badge .daily-vigilance-icon { width: 24px; height: 24px; flex-basis: 24px; border: 0; border-radius: 0; box-shadow: none; }
-.daily-vigilance-icon { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; overflow: hidden; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); }
+.daily-vigilance-badge .daily-vigilance-icon { width: 22px; height: 22px; flex-basis: 22px; border: 0; border-radius: 3px; box-shadow: none; }
+.daily-vigilance-icon { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; box-sizing: border-box; overflow: hidden; padding: 2px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); }
 .daily-vigilance-icon[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-icon[data-level="orange"] { background: #f58b20; }
 .daily-vigilance-icon[data-level="rouge"] { background: #bd2525; }
-.daily-vigilance-icon i { display: block; flex: 0 0 auto; background: url("vendor/meteo-france-vigilance-sprites.png") no-repeat; transform: scale(.72); }
+.daily-vigilance-icon i { display: block; flex: 0 0 auto; background: url("vendor/meteo-france-vigilance-sprites.png") no-repeat; transform: scale(.64); transform-origin: center; }
 .daily-vigilance-icon.type-1 i { width: 29px; height: 24px; background-position: -84px -21px; }
 .daily-vigilance-icon.type-2 i { width: 31px; height: 18px; background-position: -62px -50px; }
 .daily-vigilance-icon.type-3 i { width: 25px; height: 24px; background-position: -113px -21px; }
 .daily-vigilance-icon.type-4 i { width: 34px; height: 14px; background-position: -79px -80px; }
 .daily-vigilance-icon.type-5 i { width: 34px; height: 18px; background-position: -28px -50px; }
-.daily-vigilance-icon.type-6 i { width: 11px; height: 27px; background-position: -139px -91px; transform: scale(.76); }
-.daily-vigilance-icon.type-7 i { width: 12px; height: 27px; background-position: -139px -64px; transform: scale(.76); }
+.daily-vigilance-icon.type-6 i { width: 11px; height: 27px; background-position: -139px -91px; transform: scale(.68); }
+.daily-vigilance-icon.type-7 i { width: 12px; height: 27px; background-position: -139px -64px; transform: scale(.68); }
 .daily-vigilance-icon.type-8 i { width: 34px; height: 26px; background-position: -50px -21px; }
 .daily-vigilance-icon.type-9 i { width: 34px; height: 16px; background-position: -93px -50px; }
 .daily-period-icon { width: 104px; height: 96px; position: relative; grid-column: 1; grid-row: 2; display: grid; place-items: center start; padding: 0; }
