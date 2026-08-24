@@ -576,7 +576,7 @@ function vigilanceSlotIcons(alerts) {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
-    return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>VIGILANCE</strong><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span></span>';
+    return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span><strong>VIGILANCE</strong></span>';
   }).join("") + "</span>";
 }
 
