@@ -541,14 +541,12 @@ function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
 function vigilanceSlotIcons(alerts) {
   if (!alerts.length) return "";
   const levels = { 2: "jaune", 3: "orange", 4: "rouge" };
-  const strongestLevel = levels[Math.max(...alerts.map(alert => alert.colorId))] || "jaune";
-  const icons = alerts.map(alert => {
+  return '<span class="daily-vigilance-icons">' + alerts.map(alert => {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
-    return '<span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><i aria-hidden="true"></i></span>';
-  }).join("");
-  return '<span class="daily-vigilance-icons" data-level="' + strongestLevel + '">' + icons + '<strong aria-hidden="true">VIGILANCE</strong></span>';
+    return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span><strong>VIGILANCE</strong></span>';
+  }).join("") + "</span>";
 }
 
 function renderVigilance(vigilance) {
@@ -4210,8 +4208,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const movingTrajectory = confidence > 0 || speedKmh >= 1;
     if (passage <= 0 && !movingTrajectory) return '';
     const baseOpacity = passage > 0
-      ? Math.max(.12, Math.min(.6, .1 + passage / 100 * .38 + confidence / 100 * .12))
-      : Math.max(.045, Math.min(.11, .035 + confidence / 100 * .06 + Math.min(speedKmh, 40) / 40 * .035));
+      ? Math.max(.14, Math.min(.64, .12 + passage / 100 * .38 + confidence / 100 * .12))
+      : Math.max(.055, Math.min(.12, .045 + confidence / 100 * .06 + Math.min(speedKmh, 40) / 40 * .035));
     const start = track[0];
     const end = track.at(-1);
     const startX = x(start.eastKm);
