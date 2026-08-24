@@ -297,12 +297,15 @@ button:hover { background: #eef7fb; }
 .daily-period-card.daily-period-alert-yellow summary:hover { background: rgba(238, 192, 35, .19); }
 .daily-period-card.daily-period-alert-orange summary:hover { background: rgba(226, 129, 50, .3); }
 .daily-period-card.daily-period-alert-red summary:hover { background: rgba(207, 77, 71, .34); }
-.daily-period-title { grid-column: 1 / 3; display: flex; align-items: center; gap: 8px; }
+.daily-period-title { grid-column: 1 / 3; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
-.daily-vigilance-icons { display: inline-flex; align-items: center; gap: 3px; color: #8d7010; }
-.daily-vigilance-icons[data-level="orange"] { color: #a44b00; }
-.daily-vigilance-icons[data-level="rouge"] { color: #a81e1e; }
-.daily-vigilance-icons > strong { margin-left: 1px; color: inherit; font-size: 8px; font-weight: 900; letter-spacing: .02em; line-height: 1; }
+.daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 3px; }
+.daily-vigilance-badge { height: 26px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 1px; overflow: hidden; padding-left: 5px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); color: #302d1e; line-height: 1; }
+.daily-vigilance-badge[data-level="jaune"] { background: #f7cf31; }
+.daily-vigilance-badge[data-level="orange"] { background: #f58b20; }
+.daily-vigilance-badge[data-level="rouge"] { color: #fff; background: #bd2525; }
+.daily-vigilance-badge > strong { color: inherit; font-size: 8px; font-weight: 900; letter-spacing: .02em; }
+.daily-vigilance-badge .daily-vigilance-icon { width: 24px; height: 24px; flex-basis: 24px; border: 0; border-radius: 0; box-shadow: none; }
 .daily-vigilance-icon { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; overflow: hidden; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); }
 .daily-vigilance-icon[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-icon[data-level="orange"] { background: #f58b20; }
