@@ -3,5 +3,7 @@ Allow: /
 Disallow: /admin/
 Disallow: /sandbox/
 Disallow: /testing/
+Disallow: /evenements.html
+Disallow: /evenements/
 
 Sitemap: https://meteo-lestatins.github.io/sitemap.xml
