@@ -835,17 +835,19 @@ function nowcastEtaRainEvents(radar) {
     if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return null;
     const measuredSpeedKmh = Math.max(0, Number(cell.track?.speedKmh) || 0);
     const speedKmh = Math.max(1, measuredSpeedKmh);
-    const hasRainProfile = Array.isArray(cell.rainProfile);
-    const projectedPassages = hasRainProfile
-      ? nowcastCellRainProfilePassages(cell)
-      : nowcastCellProjectedPassages(cell);
-    const hasRealShape = Array.isArray(cell.shapeRuns) && cell.shapeRuns.length > 0;
+    const rainProfilePassages = nowcastCellRainProfilePassages(cell);
+    const shapePassages = nowcastCellProjectedPassages(cell);
+    const projectedPassages = rainProfilePassages.length ? rainProfilePassages : shapePassages;
     const traversal = etaMinutes <= .5 ? nowcastCellTraversal(cell) : null;
     const fullTraversalDurationMinutes = traversal && speedKmh > 2
       ? 60 * traversal.totalDistanceKm / speedKmh
       : null;
-    const needsLegacyFallback = !projectedPassages.length && !hasRainProfile && !hasRealShape;
-    const fallbackDurationMinutes = needsLegacyFallback
+    // Une ETA probabiliste peut exister alors que le noyau pixelise ne coupe
+    // pas exactement le point. La lame d'eau conditionnelle doit tout de meme
+    // apparaitre dans la bande Nowcasting orange, avec la probabilite de
+    // passage separee, plutot que de disparaitre completement de la frise.
+    const needsEtaFallback = !projectedPassages.length;
+    const fallbackDurationMinutes = needsEtaFallback
       ? traversal
         ? clampDuration(fullTraversalDurationMinutes ?? 45)
         : clampDuration(speedKmh > 2 ? 60 * (legacyFootprintAtEta(cell) * 2) / speedKmh : 45)
@@ -853,7 +855,7 @@ function nowcastEtaRainEvents(radar) {
     const fallbackRemainingMinutes = traversal ? Math.max(1, fallbackDurationMinutes * traversal.remainingFraction) : fallbackDurationMinutes;
     const passages = projectedPassages.length
       ? projectedPassages
-      : needsLegacyFallback ? [{ startMinutes: etaMinutes, endMinutes: etaMinutes + fallbackRemainingMinutes, durationMinutes: fallbackRemainingMinutes }] : [];
+      : needsEtaFallback ? [{ startMinutes: etaMinutes, endMinutes: etaMinutes + fallbackRemainingMinutes, durationMinutes: fallbackRemainingMinutes }] : [];
     const maximum = Math.max(0, Number(cell.maximum) || 0);
     const representativeIntensity = Math.min(maximum, Math.max(0, Number(cell.mean) || maximum * .5));
     return passages.map((projectedPassage, passageIndex) => {
@@ -1005,6 +1007,24 @@ function onlyDrizzleInThreeHours(steps) {
   return wetSteps.length > 0 && wetSteps.every(amount => amount < .2);
 }
 
+function rainIntensityLabel(intensityLevel = 0) {
+  const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
+  return level >= 5 ? "Pluie très forte" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
+}
+
+function shortTermRiskQualifier(risk) {
+  const probability = Math.max(0, Number(risk) || 0);
+  return probability >= 80 ? "" : probability >= 55 ? " probable" : " possible";
+}
+
+function shortTermHailQualifier(risk) {
+  const probability = Math.max(0, Number(risk) || 0);
+  return probability >= 80 ? " avec grêle"
+    : probability >= 55 ? " avec grêle probable"
+    : probability >= 20 ? " avec grêle possible"
+    : "";
+}
+
 function threeHourTrendIsSignificant(kind, trend) {
   if (!trend || trend.label === "stable") return false;
   const change = Math.abs(Number(trend.change) || 0);
@@ -1028,11 +1048,13 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   return (rain ? "Pluie" : "Orage") + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
-function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0) {
+function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0, passageRisk = 100) {
   if (!drizzleOnly) {
-    const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-    const label = level >= 5 ? "Pluie très forte" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
-    return shortTermEventLabel("rain", etaMinutes).replace(/^Pluie/, label);
+    const label = rainIntensityLabel(intensityLevel);
+    const eta = etaMinutes == null ? null : Number(etaMinutes);
+    if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
+    if (eta < 1) return label + " en cours";
+    return label + shortTermRiskQualifier(passageRisk) + " dans " + compactMinutesLabel(Math.max(1, eta));
   }
   const eta = etaMinutes == null ? null : Number(etaMinutes);
   if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
@@ -1041,14 +1063,32 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0)
     : "Gouttes possibles dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
-function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0) {
+function shortTermRainSequenceLabel(etaMinutes, intensityLevel = 0, passageRisk = 100) {
+  const eta = etaMinutes == null ? null : Number(etaMinutes);
+  if (!Number.isFinite(eta) || eta < 0) return "Gouttes possibles";
+  const rain = rainIntensityLabel(intensityLevel).toLowerCase() + (eta < 1 ? "" : shortTermRiskQualifier(passageRisk));
+  return "Gouttes puis " + rain + (eta < 1
+    ? " maintenant"
+    : " dans " + compactMinutesLabel(Math.max(1, eta)));
+}
+
+function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0, passageRisk = 100, hailRisk = 0, distanceKm = null) {
+  const eta = etaMinutes == null ? null : Number(etaMinutes);
+  const distance = distanceKm == null ? null : Number(distanceKm);
+  if ((!Number.isFinite(eta) || eta < 0) && Number.isFinite(distance)) {
+    return "Orage à " + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+  }
+  if (!Number.isFinite(eta) || eta < 0) return "pas d’orage";
   const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  const singular = level >= 5 ? "Orage violent" : level >= 4 ? "Orage fort" : level >= 3 ? "Orage soutenu" : "Orage";
-  const plural = level >= 5 ? "orages violents" : level >= 4 ? "orages forts" : level >= 3 ? "orages soutenus" : "orages";
-  const label = shortTermEventLabel("storm", etaMinutes, activeCount);
-  return label
-    .replace(/^Orage/, singular)
-    .replace(/^(\d+) orages?/, (_, count) => count + " " + (Number(count) > 1 ? plural : singular.toLowerCase()));
+  const violent = level >= 4;
+  const subject = violent ? "Orage violent" : "Orage";
+  const hail = shortTermHailQualifier(hailRisk);
+  if (eta < 1 || Number(activeCount) > 0) {
+    const count = Math.max(1, Math.round(Number(activeCount) || 1));
+    if (count > 1) return count + (violent ? " orages violents" : " orages") + hail;
+    return subject + hail;
+  }
+  return subject + (violent ? "" : shortTermRiskQualifier(passageRisk)) + hail + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
 function shortTermGustLabel(intensityLevel) {
@@ -3278,6 +3318,23 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
   });
 }
 
+function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) {
+  if (!step) return 100;
+  const minimum = Math.max(0, Number(threshold) || 0);
+  if (Number(step.radarAdjustedPrecipitation) >= minimum) return 100;
+  const intervalStart = Number(step.intervalStart);
+  const intervalEnd = Number(step.intervalEnd);
+  if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd) || intervalEnd <= intervalStart) return 100;
+  const contributors = (events || []).filter(event =>
+    Number(event?.eventEnd) > intervalStart
+    && Number(event?.eventStart) < intervalEnd
+    && nowcastEtaRainAmount([event], intervalStart, intervalEnd) > 0
+  );
+  return contributors.length
+    ? Math.max(0, ...contributors.map(event => Number(event.passage) || 0))
+    : 100;
+}
+
 function piafQuarterHourRain(piaf, radar = null) {
   const runTime = piafRunTime(piaf);
   const fiveMinutes = 5 * 60000;
@@ -5164,38 +5221,21 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       // L'affichage reste fonctionnel si le stockage local est indisponible.
     }
   }
-  const hailArrivalCandidates = nearbyCells.map(cell => {
-    const score = polarimetricHailRisk(cell);
-    const etaMinutes = cell.etaMinutes == null ? null : Number(cell.etaMinutes);
-    const passage = Math.round(Number(cell.risks?.passage) || 0);
-    return { cell, score, etaMinutes, passage };
-  }).filter(candidate => candidate.cell.polarimetry?.classification === "hail"
-    && candidate.score != null
-    && candidate.passage > 0
-    && Number.isFinite(candidate.etaMinutes)
-    && candidate.etaMinutes >= 0
-    && candidate.etaMinutes <= 180)
-    .sort((left, right) => left.etaMinutes - right.etaMinutes || right.passage - left.passage || right.score - left.score);
-  const hailArrival = hailArrivalCandidates[0] || null;
-  const hailArrivalLabel = hailArrival
-    ? hailArrival.etaMinutes < 1
-      ? "grêle possible maintenant"
-      : "grêle possible dans " + compactMinutesLabel(Math.max(1, hailArrival.etaMinutes))
-    : "";
-  const hailArrivalDetail = hailArrival
-    ? "Cellule " + hailArrival.cell.id
-      + " · signature PAM compatible avec la grêle"
-      + " · indice " + hailArrival.score + " %"
-      + " · passage " + hailArrival.passage + " %"
-      + " · " + (hailArrival.etaMinutes < 1 ? "passage possible en cours" : "ETA dans " + compactMinutesLabel(Math.max(1, hailArrival.etaMinutes)))
-    : "";
+  const rainyCellCandidate = nearbyCells
+    .filter(cell => !stormCandidateCells.some(candidate => String(candidate.id) === String(cell.id))
+      && Number(cell.risks?.passage) > 0
+      && localProjectedRainFor(cell) >= .1)
+    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
   const stormDetail = relevantStormIntensity
     ? "Orage sur 3 h · passage " + maximumPassageRisk + " % · intensité " + stormIntensityLevel + "/5"
       + " · pluie " + relevantStormIntensity.rainLevel + "/5"
       + (relevantStormIntensity.hailRisk == null ? " · grêle non évaluée" : " · grêle " + relevantStormIntensity.hailLevel + "/5")
       + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
-      + (hailArrivalDetail ? " · " + hailArrivalDetail : "")
-    : "pas d’orage";
+    : rainyCellCandidate
+      ? "Cellule " + rainyCellCandidate.id + " pluvieuse · aucun signal orageux détecté"
+      : stormForecastSourceCount > 0 || orangeVigilanceActive
+        ? "Signal orageux prévu dans les 3 prochaines heures"
+        : "pas d’orage";
   const stormEtaSelection = nowcastStormEtaSelection(
     etaRainEvents,
     passageCandidates.map(candidate => candidate.cell.id),
@@ -5208,12 +5248,25 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : Number(stormEtaSelection.etaMinutes);
   const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
   const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
-  const stormEtaLabel = shortTermStormLabel(hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount, stormIntensityLevel);
+  const stormEtaLabel = relevantStormIntensity
+    ? shortTermStormLabel(
+        hasStormEta ? relevantStormEtaMinutes : null,
+        stormEtaSelection.activeCount,
+        stormIntensityLevel,
+        relevantStormIntensity.passage,
+        relevantStormIntensity.hailRisk,
+        cellDistance(relevantStormCell)
+      )
+    : rainyCellCandidate
+      ? "cellule pluvieuse"
+      : stormForecastSourceCount > 0 || orangeVigilanceActive
+        ? "Orage possible"
+        : "pas d’orage";
   const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
     : "";
   const stormUpcomingText = stormEtaSelection.upcomingCount > 0
-    ? stormEtaSelection.upcomingCount + " à venir"
+    ? stormEtaSelection.upcomingCount + (stormEtaSelection.upcomingCount > 1 ? " cellules à venir" : " cellule à venir")
     : "";
   const stormDurationLabel = [stormDurationText, stormUpcomingText].filter(Boolean).join(" · ");
   const stormEtaCell = relevantStormEtaEvent?.cell || relevantStormCell;
@@ -5248,14 +5301,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
       + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
       + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
-  const rainArrival = rainTrendSteps.map((step, index) => {
-    const item = threeHours[index];
-    const intervalEnd = piafItemEndTime(piaf, item);
-    const fallbackStart = now + Math.max(0, (Number(item?.seconds) || 300) - 300) * 1000;
-    const intervalStart = Number.isFinite(intervalEnd) ? intervalEnd - 5 * 60000 : fallbackStart;
-    return { precipitation: Number(step.precipitation) || 0, intervalStart, intervalEnd };
-  }).find(item => item.precipitation >= possibleDrizzleThreshold
-    && (!Number.isFinite(item.intervalEnd) || item.intervalEnd >= now - 60000));
+  const upcomingRainSteps = threeHourRainSteps.filter(item =>
+    !Number.isFinite(item.intervalEnd) || item.intervalEnd >= now - 60000
+  );
+  const rainArrival = upcomingRainSteps.find(item => item.totalPrecipitation >= possibleDrizzleThreshold);
+  const measurableRainArrival = upcomingRainSteps.find(item => item.totalPrecipitation >= .2);
+  const rainPassageRisk = rainPassageForStep(rainArrival, etaRainEvents, possibleDrizzleThreshold);
+  const measurableRainPassageRisk = rainPassageForStep(measurableRainArrival, etaRainEvents, .2);
   const radarObservedAt = Date.parse(radar?.observedAt || "");
   const currentRadarRainRate = Number(radar?.currentPrecipitation);
   const freshRadarRainAtTarget = Number.isFinite(radarObservedAt)
@@ -5273,6 +5325,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : rainArrival
     ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
     : null;
+  const measurableRainEtaMinutes = measurableRainArrival
+    ? Math.max(0, Math.ceil((measurableRainArrival.intervalStart - now) / 60000))
+    : null;
   // L'indicateur et la frise doivent raconter la même chose. Un pixel très
   // intense qui ne coupe le point que quelques secondes ne doit plus produire
   // 3/5 tandis que son pas de cinq minutes reste presque nul.
@@ -5284,8 +5339,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
   );
   const drizzleOnly = onlyDrizzleInThreeHours(threeHourRainSteps);
+  const dropsThenRain = Boolean(rainArrival
+    && rainArrival.totalPrecipitation < .2
+    && measurableRainArrival
+    && measurableRainArrival.intervalStart > rainArrival.intervalStart);
   const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
-  const rainValue = shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainColorLevel);
+  const rainValue = dropsThenRain
+    ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainColorLevel, measurableRainPassageRisk)
+    : shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainColorLevel, rainPassageRisk);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
@@ -5294,7 +5355,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
-    + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: hailArrivalLabel || stormEtaLabel, duration: stormDurationLabel, etaDetail: hailArrivalDetail || stormEtaDetail })
+    + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('gust', gustValue, gustLevel, gustDetail, windTrend, 'wind48', null, null, gustColorLevel)
     + '</div></section>';
   if (summaryElement) {
