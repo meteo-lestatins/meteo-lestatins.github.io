@@ -5344,9 +5344,20 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && measurableRainArrival
     && measurableRainArrival.intervalStart > rainArrival.intervalStart);
   const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
+  // La couleur signale le pic des 3 h, mais le texte décrit le premier pas
+  // qui arrive réellement. Une pluie soutenue prévue plus tard ne doit pas
+  // être annoncée comme déjà présente pendant que la frise montre des gouttes.
+  const rainLabelStep = dropsThenRain ? measurableRainArrival : rainArrival;
+  const rainLabelStepIntensity = rainLabelStep
+    ? rainRateFromAccumulation(rainLabelStep.totalPrecipitation, rainLabelStep.intervalEnd - rainLabelStep.intervalStart)
+    : 0;
+  const rainLabelIntensity = freshRadarRainAtTarget && rainEtaMinutes < 1 && !dropsThenRain
+    ? currentRadarRainRate
+    : rainLabelStepIntensity;
+  const rainLabelLevel = drizzleOnly ? 0 : rainIntensityStep(rainLabelIntensity);
   const rainValue = dropsThenRain
-    ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainColorLevel, measurableRainPassageRisk)
-    : shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainColorLevel, rainPassageRisk);
+    ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainLabelLevel, measurableRainPassageRisk)
+    : shortTermRainLabel(rainEtaMinutes, drizzleOnly, rainLabelLevel, rainPassageRisk);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
