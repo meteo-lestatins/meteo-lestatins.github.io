@@ -955,8 +955,10 @@ function shortTermRainTrend(values, sourceDetail = "PIAF") {
 function stormRiskIntensityStep(riskLevel, intensityLevel) {
   const risk = Math.max(0, Math.min(5, Math.round(Number(riskLevel) || 0)));
   const intensity = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  const combined = Math.max(risk, intensity);
-  return intensity >= 5 ? 5 : Math.min(4, combined);
+  if (risk >= 5 && intensity >= 5) return 5;
+  if (risk >= 4 && intensity >= 4) return 4;
+  if (risk >= 3 || (risk > 0 && intensity >= 3)) return 3;
+  return risk;
 }
 
 function stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) {
@@ -4820,9 +4822,17 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const hazardMetric = (kind, tone, title, pictogram) => '<span class="cell-hazard pictogram-only ' + tone + '" title="' + escapeText(title) + '">' + pictogram + '</span>';
   const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
   const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
+  const localProjectedRainFor = cell => {
+    const projected = etaRainEvents.filter(event => String(event.cell?.id) === String(cell?.id)
+      && event.eventEnd >= now && event.eventStart <= now + 3 * 3600000)
+      .map(event => Number(event.conditionalIntensity)).filter(Number.isFinite);
+    const currentLocal = radarCellEdgeDistance(cell) <= .5 ? Number(radar.currentPrecipitation) : null;
+    if (projected.length) return Math.max(0, ...projected, Number.isFinite(currentLocal) ? currentLocal : 0);
+    return nowcastCellRepresentativeRain(cell, radar.currentPrecipitation);
+  };
   const stormIntensityFor = cell => {
     const passage = Math.round(Number(cell.risks?.passage) || 0);
-    const rain = nowcastCellRepresentativeRain(cell, radar.currentPrecipitation);
+    const rain = localProjectedRainFor(cell);
     const intenseRainRisk = Math.round(Number(cell.risks?.intenseRain) || 0);
     const hailRisk = polarimetricHailRisk(cell);
     const flashes = flashesNearCell(cell);
