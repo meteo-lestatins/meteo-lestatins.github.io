@@ -18,6 +18,7 @@ const dayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "2-d
 const weekDayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "Europe/Paris" });
 const shortDateFormat = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "Europe/Paris" });
 const dateTimeFormat = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+const nightPeriodDateFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" });
 let lastAromeStamp = 0;
 let lastPiafStamp = 0;
 let lastRadarStamp = 0;
@@ -27,7 +28,8 @@ let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
 let dashboardSync = { status: "loading", error: null };
-let activeForecastSource = "openmeteo";
+const defaultForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
+let activeForecastSource = defaultForecastSource;
 let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
@@ -444,7 +446,7 @@ function toggleDaily48HourForecast(button) {
   }
   const tomorrow = new Date(todayDateKey() + "T12:00:00");
   tomorrow.setDate(tomorrow.getDate() + 1);
-  activeForecastSource = "openmeteo";
+  activeForecastSource = defaultForecastSource;
   Object.keys(metricOpacities).forEach(metric => { metricOpacities[metric] = 100; });
   panel.dataset.focusDate = dateKey;
   panel.dataset.focusHour = dateKey === forecastDateKey(tomorrow) ? "7" : "";
@@ -454,7 +456,6 @@ function toggleDaily48HourForecast(button) {
   $("forecast-48h-title-label").textContent = forecast48HourRangeTitle();
   set48HourForecastContentOpen(true);
   renderActiveForecast();
-  void ensureOpenMeteoEnsemble();
   requestAnimationFrame(() => sync48HourForecastFocus(true));
 }
 
@@ -540,12 +541,14 @@ function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
 function vigilanceSlotIcons(alerts) {
   if (!alerts.length) return "";
   const levels = { 2: "jaune", 3: "orange", 4: "rouge" };
-  return '<span class="daily-vigilance-icons">' + alerts.map(alert => {
+  const strongestLevel = levels[Math.max(...alerts.map(alert => alert.colorId))] || "jaune";
+  const icons = alerts.map(alert => {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
     return '<span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><i aria-hidden="true"></i></span>';
-  }).join("") + "</span>";
+  }).join("");
+  return '<span class="daily-vigilance-icons" data-level="' + strongestLevel + '">' + icons + '<strong aria-hidden="true">VIGILANCE</strong></span>';
 }
 
 function renderVigilance(vigilance) {
@@ -1756,6 +1759,18 @@ function normalizeOpenMeteoDays(daily, hourly) {
       })).filter(item => Number.isFinite(item.temperature) && item.normal);
       const temperatureAnomalies = temperatureReferences.map(item => item.temperature - item.normal.median);
       const direction = periodDirections.length ? (Math.atan2(periodDirections.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0), periodDirections.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0)) * 180 / Math.PI + 360) % 360 : null;
+      const timedRain = periodSamples.map(sample => ({
+        hour: Number(sample.time.slice(11, 13)) + .5,
+        amount: Math.max(0, Number(sample.precipitation) || 0)
+      })).filter(sample => sample.amount >= possibleDrizzleThreshold);
+      const timedRainTotal = timedRain.reduce((sum, sample) => sum + sample.amount, 0);
+      const weightedRainHour = timedRainTotal > 0
+        ? timedRain.reduce((sum, sample) => sum + sample.hour * sample.amount, 0) / timedRainTotal
+        : null;
+      const rainTiming = weightedRainHour == null ? null
+        : weightedRainHour < slot.startHour + (slot.endHour - slot.startHour) / 3 ? "start"
+        : weightedRainHour >= slot.startHour + (slot.endHour - slot.startHour) * 2 / 3 ? "end"
+        : "middle";
       return {
         time: periodSamples[Math.floor(periodSamples.length / 2)]?.time || date + "T12:00",
         weatherCode: representativeCode(periodSamples),
@@ -1767,6 +1782,7 @@ function normalizeOpenMeteoDays(daily, hourly) {
         windSpeedMax: winds.length ? Math.max(...winds) : null,
         windGustMax: gusts.length ? Math.max(...gusts) : null,
         windDirection: direction,
+        rainTiming,
         storm: periodSamples.some(sample => sample.weatherCode >= 95),
         temperatureNormal: average(temperatureReferences.map(item => item.normal.median)),
         temperatureAnomaly: average(temperatureAnomalies),
@@ -2332,7 +2348,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
+  const periodCard = (period, label, labelTitle, slot, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null) => {
     if (!period) return "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2346,6 +2362,7 @@ function renderTestingDailyForecast() {
       Math.max(0, Number(period.precipitationProbabilityMax) || 0),
       Math.max(0, Number(meteoFranceRain?.probability) || 0)
     );
+    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax, meteoFranceRain?.probability]);
     const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
     const hasOpenMeteoStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
     const hasMeteoFranceStorm = Boolean(meteoFranceStorm);
@@ -2385,13 +2402,47 @@ function renderTestingDailyForecast() {
       : "";
     const notable = weatherDescription({ ...period, precipitationSum: rain, precipitationProbabilityMax: rainProbability, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
-    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax, meteoFranceRain?.probability]);
     const showers = (Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82) || hasStorm;
     const skyDescription = conciseSkySummary(cloud);
-    const rainModelDetail = rainDisagreement
-      ? " Cumuls selon les modèles : Open-Meteo " + rainAmountText(openMeteoRain) + " mm, Météo-France " + rainAmountText(meteoFranceRainAmount) + " mm."
-      : "";
-    const rainDescription = (conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.") + rainModelDetail;
+    const quantityBand = value => value < 1 ? "très faible" : value < 5 ? "faible" : value < 15 ? "modérée" : value < 30 ? "forte" : "très forte";
+    const lowQuantity = quantityBand(rainLow);
+    const highQuantity = quantityBand(rain);
+    const quantitySummary = rainLow <= 0
+      ? "en quantité " + highQuantity + " au maximum"
+      : "en quantité " + lowQuantity + (lowQuantity === highQuantity ? "" : " à " + highQuantity);
+    const periodNoun = slot.key === "morning" ? "matinée" : slot.key === "afternoon" ? "après-midi" : slot.key === "evening" ? "soirée" : "nuit";
+    const timingSummary = period.rainTiming === "start" ? "en début de " + periodNoun
+      : period.rainTiming === "middle" ? "au milieu de " + periodNoun
+      : period.rainTiming === "end" ? "en fin de " + periodNoun : "";
+    const pluralRain = showers && !hasStorm;
+    const likelihood = (pluralRain ? {
+      "Prévue": "",
+      "Très probable": " très probables",
+      "Probable": " probables",
+      "Possible": " possibles",
+      "Envisagée": " envisagées",
+      "Peu probable": " peu probables",
+      "Très peu probable": " très peu probables",
+      "Incertain": " incertaines",
+      "À confirmer": " à confirmer"
+    } : {
+      "Prévue": "",
+      "Très probable": " très probable",
+      "Probable": " probable",
+      "Possible": " possible",
+      "Envisagée": " envisagée",
+      "Peu probable": " peu probable",
+      "Très peu probable": " très peu probable",
+      "Incertain": " incertaine",
+      "À confirmer": " à confirmer"
+    })[probabilitySummary.text] ?? "";
+    const rainSubject = hasStorm ? "Pluie orageuse" : pluralRain ? "Averses" : "Pluie";
+    const disagreementSummary = rainSubject + likelihood + (timingSummary ? " " + timingSummary + "," : "") + " " + quantitySummary + ".";
+    // La synthèse reste qualitative. Les valeurs exactes restent dans le
+    // pictogramme et son détail accessible.
+    const rainDescription = rainDisagreement
+      ? disagreementSummary
+      : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary([period.windSpeedMax], [gust], [], [], [period.windDirection]);
     const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %"), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
@@ -2411,25 +2462,34 @@ function renderTestingDailyForecast() {
       : gust >= 65 ? "orange"
       : hasOpenMeteoStorm || gustStep > 3 ? "yellow" : "";
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
-    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
+    return '<details class="daily-period-card' + alertClass + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
   const cards = openMeteoDays.map(openMeteo => {
     const vigilance = latestForecastData?.vigilance || null;
-    const slotLabel = slot => {
-      if (slot.key !== "night") return slot.label;
-      const nextDate = dateFromKey(slotDateKey(openMeteo.date, slot));
-      const weekday = weekDayFormat.format(nextDate);
-      return "Nuit → " + weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    const slotPresentation = slot => {
+      if (slot.key !== "night") return { label: slot.label, title: "" };
+      const startDate = dateFromKey(openMeteo.date);
+      const endDate = dateFromKey(slotDateKey(openMeteo.date, slot));
+      return {
+        label: "Nuit",
+        title: "Nuit du " + nightPeriodDateFormat.format(startDate) + " au " + nightPeriodDateFormat.format(endDate) + " matin"
+      };
     };
-    const periods = forecastDailySlots.map(slot => periodCard(
-      openMeteo.periods?.[slot.key] || null,
-      slotLabel(slot),
-      meteoFranceStormForPeriod(openMeteo.date, slot),
-      vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
-      meteoFranceRainForPeriod(openMeteo.date, slot)
-    )).filter(Boolean);
+    const periods = forecastDailySlots.map(slot => {
+      const presentation = slotPresentation(slot);
+      return periodCard(
+        openMeteo.periods?.[slot.key] || null,
+        presentation.label,
+        presentation.title,
+        slot,
+        meteoFranceStormForPeriod(openMeteo.date, slot),
+        vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
+        meteoFranceRainForPeriod(openMeteo.date, slot)
+      );
+    }).filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
     const shortDate = shortDateFormat.format(dateFromKey(openMeteo.date));
     const dayGap = Math.round((dateFromKey(openMeteo.date).getTime() - dateFromKey(todayDateKey()).getTime()) / dayMilliseconds);
