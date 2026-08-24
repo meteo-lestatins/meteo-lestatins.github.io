@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="echelle-kilometrique.css?v=9">
+  <link rel="stylesheet" href="echelle-kilometrique.css?v=10">
   <title>Météo les Tatins &gt; About</title>
 </head>
 <body>
@@ -15,7 +15,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.083</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.085</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -27,8 +27,8 @@
         </aside>
       </div>
     </section>
-    <div class="technical-details" aria-label="Informations techniques"><section class="technical-chapter">
-<h2>Détails techniques des API</h2>
+    <details class="technical-details-disclosure"><summary>Détails techniques des API</summary><div class="technical-details" aria-label="Détails techniques des API"><section class="technical-chapter">
+
 <h3 id="api-radar"><a href="https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar">Radar v1 Météo-France</a></h3>
 <ul><li>Catalogue : <code>DPRadar/v1/mosaiques/METROPOLE/observations/LAME_D_EAU</code>.</li><li>Produit demandé : lame d’eau nationale avec une maille de 500 m.</li><li>Format lu : HDF5.</li><li>La projection du fichier est convertie vers la longitude et la latitude avec <code>proj4</code>.</li><li>Les valeurs de gain, décalage, absence de donnée et valeur indétectable sont appliquées avant analyse.</li><li>Le serveur extrait uniquement la zone utile autour des Tatins.</li><li>Les pixels significatifs sont regroupés en composantes connexes pour identifier des cellules pluvio-orageuses.</li><li>Pour chaque cellule sont estimés le centre pondéré par l’intensité, la surface, le rayon, la pluie moyenne et la pluie maximale.</li><li>Deux images successives servent à estimer le déplacement, extrapolé jusqu’à 60 minutes.</li><li>Lorsqu’une cellule devient significative, les volumes multipolarisés PAM des radars de Moucherotte et de Colombis sont également demandés. Les variables ZH, ZDR, ρHV et l’écart-type de réflectivité sont croisées sur plusieurs élévations et sous deux angles.</li><li>Cette analyse secondaire est expérimentale, séquentielle et exécutée à basse priorité ; son indisponibilité ne bloque jamais la mosaïque principale.</li></ul>
 <p>Le risque de passage, le potentiel orageux, la pluie intense et la grêle sont des indicateurs locaux dérivés. Ce ne sont pas des bulletins officiels.</p>
@@ -51,7 +51,7 @@
 <h3>Cache et fréquence d’actualisation</h3>
 <div class="technical-table-scroll"><table><thead><tr><th>Donnée</th><th>Durée cible du cache serveur</th></tr></thead><tbody><tr><td>PIAF</td><td>4 min</td></tr><tr><td>Radar</td><td>4 min</td></tr><tr><td>Radar polarimétrique PAM</td><td>cycle de 5 min, uniquement lors d’une activité significative</td></tr><tr><td>Foudre EUMETSAT</td><td>5 min</td></tr><tr><td>AROME</td><td>60 min</td></tr><tr><td>PE-AROME, probabilités</td><td>3 h</td></tr><tr><td>PE-AROME, ensemble</td><td>6 h</td></tr><tr><td>Vigilance</td><td>30 min</td></tr><tr><td>Open-Meteo</td><td>30 min</td></tr><tr><td>ARPEGE et PE-ARPEGE</td><td>6 h</td></tr></tbody></table></div>
 <p>Lorsqu’une actualisation échoue ou reste trop incomplète, la dernière acquisition complète est conservée et continue d’être servie, même après l’expiration de sa durée cible, jusqu’à ce qu’un remplacement exploitable soit disponible.</p>
-</section>
+</section></div></details><div class="technical-details technical-details-following" aria-label="Informations complémentaires">
 <section class="technical-chapter">
 <h2><a href="index.html#radar-nowcast">Nowcasting</a></h2>
 <p>Le <strong><a href="index.html#radar-nowcast">nowcasting</a></strong> décrit le temps présent et son évolution probable à très courte échéance. Il est ici designé pour les 3h suivantes environ pour la pluie et la prochaine heure pour le déplacement des cellules pluvio-orageuses.</p>
