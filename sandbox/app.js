@@ -989,6 +989,13 @@ function rainIntensityStep(value) {
   return value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
 }
 
+function onlyDrizzleInThreeHours(steps) {
+  const wetSteps = (steps || [])
+    .map(step => Math.max(0, Number(step?.totalPrecipitation) || 0))
+    .filter(amount => amount >= possibleDrizzleThreshold);
+  return wetSteps.length > 0 && wetSteps.every(amount => amount < .2);
+}
+
 function threeHourTrendIsSignificant(kind, trend) {
   if (!trend || trend.label === "stable") return false;
   const change = Math.abs(Number(trend.change) || 0);
@@ -1010,6 +1017,15 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
     return rain ? "Pluie en cours" : "Orage en cours";
   }
   return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
+}
+
+function shortTermRainLabel(etaMinutes, drizzleOnly = false) {
+  if (!drizzleOnly) return shortTermEventLabel("rain", etaMinutes);
+  const eta = etaMinutes == null ? null : Number(etaMinutes);
+  if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
+  return eta < 1
+    ? "Gouttes possibles maintenant"
+    : "Gouttes possibles dans " + Math.max(1, Math.round(eta)) + "min";
 }
 
 function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
@@ -5234,8 +5250,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     projectedPeakRainIntensity,
     freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
   );
-  const rainColorLevel = rainIntensityStep(peakRainIntensity);
-  const rainValue = shortTermEventLabel("rain", rainEtaMinutes);
+  const drizzleOnly = onlyDrizzleInThreeHours(threeHourRainSteps);
+  const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
+  const rainValue = shortTermRainLabel(rainEtaMinutes, drizzleOnly);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
