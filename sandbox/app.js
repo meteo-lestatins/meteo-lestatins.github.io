@@ -87,11 +87,12 @@ function forecastSlotAlertTone({ hasStorm = false, violentStorm = false, gust = 
   const rainValue = Math.max(0, Number(representativeRain) || 0);
   const rain3hValue = Math.max(0, Number(representativeRain3h) || 0);
   const rainIsProbable = probabilityValue >= 70;
-  if (violentStorm || gustValue >= 90 || (rainIsProbable && (rain3hValue >= 20 || rainValue >= 30))) return "red";
-  if (gustValue >= 65
-    || (hasStorm && rainIsProbable && rainValue >= 5)
-    || (rainIsProbable && (rain3hValue >= 10 || rainValue >= 15))) return "orange";
-  if (hasStorm || gustValue >= 50 || probabilityValue >= 50 || rainValue >= 2) return "yellow";
+  const significantRain = rainIsProbable && (rain3hValue >= 10 || rainValue >= 15);
+  const strongRain = rainIsProbable && (rain3hValue >= 15 || rainValue >= 25);
+  const extremeRain = rainIsProbable && (rain3hValue >= 20 || rainValue >= 30);
+  if (violentStorm || gustValue >= 90 || extremeRain) return "red";
+  if (gustValue >= 80 || strongRain || (hasStorm && significantRain)) return "orange";
+  if (hasStorm || gustValue >= 65 || significantRain) return "yellow";
   return "";
 }
 
