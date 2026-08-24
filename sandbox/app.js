@@ -5265,8 +5265,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
     : "";
-  const stormUpcomingText = stormEtaSelection.upcomingCount > 0
-    ? stormEtaSelection.upcomingCount + (stormEtaSelection.upcomingCount > 1 ? " cellules à venir" : " cellule à venir")
+  const stormUpcomingText = stormEtaSelection.upcomingCount > 1
+    ? stormEtaSelection.upcomingCount + " cellules à venir"
     : "";
   const stormDurationLabel = [stormDurationText, stormUpcomingText].filter(Boolean).join(" · ");
   const stormEtaCell = relevantStormEtaEvent?.cell || relevantStormCell;
