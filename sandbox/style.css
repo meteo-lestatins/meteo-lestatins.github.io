@@ -310,7 +310,8 @@ button:hover { background: #eef7fb; }
 .daily-vigilance-icon[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-icon[data-level="orange"] { background: #f58b20; }
 .daily-vigilance-icon[data-level="rouge"] { background: #bd2525; }
-.daily-vigilance-icon i { width: 28px; height: 28px; display: block; flex: 0 0 28px; background: center / 28px 28px no-repeat; transform: translate(-1px, -1px); }
+.daily-vigilance-icon i { width: 28px; height: 28px; display: block; flex: 0 0 28px; background: center / 28px 28px no-repeat; transform: translate(-3px, -3px); }
+.vigilance-banner .daily-vigilance-icon i { transform: translate(-2px, -2px); }
 .daily-vigilance-icon[data-level="rouge"] i { filter: invert(1); }
 .daily-vigilance-icon.type-1 i { background-image: url("vendor/vigilance-icons/phenomenon-1.png"); }
 .daily-vigilance-icon.type-2 i { background-image: url("vendor/vigilance-icons/phenomenon-2.png"); }

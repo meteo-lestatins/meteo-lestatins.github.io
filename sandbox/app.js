@@ -670,7 +670,8 @@ function nowcastCellTraversal(cell) {
   const unitEast = movementEast / movementDistance;
   const unitNorth = movementNorth / movementDistance;
   const shapeCoordinates = (cell.shapeRuns || []).flatMap(run => [Number(run.westKm), Number(run.eastKm), Number(run.southKm), Number(run.northKm)]).filter(Number.isFinite);
-  const maximumDistance = Math.min(200, Math.max(10, Math.max(0, ...shapeCoordinates.map(Math.abs), Number(cell.radiusKm || 0)) * 2 + 5));
+  const legacyRadius = shapeCoordinates.length ? 0 : Number(cell.radiusKm || 0);
+  const maximumDistance = Math.min(200, Math.max(10, Math.max(0, ...shapeCoordinates.map(Math.abs), legacyRadius) * 2 + 5));
   const distanceToExit = direction => {
     const stepKm = .25;
     for (let distance = stepKm; distance <= maximumDistance; distance += stepKm) {
@@ -809,7 +810,7 @@ function nowcastEtaRainEvents(radar) {
   const radarObservedAt = new Date(radar?.observedAt || 0).getTime();
   if (!Number.isFinite(radarObservedAt)) return [];
   const clampDuration = minutes => Math.max(15, Math.min(90, minutes));
-  const footprintAtEta = cell => {
+  const legacyFootprintAtEta = cell => {
     const etaMinutes = Number(cell.etaMinutes);
     const points = cell.track?.points || [];
     const closestPoint = points.reduce((best, point) => {
@@ -835,13 +836,16 @@ function nowcastEtaRainEvents(radar) {
     const fullTraversalDurationMinutes = traversal && speedKmh > 2
       ? 60 * traversal.totalDistanceKm / speedKmh
       : null;
-    const fallbackDurationMinutes = traversal
-      ? clampDuration(fullTraversalDurationMinutes ?? 45)
-      : clampDuration(speedKmh > 2 ? 60 * (footprintAtEta(cell) * 2) / speedKmh : 45);
+    const needsLegacyFallback = !projectedPassages.length && !hasRainProfile && !hasRealShape;
+    const fallbackDurationMinutes = needsLegacyFallback
+      ? traversal
+        ? clampDuration(fullTraversalDurationMinutes ?? 45)
+        : clampDuration(speedKmh > 2 ? 60 * (legacyFootprintAtEta(cell) * 2) / speedKmh : 45)
+      : 0;
     const fallbackRemainingMinutes = traversal ? Math.max(1, fallbackDurationMinutes * traversal.remainingFraction) : fallbackDurationMinutes;
     const passages = projectedPassages.length
       ? projectedPassages
-      : hasRainProfile || hasRealShape ? [] : [{ startMinutes: etaMinutes, endMinutes: etaMinutes + fallbackRemainingMinutes, durationMinutes: fallbackRemainingMinutes }];
+      : needsLegacyFallback ? [{ startMinutes: etaMinutes, endMinutes: etaMinutes + fallbackRemainingMinutes, durationMinutes: fallbackRemainingMinutes }] : [];
     const maximum = Math.max(0, Number(cell.maximum) || 0);
     const representativeIntensity = Math.min(maximum, Math.max(0, Number(cell.mean) || maximum * .5));
     return passages.map((projectedPassage, passageIndex) => {
@@ -4127,7 +4131,43 @@ function radarDataAgeLabel(timestamp) {
 function radarCellEdgeDistance(cell) {
   const exact = cell?.edgeDistanceKm == null || cell.edgeDistanceKm === "" ? NaN : Number(cell.edgeDistanceKm);
   if (Number.isFinite(exact)) return Math.max(0, exact);
-  return Math.max(0, Math.hypot(Number(cell?.eastKm || 0), Number(cell?.northKm || 0)) - Math.max(0, Number(cell?.radiusKm || 0)));
+  return radarCellPointDistance(cell, 0, 0);
+}
+
+function radarCellPointDistance(cell, eastKm, northKm) {
+  const shapeRuns = radarCellShapeRuns(cell);
+  if (shapeRuns.length) {
+    return Math.min(...shapeRuns.map(run => {
+      const horizontal = Math.max(Number(run.westKm) - eastKm, 0, eastKm - Number(run.eastKm));
+      const vertical = Math.max(Number(run.southKm) - northKm, 0, northKm - Number(run.northKm));
+      return Math.hypot(horizontal, vertical);
+    }));
+  }
+  const footprint = Array.isArray(cell?.footprint) ? cell.footprint : [];
+  if (footprint.length >= 3) {
+    let inside = false;
+    let distance = Infinity;
+    for (let index = 0, previousIndex = footprint.length - 1; index < footprint.length; previousIndex = index++) {
+      const current = footprint[index];
+      const previous = footprint[previousIndex];
+      const currentEast = Number(current.eastKm);
+      const currentNorth = Number(current.northKm);
+      const previousEast = Number(previous.eastKm);
+      const previousNorth = Number(previous.northKm);
+      if ((currentNorth > northKm) !== (previousNorth > northKm)
+        && eastKm < (previousEast - currentEast) * (northKm - currentNorth) / (previousNorth - currentNorth) + currentEast) inside = !inside;
+      const segmentEast = previousEast - currentEast;
+      const segmentNorth = previousNorth - currentNorth;
+      const lengthSquared = segmentEast ** 2 + segmentNorth ** 2;
+      const ratio = lengthSquared > 0
+        ? Math.max(0, Math.min(1, ((eastKm - currentEast) * segmentEast + (northKm - currentNorth) * segmentNorth) / lengthSquared))
+        : 0;
+      distance = Math.min(distance, Math.hypot(eastKm - (currentEast + segmentEast * ratio), northKm - (currentNorth + segmentNorth * ratio)));
+    }
+    return inside ? 0 : Math.max(0, distance);
+  }
+  // Compatibilité avec les anciennes archives, qui ne contiennent pas encore la forme.
+  return Math.max(0, Math.hypot(eastKm - Number(cell?.eastKm || 0), northKm - Number(cell?.northKm || 0)) - Math.max(0, Number(cell?.radiusKm || 0)));
 }
 
 function polarimetricHailRisk(cell) {
@@ -4170,15 +4210,11 @@ function nowcastCellRepresentativeRain(cell, currentPrecipitation = null) {
 }
 
 function nowcastFlashesNearCell(cell, lightning) {
-  const touchesTatins = radarCellEdgeDistance(cell) <= .5;
-  const originEast = touchesTatins ? 0 : Number(cell?.eastKm || 0);
-  const originNorth = touchesTatins ? 0 : Number(cell?.northKm || 0);
-  const radiusKm = touchesTatins
-    ? 12
-    : Math.min(15, Math.max(8, Number(cell?.radiusKm || 0) * .35 + 5));
-  return (lightning?.flashes || []).filter(flash => {
-    return Math.hypot(Number(flash.eastKm || 0) - originEast, Number(flash.northKm || 0) - originNorth) <= radiusKm;
-  }).length;
+  return (lightning?.flashes || []).filter(flash => radarCellPointDistance(
+    cell,
+    Number(flash.eastKm || 0),
+    Number(flash.northKm || 0)
+  ) <= 8).length;
 }
 
 function radarCellShapeRuns(cell) {
@@ -4357,21 +4393,22 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const directionY = screenDy / length;
     const perpendicularX = -screenDy / length;
     const perpendicularY = screenDx / length;
-    let previousRadiusKm = Math.max(0, Number(cell?.radiusKm) || 0);
-    const radiusByPointKm = track.map((point, index) => {
-      const estimatedRadiusKm = index === 0 ? previousRadiusKm : Math.max(0, Number(point.uncertaintyKm) || 0);
-      previousRadiusKm = Math.max(previousRadiusKm, estimatedRadiusKm);
-      return previousRadiusKm;
-    });
-    const radiusFor = index => radiusByPointKm[index] * scale;
-    const maximumRadius = Math.max(1, ...track.map((point, index) => radiusFor(index)));
-    const startRadius = radiusFor(0);
-    const edgeClearance = Math.max(3, scale * .8);
     const geographicLength = Math.hypot(Number(end.eastKm) - Number(start.eastKm), Number(end.northKm) - Number(start.northKm)) || 1;
     const directionEast = (Number(end.eastKm) - Number(start.eastKm)) / geographicLength;
     const directionNorth = (Number(end.northKm) - Number(start.northKm)) / geographicLength;
     const forwardExtent = radarCellExtent(cell, directionEast, directionNorth);
     const lateralExtent = radarCellExtent(cell, -directionNorth, directionEast, true);
+    let previousExtentKm = lateralExtent;
+    const radiusByPointKm = track.map((point, index) => {
+      const legacyTotalUncertainty = Math.max(0, Number(point.uncertaintyKm) || 0);
+      const growthKm = index === 0 ? 0 : Number.isFinite(Number(point.uncertaintyGrowthKm))
+        ? Math.max(0, Number(point.uncertaintyGrowthKm))
+        : Math.max(0, legacyTotalUncertainty - lateralExtent);
+      previousExtentKm = Math.max(previousExtentKm, lateralExtent + growthKm);
+      return previousExtentKm;
+    });
+    const radiusFor = index => radiusByPointKm[index] * scale;
+    const edgeClearance = Math.max(3, scale * .8);
     const edgeStartX = startX + directionX * (forwardExtent * scale + edgeClearance);
     const edgeStartY = startY + directionY * (forwardExtent * scale + edgeClearance);
     const startHalfWidth = Math.max(scale, lateralExtent * scale);
@@ -4448,7 +4485,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const mapFlashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
   const mapFlashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
   const cells = radarCells.map((cell, index) => {
-    const radius = Math.max(5, Number(cell.radiusKm || 1) * scale);
+    const legacyRadius = Math.max(5, Number(cell.radiusKm || 1) * scale);
     const selected = Math.abs(cell.eastKm - threat.eastKm) < .1 && Math.abs(cell.northKm - threat.northKm) < .1;
     const cellId = cell.id || String.fromCharCode(65 + index);
     const name = 'Cellule ' + cellId;
@@ -4461,7 +4498,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const eta = cell.etaMinutes == null ? '—' : cell.etaMinutes <= 0 ? 'en cours' : (etaBasis === "possible" ? 'possible ' : '') + Math.round(cell.etaMinutes) + ' min';
     const risks = cell.risks || {};
     const trajectoryBasis = cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire";
-    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + (cell.etaMinutes == null ? '' : '\nETA basée sur : ' + etaBasis) + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + polarimetricHailLabel(cell) + '\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nRayon : ' + Number(cell.radiusKm || 0).toFixed(1) + ' km\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
+    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + (cell.etaMinutes == null ? '' : '\nETA basée sur : ' + etaBasis) + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + polarimetricHailLabel(cell) + '\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface réelle : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
     const cellX = x(cell.eastKm);
     const cellY = y(cell.northKm);
     const tatinsX = x(0);
@@ -4491,8 +4528,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return [{ eastKm: Number(point.eastKm) + dx * ratio, northKm: Number(point.northKm) + dy * ratio }];
     }).sort((left, right) => Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))[0];
     const nearestEdgePoint = nearestShapePoint || nearestFootprintPoint;
-    const cellEdgeX = nearestEdgePoint ? x(nearestEdgePoint.eastKm) : cellX + linkX * radius;
-    const cellEdgeY = nearestEdgePoint ? y(nearestEdgePoint.northKm) : cellY + linkY * radius;
+    const cellEdgeX = nearestEdgePoint ? x(nearestEdgePoint.eastKm) : cellX + linkX * legacyRadius;
+    const cellEdgeY = nearestEdgePoint ? y(nearestEdgePoint.northKm) : cellY + linkY * legacyRadius;
     const labelX = cellEdgeX + (tatinsX - cellEdgeX) * .32 - linkY * 13;
     const labelY = cellEdgeY + (tatinsY - cellEdgeY) * .32 + linkX * 13;
     const labelWidth = Math.max(72, distanceLabel.length * 6.3 + 12);
@@ -4502,9 +4539,9 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       ? '<path class="radar-cell raster-shape' + (selected ? ' selected' : '') + '" d="' + rasterPath + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
       : footprint
         ? '<path class="radar-cell' + (selected ? ' selected' : '') + '" d="' + footprint.map((point, pointIndex) => (pointIndex ? 'L' : 'M') + x(point.eastKm).toFixed(1) + ' ' + y(point.northKm).toFixed(1)).join(' ') + 'Z" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
-      : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + radius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></circle>';
-    const cellLabelX = shapeRuns.length ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4 : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - radius - 4;
-    const cellLabelY = shapeRuns.length ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4 : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - radius - 4;
+      : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + legacyRadius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></circle>';
+    const cellLabelX = shapeRuns.length ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4 : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - legacyRadius - 4;
+    const cellLabelY = shapeRuns.length ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4 : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - legacyRadius - 4;
     return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '">' + cellShape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + cellLabelX.toFixed(1) + '" y="' + cellLabelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text><line class="cell-distance-link" x1="' + cellEdgeX.toFixed(1) + '" y1="' + cellEdgeY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><g aria-hidden="true">' + intensityDots + '</g></g></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
@@ -4903,7 +4940,12 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : [
         ...nearbyCells.map(cell => Number(cell.passageTrend?.previous)).filter(Number.isFinite),
         ...(radar.disappearedCells || [])
-          .filter(cell => Math.max(0, Number(cell.lastDistanceKm || 0) - Math.max(0, Number(cell.radiusKm || 0))) < 60)
+          .filter(cell => {
+            const edgeDistance = Number(cell.lastEdgeDistanceKm);
+            return Number.isFinite(edgeDistance)
+              ? Math.max(0, edgeDistance) < 60
+              : Math.max(0, Number(cell.lastDistanceKm || 0) - Math.max(0, Number(cell.radiusKm || 0))) < 60;
+          })
           .map(cell => Number(cell.risks?.passage))
           .filter(Number.isFinite)
       ];
@@ -5008,7 +5050,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const detailsId = "cell-details-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
     const details = [
       detailMetric("Distance du centre", cellCenterDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"),
-      detailMetric("Rayon estimé", Number.isFinite(Number(cell.radiusKm)) ? Number(cell.radiusKm).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km" : null),
       risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice convectif</dt><dd>' + nowcastMetricPictogram("storm", probabilityStep(Number(risks.storm)), "Indice convectif : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
       detailMetric("Vitesse estimée", Number.isFinite(Number(cell.track?.speedKmh)) ? Number(cell.track.speedKmh).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km/h" : null),
       detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
@@ -5038,15 +5079,17 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const cellsInRange = nearbyCells
     .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
     .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
+  const disappearedCellEdgeDistance = cell => {
+    const exact = Number(cell.lastEdgeDistanceKm);
+    if (Number.isFinite(exact)) return Math.max(0, exact);
+    const centerDistance = Number.isFinite(Number(cell.lastDistanceKm)) ? Number(cell.lastDistanceKm) : cellCenterDistance(cell);
+    return Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0)));
+  };
   const disappearedCellsInRange = (radar.disappearedCells || [])
-    .filter(cell => {
-      const centerDistance = Number.isFinite(Number(cell.lastDistanceKm)) ? Number(cell.lastDistanceKm) : cellCenterDistance(cell);
-      return Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0))) < activeNowcastMapRadius;
-    })
+    .filter(cell => disappearedCellEdgeDistance(cell) < activeNowcastMapRadius)
     .sort((left, right) => new Date(right.disappearedAt || 0).getTime() - new Date(left.disappearedAt || 0).getTime());
   const disappearedCellCard = cell => {
-    const centerDistance = Number.isFinite(Number(cell.lastDistanceKm)) ? Number(cell.lastDistanceKm) : cellCenterDistance(cell);
-    const distance = Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0))).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+    const distance = disappearedCellEdgeDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
     const disappearedAt = new Date(cell.disappearedAt || 0).getTime();
     const referenceTime = Number.isFinite(currentObservation) ? currentObservation : Date.now();
     const elapsedMinutes = Number.isFinite(disappearedAt) ? Math.max(0, Math.round((referenceTime - disappearedAt) / 60000)) : null;
