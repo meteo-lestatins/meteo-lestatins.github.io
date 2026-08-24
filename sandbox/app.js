@@ -626,11 +626,19 @@ function eclipseOverlayMarkup(timelineStart, timelineEnd, timelineWidth) {
 }
 
 
+function compactMinutesLabel(minutes) {
+  const rounded = Math.max(0, Math.round(Number(minutes) || 0));
+  if (rounded < 60) return rounded + "min";
+  const hours = Math.floor(rounded / 60);
+  const remaining = rounded % 60;
+  return hours + "h" + (remaining ? String(remaining).padStart(2, "0") : "");
+}
+
 function shortEtaLabel(minutes) {
   if (!Number.isFinite(minutes)) return "à confirmer";
   if (minutes <= 0) return "en cours";
   if (minutes < 1) return "moins d’une minute";
-  return Math.round(minutes) + " min";
+  return compactMinutesLabel(minutes);
 }
 
 function nowcastCellContainsPoint(cell, eastKm, northKm) {
@@ -1017,7 +1025,7 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
     }
     return rain ? "Pluie en cours" : "Orage en cours";
   }
-  return (rain ? "Pluie" : "Orage") + " dans " + Math.max(1, Math.round(eta)) + "min";
+  return (rain ? "Pluie" : "Orage") + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
 function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0) {
@@ -1030,7 +1038,7 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0)
   if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
   return eta < 1
     ? "Gouttes possibles maintenant"
-    : "Gouttes possibles dans " + Math.max(1, Math.round(eta)) + "min";
+    : "Gouttes possibles dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
 function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0) {
@@ -1141,7 +1149,7 @@ function renderApproachingCellsAlert(radar) {
   const passageLabel = nearest.passageRisk >= 60 ? "passage probable" : "passage possible";
   const passageTiming = nearest.etaMinutes <= 0
     ? "en cours"
-    : nearest.etaMinutes < 1 ? "dans moins d’une minute" : "dans environ " + Math.round(nearest.etaMinutes) + " min";
+    : nearest.etaMinutes < 1 ? "dans moins d’une minute" : "dans environ " + compactMinutesLabel(nearest.etaMinutes);
   const summary = nearest.passageRisk > 0 && Number.isFinite(nearest.etaMinutes)
     ? "À " + nearest.distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km · " + passageLabel + " " + passageTiming
     : "À " + nearest.distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km · rapprochement à " + nearest.speed + " km/h";
@@ -4231,7 +4239,7 @@ function polarimetricHailLabel(cell) {
       && etaMinutes <= 180
       ? etaMinutes < 1
         ? " · passage grêle possible en cours · passage " + passage + " %"
-        : " · grêle possible dans " + Math.max(1, Math.round(etaMinutes)) + " min · passage " + passage + " %"
+        : " · grêle possible dans " + compactMinutesLabel(Math.max(1, etaMinutes)) + " · passage " + passage + " %"
       : "";
     return "indice polarimétrique " + score + " %" + arrival;
   }
@@ -5106,10 +5114,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : '';
     const etaMinutes = cell.etaMinutes == null ? null : Number(cell.etaMinutes);
     const etaText = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
-      ? etaMinutes < 1 ? "Now" : Math.max(1, Math.round(etaMinutes)) + "min"
+      ? etaMinutes < 1 ? "Now" : compactMinutesLabel(Math.max(1, etaMinutes))
       : "";
     const etaDetail = etaText
-      ? etaMinutes < 1 ? "ETA maintenant" : "ETA dans " + Math.max(1, Math.round(etaMinutes)) + " min"
+      ? etaMinutes < 1 ? "ETA maintenant" : "ETA dans " + compactMinutesLabel(Math.max(1, etaMinutes))
       : "";
     const eta = etaText
       ? '<span class="nowcast-cell-eta" title="' + (cell.etaBasis === "envelope" ? "ETA possible · " : "") + escapeText(etaDetail) + '">' + escapeText(etaText) + '</span>'
@@ -5172,14 +5180,14 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const hailArrivalLabel = hailArrival
     ? hailArrival.etaMinutes < 1
       ? "grêle possible maintenant"
-      : "grêle possible dans " + Math.max(1, Math.round(hailArrival.etaMinutes)) + " min"
+      : "grêle possible dans " + compactMinutesLabel(Math.max(1, hailArrival.etaMinutes))
     : "";
   const hailArrivalDetail = hailArrival
     ? "Cellule " + hailArrival.cell.id
       + " · signature PAM compatible avec la grêle"
       + " · indice " + hailArrival.score + " %"
       + " · passage " + hailArrival.passage + " %"
-      + " · " + (hailArrival.etaMinutes < 1 ? "passage possible en cours" : "ETA dans " + Math.max(1, Math.round(hailArrival.etaMinutes)) + " min")
+      + " · " + (hailArrival.etaMinutes < 1 ? "passage possible en cours" : "ETA dans " + compactMinutesLabel(Math.max(1, hailArrival.etaMinutes)))
     : "";
   const stormDetail = relevantStormIntensity
     ? "Orage sur 3 h · passage " + maximumPassageRisk + " % · intensité " + stormIntensityLevel + "/5"
@@ -5202,7 +5210,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
   const stormEtaLabel = shortTermStormLabel(hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount, stormIntensityLevel);
   const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
-    ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
+    ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
     : "";
   const stormUpcomingText = stormEtaSelection.upcomingCount > 0
     ? stormEtaSelection.upcomingCount + " à venir"
@@ -5216,7 +5224,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + (stormEtaSelection.activeCount > 0 ? " : " + stormEtaSelection.activeIds.join(", ") : "")
       + " · bord à " + cellDistance(stormEtaCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
       + " · passage " + maximumPassageRisk + " %"
-      + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + Math.max(1, Math.round(relevantStormEtaMinutes)) + " min")
+      + " · " + (relevantStormEtaMinutes < 1 ? "orage en cours" : "ETA dans " + compactMinutesLabel(Math.max(1, relevantStormEtaMinutes)))
       + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
       + (stormEtaSelection.upcomingCount > 0 ? " (cellules " + stormEtaSelection.upcomingIds.join(", ") + ")" : "")
     : "";
