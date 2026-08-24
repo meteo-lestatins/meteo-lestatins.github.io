@@ -974,9 +974,10 @@ function stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) {
   const rain = Math.max(0, Math.min(5, Math.round(Number(rainLevel) || 0)));
   const hail = Math.max(0, Math.min(5, Math.round(Number(hailLevel) || 0)));
   const lightning = Math.max(0, Math.min(5, Math.round(Number(lightningLevel) || 0)));
-  const additionalHazard = Math.max(hail, lightning);
-  if (rain >= 5 && additionalHazard > 0) return 5;
-  return Math.max(Math.min(4, rain), additionalHazard);
+  if (hail >= 5) return 5;
+  if (rain >= 5 && (hail > 0 || lightning > 0)) return 5;
+  if (hail >= 3) return 4;
+  return Math.max(Math.min(4, rain), hail, Math.min(3, lightning));
 }
 
 function rainRateFromAccumulation(amount, durationMilliseconds) {
@@ -1030,6 +1031,16 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0)
   return eta < 1
     ? "Gouttes possibles maintenant"
     : "Gouttes possibles dans " + Math.max(1, Math.round(eta)) + "min";
+}
+
+function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0) {
+  const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
+  const singular = level >= 5 ? "Orage violent" : level >= 4 ? "Orage fort" : level >= 3 ? "Orage soutenu" : "Orage";
+  const plural = level >= 5 ? "orages violents" : level >= 4 ? "orages forts" : level >= 3 ? "orages soutenus" : "orages";
+  const label = shortTermEventLabel("storm", etaMinutes, activeCount);
+  return label
+    .replace(/^Orage/, singular)
+    .replace(/^(\d+) orages?/, (_, count) => count + " " + (Number(count) > 1 ? plural : singular.toLowerCase()));
 }
 
 function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
@@ -5179,7 +5190,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : Number(stormEtaSelection.etaMinutes);
   const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
   const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
-  const stormEtaLabel = shortTermEventLabel("storm", hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount);
+  const stormEtaLabel = shortTermStormLabel(hasStormEta ? relevantStormEtaMinutes : null, stormEtaSelection.activeCount, stormIntensityLevel);
   const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
     ? "Durée " + Math.max(1, Math.round(relevantStormDurationMinutes)) + "min"
     : "";
