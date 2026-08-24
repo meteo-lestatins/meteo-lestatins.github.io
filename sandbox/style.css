@@ -759,7 +759,7 @@ button:hover { background: #eef7fb; }
 .three-hour-action.metric-gust.level-5 { border-color: #d98f8b; background: #f2cfcd; }
 .three-hour-action-body { display: flex; align-items: center; gap: 8px; }
 .three-hour-action-body .three-hour-graph-icon { margin-left: auto; }
-.three-hour-action-body > b { margin-left: auto; white-space: nowrap; font-size: 15px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.three-hour-action-body > b { min-width: 0; margin-left: auto; overflow-wrap: anywhere; font-size: 15px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1.15; text-align: right; white-space: normal; }
 .three-hour-action-value { min-width: 0; font-variant-numeric: tabular-nums; }
 .three-hour-action.metric-storm .three-hour-action-body { width: 100%; flex-wrap: wrap; gap: 5px 9px; }
 .three-hour-storm-timing { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
