@@ -728,9 +728,10 @@ function nowcastCellProjectedPassages(cell, horizonMinutes = 180) {
       const north = axisInterval(Number(run.southKm), Number(run.northKm), velocityNorth);
       if (!east || !north) return [];
       const intervalStart = Math.max(0, east[0], north[0]);
-      const intervalEnd = Math.min(horizonMinutes, east[1], north[1]);
+      const projectedEnd = Math.min(east[1], north[1]);
+      const intervalEnd = Math.min(horizonMinutes, projectedEnd);
       return Number.isFinite(intervalStart) && Number.isFinite(intervalEnd) && intervalEnd > intervalStart
-        ? [{ startMinutes: intervalStart, endMinutes: intervalEnd }]
+        ? [{ startMinutes: intervalStart, endMinutes: intervalEnd, continuesBeyondHorizon: !Number.isFinite(projectedEnd) || projectedEnd > horizonMinutes }]
         : [];
     });
   } else {
@@ -741,7 +742,7 @@ function nowcastCellProjectedPassages(cell, horizonMinutes = 180) {
         && nowcastCellContainsPoint(cell, -velocityEast * minutes, -velocityNorth * minutes);
       if (inside && intervalStart == null) intervalStart = minutes;
       if (!inside && intervalStart != null) {
-        intervals.push({ startMinutes: intervalStart, endMinutes: Math.min(horizonMinutes, minutes) });
+        intervals.push({ startMinutes: intervalStart, endMinutes: Math.min(horizonMinutes, minutes), continuesBeyondHorizon: minutes > horizonMinutes });
         intervalStart = null;
       }
     }
@@ -753,6 +754,7 @@ function nowcastCellProjectedPassages(cell, horizonMinutes = 180) {
       const previous = merged.at(-1);
       if (previous && interval.startMinutes <= previous.endMinutes + .05) {
         previous.endMinutes = Math.max(previous.endMinutes, interval.endMinutes);
+        previous.continuesBeyondHorizon ||= Boolean(interval.continuesBeyondHorizon);
       } else {
         merged.push({ ...interval });
       }
@@ -760,7 +762,10 @@ function nowcastCellProjectedPassages(cell, horizonMinutes = 180) {
     }, [])
     .map(interval => ({
       ...interval,
-      durationMinutes: interval.endMinutes - interval.startMinutes
+      durationMinutes: interval.endMinutes - interval.startMinutes,
+      durationBeyondHorizon: interval.startMinutes <= .05
+        && interval.endMinutes >= horizonMinutes - .05
+        && Boolean(interval.continuesBeyondHorizon)
     }));
 }
 
@@ -769,10 +774,11 @@ function nowcastCellRainProfilePassages(cell, horizonMinutes = 180) {
   const intervals = profile.flatMap(segment => {
     if (segment?.startMinutes == null || segment?.endMinutes == null || segment?.intensity == null) return [];
     const startMinutes = Math.max(0, Number(segment?.startMinutes));
-    const endMinutes = Math.min(horizonMinutes, Number(segment?.endMinutes));
+    const projectedEnd = Number(segment?.endMinutes);
+    const endMinutes = Math.min(horizonMinutes, projectedEnd);
     const intensity = Math.max(0, Number(segment?.intensity) || 0);
     return Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes && intensity > 0
-      ? [{ startMinutes, endMinutes, intensity }]
+      ? [{ startMinutes, endMinutes, intensity, continuesBeyondHorizon: projectedEnd >= horizonMinutes }]
       : [];
   });
   if (!intervals.length) return [];
@@ -787,11 +793,13 @@ function nowcastCellRainProfilePassages(cell, horizonMinutes = 180) {
     const active = intervals.filter(interval => interval.startMinutes < midpoint && interval.endMinutes > midpoint);
     if (!active.length) continue;
     const intensity = active.reduce((sum, interval) => sum + interval.intensity, 0) / active.length;
+    const continuesBeyondHorizon = active.some(interval => interval.continuesBeyondHorizon);
     const previous = normalized.at(-1);
     if (previous && startMinutes - previous.endMinutes <= .01 && Math.abs(previous.intensity - intensity) <= .05) {
       previous.endMinutes = endMinutes;
+      previous.continuesBeyondHorizon ||= continuesBeyondHorizon;
     } else {
-      normalized.push({ startMinutes, endMinutes, intensity });
+      normalized.push({ startMinutes, endMinutes, intensity, continuesBeyondHorizon });
     }
   }
 
@@ -800,17 +808,22 @@ function nowcastCellRainProfilePassages(cell, horizonMinutes = 180) {
     if (previous && segment.startMinutes <= previous.endMinutes + .05) {
       previous.endMinutes = Math.max(previous.endMinutes, segment.endMinutes);
       previous.intensityProfile.push(segment);
+      previous.continuesBeyondHorizon ||= Boolean(segment.continuesBeyondHorizon);
     } else {
       passages.push({
         startMinutes: segment.startMinutes,
         endMinutes: segment.endMinutes,
-        intensityProfile: [segment]
+        intensityProfile: [segment],
+        continuesBeyondHorizon: Boolean(segment.continuesBeyondHorizon)
       });
     }
     return passages;
   }, []).map(passage => ({
     ...passage,
-    durationMinutes: passage.endMinutes - passage.startMinutes
+    durationMinutes: passage.endMinutes - passage.startMinutes,
+    durationBeyondHorizon: passage.startMinutes <= .05
+      && passage.endMinutes >= horizonMinutes - .05
+      && Boolean(passage.continuesBeyondHorizon)
   }));
 }
 
@@ -887,6 +900,7 @@ function nowcastEtaRainEvents(radar) {
         fadeStart,
         intensityProfile,
         durationMinutes: measuredSpeedKmh > 2 ? Math.max(1, Math.round(durationMinutes)) : null,
+        durationBeyondHorizon: Boolean(projectedPassage.durationBeyondHorizon),
         remainingFraction: traversal?.remainingFraction ?? 1,
         maximum,
         conditionalIntensity: profiledIntensity,
@@ -1180,11 +1194,13 @@ function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId
     const event = active.find(item => item.cell.id === preferredCellId)
       || [...active].sort((left, right) => Number(right.passage) - Number(left.passage))[0];
     const durationCalculable = active.every(item => Number.isFinite(Number(item.durationMinutes)) && Number(item.durationMinutes) > 0);
+    const durationBeyondHorizon = active.some(item => item.durationBeyondHorizon === true);
     const latestEnd = Math.max(...active.map(item => Number(item.eventEnd)));
     return {
       event,
       etaMinutes: 0,
       durationMinutes: durationCalculable ? Math.max(1, Math.ceil((latestEnd - now) / 60000)) : null,
+      durationBeyondHorizon,
       activeCount: active.length,
       upcomingCount: upcoming.length,
       activeIds: [...activeIds],
@@ -1198,6 +1214,7 @@ function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId
     event,
     etaMinutes: event ? Math.max(0, (Number(event.eventStart) - now) / 60000) : null,
     durationMinutes: Number.isFinite(Number(event?.durationMinutes)) && Number(event.durationMinutes) > 0 ? Number(event.durationMinutes) : null,
+    durationBeyondHorizon: Boolean(event?.durationBeyondHorizon),
     activeCount: 0,
     upcomingCount: upcoming.length,
     activeIds: [],
@@ -5298,6 +5315,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? relevantStormCell?.etaMinutes == null ? null : Number(relevantStormCell.etaMinutes)
     : Number(stormEtaSelection.etaMinutes);
   const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
+  const relevantStormDurationBeyondHorizon = stormEtaSelection.durationBeyondHorizon === true;
   const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
   const stormEtaLabel = relevantStormIntensity
     ? shortTermStormLabel(
@@ -5313,9 +5331,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : stormForecastSourceCount > 0 || orangeVigilanceActive
         ? "Orage possible"
         : "pas d’orage";
-  const stormDurationText = hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
-    ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
-    : "";
+  const stormDurationText = hasStormEta && relevantStormDurationBeyondHorizon
+    ? "Durée plus de 3 h"
+    : hasStormEta && Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
+      ? "Durée " + compactMinutesLabel(Math.max(1, relevantStormDurationMinutes))
+      : "";
   const stormUpcomingText = stormEtaSelection.upcomingCount > 1
     ? stormEtaSelection.upcomingCount + " cellules à venir"
     : "";
