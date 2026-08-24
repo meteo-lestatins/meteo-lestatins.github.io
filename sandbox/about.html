@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="echelle-kilometrique.css?v=11">
+  <link rel="stylesheet" href="echelle-kilometrique.css?v=12">
   <title>Météo les Tatins &gt; About</title>
 </head>
 <body>
@@ -27,7 +27,7 @@
         </aside>
       </div>
     </section>
-    <details class="technical-details-disclosure"><summary>Détails techniques des API</summary><div class="technical-details" aria-label="Détails techniques des API"><section class="technical-chapter">
+    <details class="technical-details-disclosure"><summary><span>Détails techniques des API</span><span class="technical-details-toggle" aria-hidden="true">›</span></summary><div class="technical-details" aria-label="Détails techniques des API"><section class="technical-chapter">
 
 <h3 id="api-radar"><a href="https://portail-api.meteofrance.fr/web/api/DonneesPubliquesRadar">Radar v1 Météo-France</a></h3>
 <ul><li>Catalogue : <code>DPRadar/v1/mosaiques/METROPOLE/observations/LAME_D_EAU</code>.</li><li>Produit demandé : lame d’eau nationale avec une maille de 500 m.</li><li>Format lu : HDF5.</li><li>La projection du fichier est convertie vers la longitude et la latitude avec <code>proj4</code>.</li><li>Les valeurs de gain, décalage, absence de donnée et valeur indétectable sont appliquées avant analyse.</li><li>Le serveur extrait uniquement la zone utile autour des Tatins.</li><li>Les pixels significatifs sont regroupés en composantes connexes pour identifier des cellules pluvio-orageuses.</li><li>Pour chaque cellule sont calculés le centre pondéré par l’intensité, la forme pixellisée, la surface, la pluie moyenne et la pluie maximale.</li><li>Deux images successives servent à estimer le déplacement, extrapolé jusqu’à 60 minutes.</li><li>Lorsqu’une cellule devient significative, les volumes multipolarisés PAM des radars de Moucherotte et de Colombis sont également demandés. Les variables ZH, ZDR, ρHV et l’écart-type de réflectivité sont croisées sur plusieurs élévations et sous deux angles.</li><li>Cette analyse secondaire est expérimentale, séquentielle et exécutée à basse priorité ; son indisponibilité ne bloque jamais la mosaïque principale.</li></ul>
@@ -115,7 +115,7 @@
 <p>Dans la carte du jour J, <strong>Nuit</strong> correspond aux heures de <strong>0 h à 6 h le lendemain (J+1)</strong>. Le créneau Soir couvre 18h minuit.</p>
 <h3>Sources et calculs</h3>
 <ul><li><strong>ECMWF IFS HRES</strong>, obtenu par Open-Meteo, fournit le scénario horaire de référence sur sept jours. Les premières heures du huitième jour sont aussi demandées afin de calculer la dernière nuit.</li><li><strong>ARPEGE Météo-France</strong> sert de comparaison sur les quatre premiers jours.</li><li>La dispersion de <strong>DWD ICON-EPS</strong> complète l’estimation de l’incertitude lorsque la comparaison avec ARPEGE n’est pas disponible.</li></ul>
-<p>Dans chaque créneau, les températures sont les extrêmes horaires, la pluie est cumulée, la probabilité de précipitations conserve son maximum, la nébulosité est moyennée, et le vent ainsi que les rafales conservent leur maximum. La direction du vent est une moyenne circulaire. Pour Aujourd’hui, la synthèse générale de la journée écarte les heures déjà passées.</p>
+<p>Dans chaque créneau, les températures sont les extrêmes horaires, la pluie est cumulée, la probabilité de précipitations conserve son maximum, la nébulosité est moyennée, et le vent ainsi que les rafales conservent leur maximum. La direction du vent est une moyenne circulaire. Pour Aujourd’hui, la synthèse générale Open-Meteo et le calcul de confiance écartent les heures antérieures à l’heure en cours ; les créneaux conservent leurs plages horaires propres.</p>
 <h3>Confiance générale</h3>
 <p>Le rond placé dans le bandeau de chaque journée résume la confiance générale par une couleur verte, jaune, orange ou rouge. Au survol ou au clavier, trois lignes sur cinq détaillent séparément la <strong>convergence des modèles</strong>, l’<strong>évolution des prévisions</strong> et la <strong>confiance</strong>.</p>
 <p>Lorsque les données ARPEGE sont disponibles, le score privilégie l’accord ECMWF–ARPEGE et tient aussi compte de la stabilité des ensembles et de l’évolution récente. Un désaccord important sur la pluie ou l’orage limite volontairement le niveau affiché. Sinon, la dispersion ICON-EPS sert d’indication d’incertitude.</p>
