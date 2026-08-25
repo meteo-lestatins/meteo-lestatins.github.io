@@ -2691,7 +2691,9 @@ function renderTestingDailyForecast() {
     const rainVolume = rain >= .1
       ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(rainDisagreement ? "de " + rainAmountText(rainLow) + " à " + rainAmountText(rain) + " millimètres selon les modèles" : rainAmountText(rain) + " millimètres") + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + escapeText(rainRangeText) + ' mm</strong></span>'
       : "";
-    const gustVolume = gustStep > 3
+    // Le rappel chiffré du créneau garde son seuil historique de 50 km/h :
+    // il informe sur la valeur sans dépendre du niveau qualitatif recalibré.
+    const gustVolume = gust >= 50
       ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(gustDisagreement ? "de " + format(gustLow, 0) + " à " + format(gust, 0) + " kilomètres par heure selon les modèles" : format(gust, 0) + " kilomètres par heure") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + escapeText(gustRangeText) + ' km/h</strong></span>'
       : "";
     const notable = weatherDescription({ ...period, precipitationSum: rain, precipitationProbabilityMax: rainProbability, storm: hasStorm });
