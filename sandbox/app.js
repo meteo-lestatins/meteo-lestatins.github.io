@@ -80,6 +80,16 @@ const measurableRainThreshold = .05;
 // Échelle commune des pictogrammes de pluie. Elle exprime une quantité
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
+// Les niveaux du vent moyen restent sensibles aux conditions locales, tandis
+// que les rafales partagent exactement l'échelle du résumé à trois heures.
+const meanWindIntensityLevel = value => {
+  const speed = Math.max(0, Number(value) || 0);
+  return speed <= 0 ? 0 : speed < 10 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
+};
+const gustIntensityLevel = value => {
+  const speed = Math.max(0, Number(value) || 0);
+  return speed <= 0 ? 0 : speed < 35 ? 1 : speed < 55 ? 2 : speed < 75 ? 3 : speed < 100 ? 4 : 5;
+};
 
 function forecastSourceAlertTone({ wind = 0, gust = 0, probability = 0, rain = 0, rain3h = 0, stormRainOverlap = false, stormRainWindOverlap = false } = {}) {
   const windValue = Math.max(0, Number(wind) || 0);
@@ -1816,8 +1826,10 @@ function conciseWindSummary(speedValues, gustValues, gustPeriods, windPeriods = 
   const gusts = (Array.isArray(gustValues) ? gustValues : [gustValues]).map(Number).filter(Number.isFinite);
   const directions = (Array.isArray(directionValues) ? directionValues : [directionValues]).map(Number).filter(Number.isFinite);
   if (!winds.length && !gusts.length) return "";
-  const windQualifier = value => value < 6 ? "très léger" : value < 12 ? "léger" : value < 20 ? "modéré" : value < 30 ? "assez fort" : "fort";
-  const gustQualifier = value => value < 20 ? "faibles" : value < 35 ? "modérées" : value < 50 ? "significatives" : value < 70 ? "fortes" : "très fortes";
+  const windLabels = ["très léger", "très léger", "léger", "modéré", "soutenu", "fort"];
+  const gustLabels = ["faibles", "faibles", "modérées", "fortes", "très fortes", "violentes"];
+  const windQualifier = value => windLabels[meanWindIntensityLevel(value)];
+  const gustQualifier = value => gustLabels[gustIntensityLevel(value)];
   const dominantQualifier = (values, qualifier, labels) => {
     const qualified = values.map(qualifier);
     const counts = Object.fromEntries(labels.map(label => [label, qualified.filter(value => value === label).length]));
@@ -1853,10 +1865,8 @@ function conciseWindSummary(speedValues, gustValues, gustPeriods, windPeriods = 
     return summary ? summary.charAt(0).toUpperCase() + summary.slice(1) + "." : "";
   };
   if (winds.length && windMaximum > 0) {
-    const windSummary = dominantQualifier(winds, windQualifier, ["très léger", "léger", "modéré", "assez fort", "fort"]);
-    const windDescription = (windSummary === "très léger" || windSummary === "léger")
-      ? windSummary.charAt(0).toUpperCase() + windSummary.slice(1) + " vent"
-      : "Vent " + windSummary;
+    const windSummary = dominantQualifier(winds, windQualifier, ["très léger", "léger", "modéré", "soutenu", "fort"]);
+    const windDescription = "Vent " + windSummary;
     parts.push(windDescription + directionText + (windTiming && !sharedTiming ? " surtout " + windTiming : ""));
   }
   if (!gusts.length || gustMaximum <= 0) return parts.length ? parts.join(", ") + "." : "Pas de vent.";
@@ -1865,7 +1875,7 @@ function conciseWindSummary(speedValues, gustValues, gustPeriods, windPeriods = 
   if (sharedTiming && windHigh === "fort" && gustHigh === "fortes" && windLow === windHigh && gustLow === gustHigh) {
     return "Vent et rafales fortes" + directionText + " surtout " + sharedTiming + ".";
   }
-  const gustSummary = dominantQualifier(gusts, gustQualifier, ["faibles", "modérées", "significatives", "fortes", "très fortes"]);
+  const gustSummary = dominantQualifier(gusts, gustQualifier, ["faibles", "modérées", "fortes", "très fortes", "violentes"]);
   if (gustMaximum < 35) {
     parts.push("rafales " + gustSummary + (gustTiming && !sharedTiming ? " surtout " + gustTiming : ""));
     return finish();
@@ -2475,7 +2485,8 @@ function renderTestingDailyForecast() {
     if (period.storm) parts.push(Number(period.weatherCode) >= 96 ? "Orage violent possible" : "Orage possible");
     else if (rain >= 5) parts.push(format(rain) + " mm de pluie");
     else if (probability >= 70) parts.push("Pluie probable");
-    if (gust >= 50) parts.push(gust >= 70 ? "Rafales très fortes" : "Rafales fortes");
+    const gustLevel = gustIntensityLevel(gust);
+    if (gustLevel >= 3) parts.push(shortTermGustLabel(gustLevel));
     return parts.join(" · ");
   };
   const hazardPictogram = (kind, detail) => kind === "storm"
@@ -2495,8 +2506,8 @@ function renderTestingDailyForecast() {
     return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label + " · " + level + " sur 5") + '" title="' + escapeText(label + " · " + level + " sur 5") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons[kind] + '</svg><span class="week-metric-scale" aria-hidden="true">' + scale + '</span></span>';
   };
   const periodCloudStep = value => cloudCoverBand(value);
-  const periodWindStep = value => value < 6 ? 1 : value < 12 ? 2 : value < 20 ? 3 : value < 30 ? 4 : 5;
-  const periodGustStep = value => value < 20 ? 1 : value < 35 ? 2 : value < 50 ? 3 : value < 70 ? 4 : 5;
+  const periodWindStep = meanWindIntensityLevel;
+  const periodGustStep = gustIntensityLevel;
   const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
   const slotDateKey = (dateKey, slot) => shiftForecastDateKey(dateKey, slot.dayOffset);
   const meteoFranceRainForPeriod = (dateKey, slot) => {
@@ -2664,7 +2675,7 @@ function renderTestingDailyForecast() {
     const hazard = [
       hasStorm
         ? hazardPictogram("storm", (Number(period.weatherCode) >= 96 ? "Orage violent possible " : "Orage possible ") + label.toLowerCase()) : "",
-      gust >= 50
+      gustIntensityLevel(gust) >= 3
         ? hazardPictogram("wind", "Rafales jusqu’à " + format(gust, 0) + " km/h " + label.toLowerCase()) : ""
     ].join("");
     const rainStep = rainPictogramStep(rain);
@@ -2846,8 +2857,8 @@ function renderWeekForecast() {
   };
   const dailyRainIconAmount = value => value >= 50 ? 10 : value >= 25 ? 4 : value >= 10 ? 1 : value >= 1 ? .5 : value > 0 ? .1 : 0;
   const cloudStep = value => cloudCoverBand(value);
-  const windStep = value => value < 6 ? 1 : value < 12 ? 2 : value < 20 ? 3 : value < 30 ? 4 : 5;
-  const gustStep = value => value < 20 ? 1 : value < 35 ? 2 : value < 50 ? 3 : value < 70 ? 4 : 5;
+  const windStep = meanWindIntensityLevel;
+  const gustStep = gustIntensityLevel;
   const metricRow = (kind, label, values, classifier, valueMarkup = "", description = "") => {
     const [low, high] = metricSteps(values, classifier);
     const descriptionMarkup = description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '';
@@ -5467,7 +5478,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
   const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
-  const gustLevel = maximumGust <= 0 ? 0 : maximumGust < 35 ? 1 : maximumGust < 55 ? 2 : maximumGust < 75 ? 3 : maximumGust < 100 ? 4 : 5;
+  const gustLevel = gustIntensityLevel(maximumGust);
   const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
   const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
