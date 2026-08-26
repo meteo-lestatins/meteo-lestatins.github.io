@@ -61,6 +61,7 @@ let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
 let nowcastMapRequest = 0;
 let leafletAssetsPromise = null;
+let nowcastMapAssetsPromise = null;
 let weekEvolutionState = { signature: "", byDate: new Map() };
 let cellPassageSnapshot = null;
 try {
@@ -144,6 +145,46 @@ function ensureLeafletAssets() {
     throw error;
   });
   return leafletAssetsPromise;
+}
+
+function ensureNowcastMapAssets() {
+  if (window.L?.maplibreGL && window.maplibregl) return Promise.resolve(window.L);
+  if (nowcastMapAssetsPromise) return nowcastMapAssetsPromise;
+  nowcastMapAssetsPromise = ensureLeafletAssets().then(() => new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-maplibre-lazy]')) {
+      const style = document.createElement("link");
+      style.rel = "stylesheet";
+      style.href = new URL("vendor/maplibre/maplibre-gl.css", document.baseURI).href;
+      style.dataset.maplibreLazy = "true";
+      document.head.append(style);
+    }
+    const loadBridge = () => {
+      if (window.L?.maplibreGL) return resolve(window.L);
+      const bridge = document.createElement("script");
+      bridge.src = new URL("vendor/maplibre/leaflet-maplibre-gl.js", document.baseURI).href;
+      bridge.async = true;
+      bridge.dataset.maplibreLeafletLazy = "true";
+      bridge.addEventListener("load", () => window.L?.maplibreGL ? resolve(window.L) : reject(new Error("Pont Leaflet–MapLibre indisponible")), { once: true });
+      bridge.addEventListener("error", () => reject(new Error("Chargement du pont Leaflet–MapLibre impossible")), { once: true });
+      document.head.append(bridge);
+    };
+    if (window.maplibregl) return loadBridge();
+    const script = document.createElement("script");
+    script.src = new URL("vendor/maplibre/maplibre-gl-csp.js", document.baseURI).href;
+    script.async = true;
+    script.dataset.maplibreLazy = "true";
+    script.addEventListener("load", () => {
+      if (!window.maplibregl) return reject(new Error("MapLibre indisponible"));
+      window.maplibregl.workerUrl = new URL("vendor/maplibre/maplibre-gl-csp-worker.js", document.baseURI).href;
+      loadBridge();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error("Chargement de MapLibre impossible")), { once: true });
+    document.head.append(script);
+  })).catch(error => {
+    nowcastMapAssetsPromise = null;
+    throw error;
+  });
+  return nowcastMapAssetsPromise;
 }
 
 const sourceFreshness = { arome: 3 * 3600000, pearome: 3 * 3600000, ensemble: 3 * 3600000, piaf: 20 * 60000, radar: 15 * 60000, lightning: 20 * 60000, vigilance: 30 * 60000, openMeteo: 60 * 60000 };
@@ -4588,7 +4629,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return '<g class="range-distance"><circle class="range-ring" cx="' + targetX + '" cy="' + targetY + '" r="' + radius.toFixed(1) + '"></circle><text x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="middle">' + distance + ' km</text></g>';
     }).join('');
     const lightningMarks = (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm), Number(flash.northKm)) <= mapRadiusKm).map(flash => '<g class="lightning-flash" transform="translate(' + (targetX + flash.eastKm * scale).toFixed(1) + ' ' + (targetY - flash.northKm * scale).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path></g>').join('');
-    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g></svg></div>';
+    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
   const etaProjectionCells = nowcastEtaProjectionCells(radarCells);
@@ -4820,7 +4861,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const scaleBarKm = scale * 20 > 150 ? 10 : 20;
   const scaleBarWidth = scaleBarKm * scale;
   const coneLegend = etaProjectionCells.length ? '<span><i class="legend-cone"></i> trajectoire avec ETA</span>' : '';
-  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
+  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cones + secondaryTracks + cells + lightningMarks + directionChevrons + milestones +
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
@@ -4870,7 +4911,15 @@ function initializeNowcastMapBackground(mapRadiusKm) {
     zoomAnimation: false,
     markerZoomAnimation: false
   }).setView([point.lat, point.lon], mapRadiusKm === 20 ? 9 : 7);
-  window.L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.42, attribution: "" }).addTo(nowcastLeafletMap);
+  const nowcastBasemapMap = nowcastLeafletMap;
+  fetch("https://tiles.openfreemap.org/styles/liberty")
+    .then(response => response.ok ? response.json() : Promise.reject(new Error("Style OpenFreeMap indisponible")))
+    .then(style => {
+      style.layers = (style.layers || []).filter(layer => layer.type !== "symbol");
+      if (nowcastLeafletMap !== nowcastBasemapMap || !window.L.maplibreGL) return;
+      window.L.maplibreGL({ style, attributionControl: false }).addTo(nowcastBasemapMap);
+    })
+    .catch(error => console.warn("Fond OpenStreetMap sans libellés indisponible", error));
   let placeContext = [];
   const regionalPlaceNames = new Set(["Montélimar", "Carpentras", "Sisteron", "Embrun", "Valence", "Grenoble", "Gap", "Briançon"]);
   const regionalPlaceFallback = [
@@ -5916,7 +5965,7 @@ function setNowcastOpen(open, scroll = false) {
   link?.setAttribute("aria-expanded", String(open));
   titleToggle?.setAttribute("aria-expanded", String(open));
   document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", String(open));
-  if (open) ensureLeafletAssets()
+  if (open) ensureNowcastMapAssets()
     .then(() => initializeNowcastMapBackground(activeNowcastMapRadius))
     .catch(error => console.warn("Fond de carte Nowcasting indisponible", error));
   if (open && scroll) details.scrollIntoView({ behavior: "smooth", block: "start" });
