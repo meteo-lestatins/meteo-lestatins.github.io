@@ -2500,10 +2500,11 @@ function renderTestingDailyForecast() {
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>'
   };
-  const periodMetricPictogram = (kind, step, label) => {
+  const periodMetricPictogram = (kind, step, label, sources) => {
     const level = Math.max(0, Math.min(5, Math.round(Number(step) || 0)));
     const scale = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < level ? "solid" : "") + '"></i>').join("");
-    return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label + " · " + level + " sur 5") + '" title="' + escapeText(label + " · " + level + " sur 5") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons[kind] + '</svg><span class="week-metric-scale" aria-hidden="true">' + scale + '</span></span>';
+    const sourceTooltip = sources.filter(Boolean).join("\n");
+    return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label + " · " + level + " sur 5") + '" title="' + escapeText(sourceTooltip) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons[kind] + '</svg><span class="week-metric-scale" aria-hidden="true">' + scale + '</span></span>';
   };
   const periodCloudStep = value => cloudCoverBand(value);
   const periodWindStep = meanWindIntensityLevel;
@@ -2746,16 +2747,17 @@ function renderTestingDailyForecast() {
       ? disagreementSummary
       : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary(windValues, gustValues, [], [], [period.windDirection]);
-    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %"), format(cloud, 0) + " %", skyDescription);
+    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", ["Open-Meteo"]), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
     const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
-    const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + rainRangeText + " mm · probabilité " + format(rainProbability, 0) + " %") + showerPlus + '</span>';
+    const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + rainRangeText + " mm · probabilité " + format(rainProbability, 0) + " %", ["Open-Meteo", meteoFranceRainAmount != null ? "Météo-France" : ""]) + showerPlus + '</span>';
     const rainDetail = periodMetricRow(rainPictogram, escapeText(rainRangeText) + " mm", rainDescription, "week-rain-row");
-    const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + windRangeText + " km/h") + '</dt><dd><span class="week-metric-number">(' + direction + escapeText(windRangeText) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + gustRangeText + " km/h") + '</dt><dd><span class="week-metric-number">(' + escapeText(gustRangeText) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
+    const windSources = ["Open-Meteo", meteoFranceWindValue != null ? "Météo-France" : ""];
+    const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + windRangeText + " km/h", windSources) + '</dt><dd><span class="week-metric-number">(' + direction + escapeText(windRangeText) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + gustRangeText + " km/h", windSources) + '</dt><dd><span class="week-metric-number">(' + escapeText(gustRangeText) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
     const stormDescription = hasStorm
       ? Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + "."
       : "Pas d’orage.";
-    const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage"), "", stormDescription, "daily-period-storm-detail");
+    const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage", pictogramSources), "", stormDescription, "daily-period-storm-detail");
     const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
     // Chaque modèle conserve son propre scénario pluie/probabilité. Cela
     // évite de fabriquer un niveau avec la probabilité de l'un et le cumul de
@@ -5489,15 +5491,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         rainPassageRisk
       );
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
-  const windTrendLabel = windTrend.label === "croissant" ? "en hausse" : windTrend.label === "decroissant" ? "en baisse" : "stable";
-  const gustDetail = "Rafales · maximum AROME sur 3 h : " + maximumGust + " km/h · tendance " + windTrendLabel;
+  const gustDetail = ["Météo-France"].join("\n");
+  const gustTrend = { ...windTrend, detail: gustDetail };
   const gustLevel = gustIntensityLevel(maximumGust);
   const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
   const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
-    + summaryAction('gust', gustValue, gustLevel, gustDetail, windTrend, 'wind48', null, null, gustColorLevel)
+    + summaryAction('gust', gustValue, gustLevel, gustDetail, gustTrend, 'wind48', null, null, gustColorLevel)
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
