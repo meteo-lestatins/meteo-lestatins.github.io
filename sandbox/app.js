@@ -2626,7 +2626,7 @@ function renderTestingDailyForecast() {
     const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
-  const periodCard = (period, label, labelTitle, slot, periodKey, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null, meteoFranceWind = null) => {
+  const periodCard = (period, label, labelTitle, slot, periodKey, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null, meteoFranceWind = null, hasMeteoFranceDay = false) => {
     if (!period) return "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2687,6 +2687,12 @@ function renderTestingDailyForecast() {
       hasOpenMeteoStorm ? "Open-Meteo" : "",
       hasMeteoFranceStorm ? "Météo-France" : ""
     ].filter(Boolean);
+    const pictogramSources = [
+      "Open-Meteo",
+      hasMeteoFranceDay ? "Météo-France" : ""
+    ].filter(Boolean);
+    const pictogramSourceTooltip = "Sources :\n" + pictogramSources.join("\n");
+    const pictogramSourceAriaLabel = "Sources du pictogramme : " + pictogramSources.join(", ");
     const stormSourceLabel = stormSources.length > 1 ? stormSources.slice(0, -1).join(", ") + " et " + stormSources.at(-1) : stormSources[0] + " seulement";
     const rainVolume = rain >= .1
       ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(rainDisagreement ? "de " + rainAmountText(rainLow) + " à " + rainAmountText(rain) + " millimètres selon les modèles" : rainAmountText(rain) + " millimètres") + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + escapeText(rainRangeText) + ' mm</strong></span>'
@@ -2783,11 +2789,12 @@ function renderTestingDailyForecast() {
     ]);
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
     const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
-    return '<details class="daily-period-card' + alertClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card' + alertClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon"><span class="daily-period-weather-source chart-point" tabindex="0" aria-label="' + escapeText(pictogramSourceAriaLabel) + '" data-tooltip="' + escapeText(pictogramSourceTooltip) + '">' + icon + '</span>' + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
   };
   const openMeteoDays = (latestWeekForecast?.days || []).filter(day => day.date >= todayDateKey()).slice(0, 7).map(day => futureActiveWeekDay(day));
   const meteoFranceByDate = new Map((latestMeteoFranceWeek?.days || []).map(day => futureActiveWeekDay(day)).map(day => [day.date, day]));
   const cards = openMeteoDays.map(openMeteo => {
+    const meteoFranceDay = meteoFranceByDate.get(openMeteo.date) || null;
     const vigilance = latestForecastData?.vigilance || null;
     const slotPresentation = slot => {
       if (slot.key !== "night") return { label: slot.label, title: "" };
@@ -2809,7 +2816,8 @@ function renderTestingDailyForecast() {
         meteoFranceStormForPeriod(openMeteo.date, slot),
         vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
         meteoFranceRainForPeriod(openMeteo.date, slot),
-        meteoFranceWindForPeriod(openMeteo.date, slot)
+        meteoFranceWindForPeriod(openMeteo.date, slot),
+        meteoFranceByDate.has(slotDateKey(openMeteo.date, slot))
       );
     }).filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
@@ -2819,7 +2827,7 @@ function renderTestingDailyForecast() {
     const dayHeading = canOpen48h
       ? '<button class="daily-day-open" type="button" data-open-48h-date="' + escapeText(openMeteo.date) + '" data-open-48h-label="' + escapeText(dayLabel) + '" aria-controls="panel-48h" aria-expanded="' + String(!$("panel-48h").hidden && $("panel-48h").dataset.focusDate === openMeteo.date) + '" title="Ouvrir la frise 48 h sur ' + escapeText(dayLabel.toLowerCase()) + '"><span class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></span>' + graphIconMarkup("daily-day-open-icon") + '</button>'
       : '<div class="daily-day-heading"><strong>' + escapeText(dayLabel) + '</strong><time datetime="' + escapeText(openMeteo.date) + '">' + escapeText(shortDate) + '</time></div>';
-    return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, meteoFranceByDate.get(openMeteo.date) || null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
+    return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, meteoFranceDay) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
   target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
   const periodDetails = [...target.querySelectorAll(".daily-period-card")];
@@ -2831,6 +2839,7 @@ function renderTestingDailyForecast() {
     });
   }));
   target.querySelectorAll("[data-open-48h-date]").forEach(button => button.addEventListener("click", () => toggleDaily48HourForecast(button)));
+  bindChartTooltips();
   renderWeekApiLinks();
 }
 
@@ -4310,6 +4319,8 @@ function bindChartTooltips() {
     tooltip.style.top = Math.max(12, event.clientY - 82) + "px";
   };
   document.querySelectorAll(".chart-point").forEach(point => {
+    if (point.dataset.tooltipBound === "true") return;
+    point.dataset.tooltipBound = "true";
     point.addEventListener("pointerenter", event => show(point, event));
     point.addEventListener("pointermove", event => show(point, event));
     point.addEventListener("pointerleave", () => { tooltip.hidden = true; });

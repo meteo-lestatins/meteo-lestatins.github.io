@@ -324,6 +324,8 @@ button:hover { background: #eef7fb; }
 .daily-vigilance-icon.type-9 i { background-image: url("vendor/vigilance-icons/phenomenon-9.png"); }
 .daily-period-icon { width: 104px; height: 96px; position: relative; grid-column: 1; grid-row: 2; display: grid; place-items: center start; padding: 0; }
 .daily-period-icon > img, .daily-period-icon .layered-weather-icon, .daily-period-icon .weather-variant-icon { width: 96px; height: 96px; }
+.daily-period-weather-source { width: 96px; height: 96px; display: grid; place-items: center; border-radius: 9px; cursor: help; }
+.daily-period-weather-source:focus-visible { outline: 2px solid #2b84ad; outline-offset: 1px; }
 .daily-period-hazards { width: 96px; height: 96px; position: absolute; z-index: 7; top: 0; left: 0; pointer-events: none; }
 .daily-hazard-symbol { position: absolute; z-index: 6; display: grid; place-items: center; border: 0; background: transparent; cursor: help; pointer-events: auto; }
 .daily-hazard-symbol svg { overflow: visible; }
