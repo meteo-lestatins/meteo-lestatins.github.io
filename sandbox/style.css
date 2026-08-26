@@ -299,7 +299,7 @@ button:hover { background: #eef7fb; }
 .daily-period-card.daily-period-alert-red summary:hover { background: rgba(207, 77, 71, .34); }
 .daily-period-title { grid-column: 1 / 3; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
-.daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 3px; }
+.daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 3px; }
 .daily-vigilance-badge { height: 26px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; overflow: hidden; padding: 0 4px 0 6px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); color: #302d1e; line-height: 1; }
 .daily-vigilance-badge[data-level="jaune"] { background: #f7cf31; }
 .daily-vigilance-badge[data-level="orange"] { background: #f58b20; }
