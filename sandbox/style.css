@@ -273,14 +273,17 @@ button:hover { background: #eef7fb; }
 .daily-confidence-row > b { display: grid; grid-template-columns: repeat(5, 8px); gap: 4px; color: var(--row-color); }
 .daily-confidence-row i { width: 8px; height: 8px; display: block; border-radius: 50%; background: #d5dfe3; }
 .daily-confidence-row i.filled { background: currentColor; }
+.daily-confidence-row em { color: #82939b; font-size: 10px; font-style: normal; font-weight: 650; }
 .daily-confidence-row.green { --row-color: #39ad67; }
 .daily-confidence-row.yellow { --row-color: #d7b235; }
 .daily-confidence-row.orange { --row-color: #e28132; }
 .daily-confidence-row.red { --row-color: #cf4d47; }
+.daily-confidence-row.unknown { color: #71858f; }
 .daily-confidence-indicator.green { --confidence-color: #39ad67; }
 .daily-confidence-indicator.yellow { --confidence-color: #d7b235; }
 .daily-confidence-indicator.orange { --confidence-color: #e28132; }
 .daily-confidence-indicator.red { --confidence-color: #cf4d47; }
+.daily-confidence-indicator.unknown { --confidence-color: #8a9ca5; }
 .daily-confidence-indicator:focus-visible { outline: 2px solid var(--confidence-color); outline-offset: 2px; }
 .daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; border-radius: 0 0 13px 13px; background: #fff; }
 .daily-period-card { min-width: 0; position: relative; background: #fff; }
