@@ -273,14 +273,17 @@ button:hover { background: #eef7fb; }
 .daily-confidence-row > b { display: grid; grid-template-columns: repeat(5, 8px); gap: 4px; color: var(--row-color); }
 .daily-confidence-row i { width: 8px; height: 8px; display: block; border-radius: 50%; background: #d5dfe3; }
 .daily-confidence-row i.filled { background: currentColor; }
+.daily-confidence-row em { color: #82939b; font-size: 10px; font-style: normal; font-weight: 650; }
 .daily-confidence-row.green { --row-color: #39ad67; }
 .daily-confidence-row.yellow { --row-color: #d7b235; }
 .daily-confidence-row.orange { --row-color: #e28132; }
 .daily-confidence-row.red { --row-color: #cf4d47; }
+.daily-confidence-row.unknown { color: #71858f; }
 .daily-confidence-indicator.green { --confidence-color: #39ad67; }
 .daily-confidence-indicator.yellow { --confidence-color: #d7b235; }
 .daily-confidence-indicator.orange { --confidence-color: #e28132; }
 .daily-confidence-indicator.red { --confidence-color: #cf4d47; }
+.daily-confidence-indicator.unknown { --confidence-color: #8a9ca5; }
 .daily-confidence-indicator:focus-visible { outline: 2px solid var(--confidence-color); outline-offset: 2px; }
 .daily-period-grid { display: grid; grid-template-columns: 1fr; align-items: stretch; border-radius: 0 0 13px 13px; background: #fff; }
 .daily-period-card { min-width: 0; position: relative; background: #fff; }
@@ -297,7 +300,7 @@ button:hover { background: #eef7fb; }
 .daily-period-card.daily-period-alert-yellow summary:hover { background: rgba(238, 192, 35, .19); }
 .daily-period-card.daily-period-alert-orange summary:hover { background: rgba(226, 129, 50, .3); }
 .daily-period-card.daily-period-alert-red summary:hover { background: rgba(207, 77, 71, .34); }
-.daily-period-title { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; }
+.daily-period-title { grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
 .daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 3px; }
 .daily-vigilance-badge { height: 26px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; overflow: hidden; padding: 0 4px 0 6px; border: 1px solid rgba(36, 52, 67, .24); border-radius: 5px; box-shadow: 0 1px 3px rgba(34, 58, 70, .16); color: #302d1e; line-height: 1; }

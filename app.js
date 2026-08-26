@@ -2656,46 +2656,56 @@ function renderTestingDailyForecast() {
     let score = null;
     let convergenceScore = null;
     let evolutionDisplayScore = null;
-    let detail = "Confiance à confirmer : données d’ensemble indisponibles.";
+    let detail = "Indice indisponible : données comparables insuffisantes.";
+    const activeDay = openMeteo.date === todayDateKey();
+    const weightedScore = components => {
+      const available = components.filter(component => Number.isFinite(component.score));
+      const weight = available.reduce((sum, component) => sum + component.weight, 0);
+      return weight ? available.reduce((sum, component) => sum + component.score * component.weight, 0) / weight : null;
+    };
     if (meteoFrance) {
       const agreement = weekModelAgreement(openMeteo, meteoFrance);
-      const evolution = weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
+      // Pour aujourd'hui, les agrégats portent sur la période restante et leur
+      // fenêtre se raccourcit à chaque heure. Les comparer à l'historique ferait
+      // passer cette contraction normale pour une révision de la prévision.
+      const evolution = activeDay ? { level: "unknown", changeRate: null } : weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
       const modelAgreementScore = Number.isFinite(Number(agreement.score)) ? Number(agreement.score) : .5;
-      const stabilityScore = agreement.stability === "stable" ? 1 : agreement.stability === "evolving" ? .68 : agreement.stability === "variable" ? .35 : .55;
-      const evolutionScore = evolution.level === "stable" ? 1 : evolution.level === "few" ? .75 : evolution.level === "frequent" ? .35 : .55;
+      const stabilityScore = agreement.stability === "stable" ? 1 : agreement.stability === "evolving" ? .68 : agreement.stability === "variable" ? .35 : null;
+      const evolutionScore = evolution.level === "stable" ? 1 : evolution.level === "few" ? .75 : evolution.level === "frequent" ? .35 : null;
       convergenceScore = modelAgreementScore;
       evolutionDisplayScore = Number.isFinite(Number(evolution.changeRate)) ? Math.max(.2, 1 - Number(evolution.changeRate)) : evolutionScore;
-      score = modelAgreementScore * .65 + stabilityScore * .2 + evolutionScore * .15;
+      score = weightedScore([
+        { score: modelAgreementScore, weight: .65 },
+        { score: stabilityScore, weight: .2 },
+        { score: evolutionScore, weight: .15 }
+      ]);
       if (agreement.criticalDisagreement || agreement.rainDisagreement === "major" || modelAgreementScore < .38) score = Math.min(score, .35);
       else if (agreement.rainDisagreement === "meaningful" || agreement.level === "mixed" || evolution.level === "frequent") score = Math.min(score, .59);
       const ensembleLabel = agreement.stability === "stable" ? "plutôt stable" : agreement.stability === "evolving" ? "évolutif" : agreement.stability === "variable" ? "très variable" : "à confirmer";
-      const evolutionLabel = evolution.level === "frequent" ? "forte" : evolution.level === "few" ? "faible" : evolution.level === "stable" ? "nulle" : "sans recul";
+      const evolutionLabel = activeDay ? "non évaluée sur une fenêtre glissante" : evolution.level === "frequent" ? "forte" : evolution.level === "few" ? "faible" : evolution.level === "stable" ? "nulle" : "sans recul";
       const rainDisagreementLabel = agreement.rainDisagreement === "major" ? "majeur" : agreement.rainDisagreement === "meaningful" ? "significatif" : agreement.rainDisagreement === "minor" ? "mineur" : "faible";
-      detail = "Concordance pondérée : " + Math.round(modelAgreementScore * 100) + "/100 · écart pluie : " + rainDisagreementLabel + " · stabilité : " + ensembleLabel + " · évolution : " + evolutionLabel;
+      detail = (activeDay ? "Période restante · " : "") + "concordance pondérée : " + Math.round(modelAgreementScore * 100) + "/100 · écart pluie : " + rainDisagreementLabel + " · stabilité : " + ensembleLabel + " · évolution : " + evolutionLabel;
     } else if (openMeteo.confidence) {
       const confidence = openMeteo.confidence;
       score = confidence.level === "strong" ? .9 : confidence.level === "medium" ? .65 : .35;
-      convergenceScore = score;
-      const evolution = weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
-      evolutionDisplayScore = Number.isFinite(Number(evolution.changeRate)) ? Math.max(.2, 1 - Number(evolution.changeRate)) : .55;
+      const evolution = activeDay ? { level: "unknown", changeRate: null } : weekForecastEvolution().get(openMeteo.date) || { level: "unknown", changeRate: null };
+      evolutionDisplayScore = Number.isFinite(Number(evolution.changeRate)) ? Math.max(.2, 1 - Number(evolution.changeRate)) : null;
       const spreads = [
         Number.isFinite(Number(confidence.temperatureSpread)) ? "température " + format(confidence.temperatureSpread) + " °C" : "",
         Number.isFinite(Number(confidence.windSpread)) ? "vent " + format(confidence.windSpread) + " km/h" : "",
         Number.isFinite(Number(confidence.precipitationSpread)) ? "précipitations " + format(confidence.precipitationSpread) + " mm" : ""
       ].filter(Boolean);
-      detail = "Variabilité de l’ensemble : " + (spreads.join(", ") || "à confirmer");
+      detail = (activeDay ? "Période restante · " : "") + "variabilité de l’ensemble Open-Meteo : " + (spreads.join(", ") || "à confirmer");
     }
-    convergenceScore = Number.isFinite(convergenceScore) ? convergenceScore : .2;
-    evolutionDisplayScore = Number.isFinite(evolutionDisplayScore) ? evolutionDisplayScore : .2;
-    score = Number.isFinite(score) ? score : .2;
-    const toneForScore = value => value >= .8 ? "green" : value >= .6 ? "yellow" : value >= .4 ? "orange" : "red";
+    const toneForScore = value => !Number.isFinite(value) ? "unknown" : value >= .8 ? "green" : value >= .6 ? "yellow" : value >= .4 ? "orange" : "red";
     const graphicRow = (rowLabel, rowScore) => {
+      if (!Number.isFinite(rowScore)) return '<span class="daily-confidence-row unknown"><span>' + rowLabel + '</span><em>indisponible</em></span>';
       const points = Math.max(1, Math.min(5, Math.round(rowScore * 5)));
       const dots = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < points ? "filled" : "") + '"></i>').join("");
       return '<span class="daily-confidence-row ' + toneForScore(rowScore) + '"><span>' + rowLabel + '</span><b aria-hidden="true">' + dots + '</b></span>';
     };
     const tone = toneForScore(score);
-    const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : "faible";
+    const label = tone === "green" ? "forte" : tone === "yellow" ? "bonne" : tone === "orange" ? "limitée" : tone === "red" ? "faible" : "indisponible";
     return '<span class="daily-confidence-indicator ' + tone + '" tabindex="0" role="img" aria-label="Confiance générale ' + label + '. ' + escapeText(detail) + '"><i class="daily-confidence-dot" aria-hidden="true"></i><span class="daily-confidence-popover" role="tooltip">' + graphicRow("Convergence des modèles", convergenceScore) + graphicRow("Évolution des prévisions", evolutionDisplayScore) + graphicRow("Confiance", score) + '</span></span>';
   };
   const periodCard = (period, label, labelTitle, slot, periodKey, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null, meteoFranceWind = null, hasMeteoFranceDay = false) => {
