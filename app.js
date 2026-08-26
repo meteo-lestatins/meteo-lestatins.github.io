@@ -1884,6 +1884,20 @@ function conciseWindSummary(speedValues, gustValues, gustPeriods, windPeriods = 
   return finish();
 }
 
+function backgroundTrendArrow(values, threshold = 0) {
+  const series = (values || []).map(Number).filter(Number.isFinite);
+  if (series.length < 2) return "→";
+  const edgeCount = Math.max(1, Math.floor(series.length / 2));
+  const median = items => {
+    const sorted = [...items].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  };
+  const change = median(series.slice(-edgeCount)) - median(series.slice(0, edgeCount));
+  const neutralRange = Math.max(0, Number(threshold) || 0);
+  return change > neutralRange ? "↗" : change < -neutralRange ? "↘" : "→";
+}
+
 function normalizeOpenMeteoDays(daily, hourly) {
   const forecastStart = weekForecastStartKey();
   const today = todayDateKey();
@@ -2023,7 +2037,14 @@ function normalizeOpenMeteoDays(daily, hourly) {
         temperatureNormal: average(temperatureReferences.map(item => item.normal.median)),
         temperatureAnomaly: average(temperatureAnomalies),
         temperatureWarmShare: temperatureReferences.length ? temperatureReferences.filter(item => item.temperature >= item.normal.high).length / temperatureReferences.length : null,
-        temperatureColdShare: temperatureReferences.length ? temperatureReferences.filter(item => item.temperature <= item.normal.low).length / temperatureReferences.length : null
+        temperatureColdShare: temperatureReferences.length ? temperatureReferences.filter(item => item.temperature <= item.normal.low).length / temperatureReferences.length : null,
+        backgroundTrends: {
+          cloud: backgroundTrendArrow(periodSamples.map(sample => sample.cloudCover), 15),
+          rain: backgroundTrendArrow(periodSamples.map(sample => sample.precipitation), .2),
+          wind: backgroundTrendArrow(periodSamples.map(sample => sample.windSpeed), 5),
+          gust: backgroundTrendArrow(periodSamples.map(sample => sample.windGust), 8),
+          storm: backgroundTrendArrow(periodSamples.map(sample => Number(sample.weatherCode) >= 95 ? 1 : 0), .34)
+        }
       };
     };
     return {
@@ -2521,7 +2542,7 @@ function renderTestingDailyForecast() {
       const midpoint = new Date(start + duration / 2);
       const hour = forecastHourValue(midpoint);
       return forecastDateKey(midpoint) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
-    });
+    }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
     if (!periods.length) return null;
     const hourlyMeans = periods.flatMap(item => {
       const durationHours = Math.max(1, Math.round(Number(item.durationHours) || 1));
@@ -2541,6 +2562,7 @@ function renderTestingDailyForecast() {
         end: new Date(item.time).getTime() + Math.max(1, Number(item.durationHours) || 1) * 3600000,
         amount: Math.max(0, Number(item.ensembleMean) || 0)
       })),
+      backgroundTrend: backgroundTrendArrow(hourlyMeans, .2),
       source: "Météo-France (PEAROME)"
     };
   };
@@ -2556,12 +2578,17 @@ function renderTestingDailyForecast() {
     // secs situés avant ou après le passage orageux.
     if (detailedHours.length) {
       const stormHours = detailedHours.filter(item => item.stormSignal).map(item => new Date(item.time).getTime()).filter(Number.isFinite);
-      return { active: stormHours.length > 0, times: stormHours };
+      return {
+        active: stormHours.length > 0,
+        times: stormHours,
+        backgroundTrend: backgroundTrendArrow(detailedHours.map(item => item.stormSignal ? 1 : 0), .34)
+      };
     }
     const weekDay = (latestMeteoFranceWeek?.days || []).find(day => day.date === targetDateKey);
     return {
       active: Array.isArray(weekDay?.stormSignalPeriods) && weekDay.stormSignalPeriods.includes(slot.key),
-      times: []
+      times: [],
+      backgroundTrend: "→"
     };
   };
   const meteoFranceWindForPeriod = (dateKey, slot) => {
@@ -2570,13 +2597,15 @@ function renderTestingDailyForecast() {
       const date = new Date(item.time);
       const hour = forecastHourValue(date);
       return forecastDateKey(date) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
-    });
+    }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
     const speeds = hours.map(item => Number(item.windSpeed)).filter(Number.isFinite);
     const gusts = hours.map(item => Number(item.windGust)).filter(Number.isFinite);
     if (!speeds.length && !gusts.length) return null;
     return {
       speed: speeds.length ? Math.max(...speeds) : null,
       gust: gusts.length ? Math.max(...gusts) : null,
+      windBackgroundTrend: backgroundTrendArrow(speeds, 5),
+      gustBackgroundTrend: backgroundTrendArrow(gusts, 8),
       stormWindTimes: hours.filter(item => item.stormSignal && (Number(item.windSpeed) >= 30 || Number(item.windGust) >= 50))
         .map(item => new Date(item.time).getTime()).filter(Number.isFinite),
       source: "Météo-France (AROME)"
@@ -2674,21 +2703,22 @@ function renderTestingDailyForecast() {
     const gust = Math.max(...gustValues);
     const gustDisagreement = meteoFranceGustValue != null && Math.abs(openMeteoGust - meteoFranceGustValue) >= 1;
     const gustRangeText = gustDisagreement ? format(gustLow, 0) + "–" + format(gust, 0) : format(gust, 0);
+    const openMeteoTrends = period.backgroundTrends || {};
     const rainSources = [
-      "Open-Meteo : " + rainAmountText(openMeteoRain) + " mm · " + format(period.precipitationProbabilityMax, 0) + " %",
-      meteoFranceRainAmount != null ? "Météo-France : " + rainAmountText(meteoFranceRainAmount) + " mm · " + format(meteoFranceRain.probability, 0) + " %" : ""
+      "Open-Meteo : " + rainAmountText(openMeteoRain) + " mm · " + format(period.precipitationProbabilityMax, 0) + " % " + (openMeteoTrends.rain || "→"),
+      meteoFranceRainAmount != null ? "Météo-France : " + rainAmountText(meteoFranceRainAmount) + " mm · " + format(meteoFranceRain.probability, 0) + " % " + (meteoFranceRain.backgroundTrend || "→") : ""
     ];
     const windSources = [
-      "Open-Meteo : " + format(openMeteoWind, 0) + " km/h",
-      meteoFranceWindValue != null ? "Météo-France : " + format(meteoFranceWindValue, 0) + " km/h" : ""
+      "Open-Meteo : " + format(openMeteoWind, 0) + " km/h " + (openMeteoTrends.wind || "→"),
+      meteoFranceWindValue != null ? "Météo-France : " + format(meteoFranceWindValue, 0) + " km/h " + (meteoFranceWind.windBackgroundTrend || "→") : ""
     ];
     const gustSources = [
-      "Open-Meteo : " + format(openMeteoGust, 0) + " km/h",
-      meteoFranceGustValue != null ? "Météo-France : " + format(meteoFranceGustValue, 0) + " km/h" : ""
+      "Open-Meteo : " + format(openMeteoGust, 0) + " km/h " + (openMeteoTrends.gust || "→"),
+      meteoFranceGustValue != null ? "Météo-France : " + format(meteoFranceGustValue, 0) + " km/h " + (meteoFranceWind.gustBackgroundTrend || "→") : ""
     ];
     const stormSources = [
-      "Open-Meteo : " + (hasOpenMeteoStorm ? "orage possible" : "pas d’orage"),
-      hasMeteoFranceDay ? "Météo-France : " + (hasMeteoFranceStorm ? "orage possible" : "pas d’orage") : ""
+      "Open-Meteo : " + (hasOpenMeteoStorm ? "orage possible" : "pas d’orage") + " " + (openMeteoTrends.storm || "→"),
+      hasMeteoFranceDay ? "Météo-France : " + (hasMeteoFranceStorm ? "orage possible" : "pas d’orage") + " " + (meteoFranceStorm?.backgroundTrend || "→") : ""
     ];
     const hazard = [
       hasStorm
@@ -2758,7 +2788,7 @@ function renderTestingDailyForecast() {
       ? disagreementSummary
       : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
     const windDescription = conciseWindSummary(windValues, gustValues, [], [], [period.windDirection]);
-    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", ["Open-Meteo : " + format(cloud, 0) + " %"]), format(cloud, 0) + " %", skyDescription);
+    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", ["Open-Meteo : " + format(cloud, 0) + " % " + (openMeteoTrends.cloud || "→")]), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
     const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
     const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + rainRangeText + " mm · probabilité " + format(rainProbability, 0) + " %", rainSources) + showerPlus + '</span>';
@@ -4941,6 +4971,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const maximumOpenMeteoGust = openMeteoWindWindow.length
     ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windGust) || 0)))
     : null;
+  const openMeteoGustBackgroundTrend = backgroundTrendArrow(openMeteoWindWindow.map(item => item.windGust), 8);
+  const meteoFranceGustBackgroundTrend = backgroundTrendArrow(windWindow.map(item => item.windGust), 8);
   const nowcastMetricIcons = {
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
@@ -5511,8 +5543,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       );
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const gustDetail = [
-    Number.isFinite(maximumOpenMeteoGust) ? "Open-Meteo : " + maximumOpenMeteoGust + " km/h" : "",
-    windWindow.length ? "Météo-France : " + maximumGust + " km/h" : ""
+    Number.isFinite(maximumOpenMeteoGust) ? "Open-Meteo : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
+    windWindow.length ? "Météo-France : " + maximumGust + " km/h " + meteoFranceGustBackgroundTrend : ""
   ].filter(Boolean).join("\n");
   const gustTrend = { ...windTrend, detail: gustDetail };
   const gustLevel = gustIntensityLevel(maximumGust);
