@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.basemaps.cartocdn.com; connect-src 'self' https://api.open-meteo.com https://ensemble-api.open-meteo.com https://nicolas.sindelar.fr; manifest-src 'self'; worker-src 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://api.open-meteo.com https://ensemble-api.open-meteo.com https://nicolas.sindelar.fr; manifest-src 'self'; worker-src 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f8fafb">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -15,7 +15,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.123</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.125</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -115,8 +115,15 @@
 <p>Dans la carte du jour J, <strong>Nuit</strong> correspond aux heures de <strong>0 h à 6 h le lendemain (J+1)</strong>. Le créneau Soir couvre 18h minuit.</p>
 <h3>Sources et calculs</h3>
 <ul><li><strong>ECMWF IFS HRES</strong>, obtenu par Open-Meteo, fournit le scénario horaire de référence sur sept jours. Les premières heures du huitième jour sont aussi demandées afin de calculer la dernière nuit.</li><li><strong>ARPEGE Météo-France</strong> sert de comparaison sur les quatre premiers jours.</li><li>La dispersion de <strong>DWD ICON-EPS</strong> complète l’estimation de l’incertitude lorsque la comparaison avec ARPEGE n’est pas disponible.</li></ul>
-<p>Dans chaque créneau, les températures sont les extrêmes horaires, la pluie est cumulée, la probabilité de précipitations conserve son maximum, la nébulosité est moyennée, et le vent ainsi que les rafales conservent leur maximum. La direction du vent est une moyenne circulaire. Pour Aujourd’hui, la synthèse générale Open-Meteo et le calcul de confiance écartent les heures antérieures à l’heure en cours ; les créneaux conservent leurs plages horaires propres.</p>
-<p>Les flèches accolées aux valeurs par source dans les survols indiquent la tendance de fond du créneau : <strong>↗</strong> en hausse, <strong>→</strong> quasi stable et <strong>↘</strong> en baisse. Le calcul compare les médianes de la première et de la seconde moitié de la série ; des seuils propres à chaque variable maintiennent <strong>→</strong> pour les écarts mineurs et les oscillations ponctuelles. Cette indication décrit l’évolution à l’intérieur du créneau, pas l’écart entre deux actualisations du modèle.</p>
+<h4>Agrégation des données horaires</h4>
+<div class="technical-table-scroll"><table><thead><tr><th>Variable</th><th>Valeur retenue dans le créneau</th></tr></thead><tbody><tr><td>Température</td><td>Minimum et maximum horaires</td></tr><tr><td>Pluie</td><td>Cumul des quantités horaires</td></tr><tr><td>Probabilité de précipitations</td><td>Maximum horaire</td></tr><tr><td>Nébulosité</td><td>Moyenne horaire</td></tr><tr><td>Vent moyen et rafales</td><td>Maximum horaire</td></tr><tr><td>Direction du vent</td><td>Moyenne circulaire des directions horaires</td></tr></tbody></table></div>
+<p>Pour <strong>Aujourd’hui</strong>, la synthèse générale Open-Meteo et le calcul de confiance écartent les heures antérieures à l’heure en cours. Les créneaux conservent en revanche leurs plages horaires propres.</p>
+<h4>Tendance de fond par source</h4>
+<p>Pour chaque source et chaque créneau, les valeurs horaires sont conservées dans l’ordre chronologique. <strong>m₁</strong> désigne la médiane de la première moitié de la série, <strong>m₂</strong> celle de la seconde moitié, et <strong>Δ = m₂ − m₁</strong> leur différence.</p>
+<ul><li><strong>↗ Hausse</strong> si <strong>Δ &gt; S</strong></li><li><strong>→ Quasi stable</strong> si <strong>−S ≤ Δ ≤ S</strong></li><li><strong>↘ Baisse</strong> si <strong>Δ &lt; −S</strong></li></ul>
+<p>Le seuil de stabilité <strong>S</strong> dépend de la variable :</p>
+<div class="technical-table-scroll"><table><thead><tr><th>Variable</th><th>Seuil S</th></tr></thead><tbody><tr><td>Nébulosité</td><td>15 points de pourcentage</td></tr><tr><td>Pluie horaire</td><td>0,2 mm</td></tr><tr><td>Vent moyen</td><td>5 km/h</td></tr><tr><td>Rafales</td><td>8 km/h</td></tr><tr><td>Signal orageux</td><td>34 points de pourcentage d’heures signalées</td></tr></tbody></table></div>
+<p>L’emploi des médianes atténue l’effet des pointes isolées ; le seuil évite qu’une oscillation mineure soit interprétée comme une tendance. La flèche décrit l’évolution <strong>à l’intérieur du créneau affiché</strong>. Elle ne compare pas deux actualisations successives du modèle.</p>
 <h3>Confiance générale</h3>
 <p>Le rond placé dans le bandeau de chaque journée résume la confiance générale par une couleur verte, jaune, orange ou rouge. Au survol ou au clavier, trois lignes sur cinq détaillent séparément la <strong>convergence des modèles</strong>, l’<strong>évolution des prévisions</strong> et la <strong>confiance</strong>.</p>
 <p>Lorsque les données ARPEGE sont disponibles, le score privilégie l’accord ECMWF–ARPEGE et tient aussi compte de la stabilité des ensembles et de l’évolution récente. Un désaccord important sur la pluie ou l’orage limite volontairement le niveau affiché. Sinon, la dispersion ICON-EPS sert d’indication d’incertitude.</p>
@@ -135,6 +142,6 @@
   <script src="runtime-config.js"></script>
   <script src="analytics.js?v=1"></script>
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="echelle-kilometrique.js?v=14"></script>
+  <script src="echelle-kilometrique.js?v=15"></script>
 </body>
 </html>
