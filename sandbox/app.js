@@ -4870,7 +4870,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
     zoomAnimation: false,
     markerZoomAnimation: false
   }).setView([point.lat, point.lon], mapRadiusKm === 20 ? 9 : 7);
-  window.L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.12, attribution: "" }).addTo(nowcastLeafletMap);
+  window.L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.42, attribution: "" }).addTo(nowcastLeafletMap);
   let placeContext = [];
   const regionalPlaceNames = new Set(["Montélimar", "Carpentras", "Sisteron", "Embrun", "Valence", "Grenoble", "Gap", "Briançon"]);
   const regionalPlaceFallback = [
