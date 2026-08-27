@@ -20,6 +20,11 @@
 .news-article code { padding: 2px 5px; border-radius: 4px; background: #eef3f5; font: .9em ui-monospace, SFMono-Regular, Consolas, monospace; }
 .news-article pre { padding: 14px; overflow: auto; border-radius: 7px; background: #edf2f4; }
 .news-article pre code { padding: 0; background: transparent; }
+.news-table-scroll { margin: 16px 0 22px; overflow-x: auto; }
+.news-article table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+.news-article th, .news-article td { padding: 9px 11px; border: 1px solid #d7e3e8; text-align: left; vertical-align: top; }
+.news-article th { color: #173f57; background: #edf6fa; }
+.news-article td:not(:first-child) { white-space: nowrap; }
 .news-loading, .news-empty { color: #6f7f87; }
 @media (max-width: 760px) {
   .news-header-meta { gap: 7px; }
