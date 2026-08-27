@@ -576,24 +576,6 @@ function isLocalVigilanceAlert(alert) {
   return phenomenonId !== 4 && alert?.label !== "Crues";
 }
 
-function vigilanceWarningWindow(alert) {
-  const hasTimeline = Array.isArray(alert?.timeline) && alert.timeline.length > 0;
-  const sourcePeriods = hasTimeline
-    ? alert.timeline.filter(period => Number(period.colorId) >= 2)
-    : Number(alert?.colorId) >= 2 ? [{ colorId: alert.colorId, start: alert.start, end: alert.end }] : [];
-  const periods = sourcePeriods.map(period => ({
-    ...period,
-    startTime: period.start ? new Date(period.start).getTime() : NaN,
-    endTime: period.end ? new Date(period.end).getTime() : NaN
-  })).filter(period => Number.isFinite(period.startTime) && Number.isFinite(period.endTime));
-  if (!periods.length) return null;
-  return {
-    colorId: Math.max(...periods.map(period => Number(period.colorId))),
-    start: periods.reduce((earliest, period) => period.startTime < earliest.startTime ? period : earliest).start,
-    end: periods.reduce((latest, period) => period.endTime > latest.endTime ? period : latest).end
-  };
-}
-
 function vigilanceAlertsForSlot(vigilance, dateKey, startHour, endHour) {
   const slotStart = new Date(dateKey + "T" + String(startHour).padStart(2, "0") + ":00:00").getTime();
   const slotEnd = new Date(dateKey + "T" + String(endHour).padStart(2, "0") + ":00:00").getTime();
@@ -629,33 +611,6 @@ function vigilanceSlotIcons(alerts) {
     const description = "Vigilance " + level + " " + alert.label + period;
     return '<span class="daily-vigilance-badge" data-level="' + level + '" role="img" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>VIGILANCE</strong><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span></span>';
   }).join("") + "</span>";
-}
-
-function renderVigilance(vigilance) {
-  const banner = $("vigilance-alert");
-  const alerts = (vigilance?.alerts || []).filter(isLocalVigilanceAlert);
-  const now = Date.now();
-  const visibleAlerts = alerts.map(alert => {
-    const warningWindow = vigilanceWarningWindow(alert);
-    return warningWindow ? { ...alert, ...warningWindow } : null;
-  }).filter(alert => alert && now < new Date(alert.end).getTime());
-  banner.hidden = visibleAlerts.length === 0;
-  if (!visibleAlerts.length) {
-    banner.innerHTML = "";
-    return;
-  }
-  banner.innerHTML = visibleAlerts.map(alert => {
-    const colorId = Number(alert.colorId);
-    const level = colorId >= 4 ? "rouge" : colorId >= 3 ? "orange" : "jaune";
-    const start = alert.start ? dateTimeFormat.format(new Date(alert.start)) : "en cours";
-    const end = alert.end ? dateTimeFormat.format(new Date(alert.end)) : "durée non précisée";
-    const phenomenon = alert.label === "Orages" ? "Orage" : alert.label;
-    const title = "Vigilance " + level + " " + phenomenon;
-    const period = alert.start ? "Du " + start + " au " + end : "En cours jusqu’au " + end;
-    const phenomenonId = Number(alert.id) || vigilancePhenomenonIds[alert.label] || 0;
-    const pictogram = phenomenonId ? '<span class="vigilance-banner-icon daily-vigilance-icon type-' + phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span>' : "";
-    return '<a class="vigilance-banner" data-level="' + level + '" href="https://vigilance.meteofrance.fr/fr/drome" target="_blank" rel="noreferrer" aria-label="' + escapeText(title + ". " + period + ". Ouvrir la vigilance Météo-France pour la Drôme") + '">' + pictogram + '<strong>' + escapeText(title) + '</strong><span>' + escapeText(period) + '</span><span class="vigilance-banner-arrow" aria-hidden="true">↗</span></a>';
-  }).join("");
 }
 
 const eclipsePeak = new Date("2026-08-12T20:23:00+02:00").getTime();
@@ -5868,11 +5823,10 @@ function applyDashboardPayload(payload) {
     const vigilanceStamp = data?.vigilance?.fetchedAt || 0;
     if (vigilanceStamp !== lastVigilanceStamp) {
       lastVigilanceStamp = vigilanceStamp;
-      renderVigilance(data?.vigilance);
       renderWeekForecast();
     }
-    // Désactivé temporairement : ne plus afficher systématiquement sous la
-    // vigilance le bandeau « Perturbation en approche ». La fonction est
+    // Désactivé temporairement : ne plus afficher systématiquement le bandeau
+    // « Perturbation en approche ». La fonction est
     // conservée pour pouvoir réutiliser ces informations sous une autre forme.
     // renderApproachingCellsAlert(data?.radar);
     const aromeStamp = data?.arome?.fetchedAt || 0;
