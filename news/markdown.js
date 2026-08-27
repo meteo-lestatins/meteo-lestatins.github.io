@@ -17,6 +17,13 @@
       .replace(/NEWSLINKTOKEN(\d+)END/g, (match, index) => links[Number(index)] || "");
   }
 
+  const markdownTableCells = line => String(line).trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+  const isTableDivider = line => {
+    const cells = markdownTableCells(line);
+    return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+  };
+  const isTableStart = (lines, index) => Boolean(lines[index]?.includes("|") && isTableDivider(lines[index + 1] || ""));
+
   global.newsMarkdownToHtml = function newsMarkdownToHtml(markdown) {
     const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
     const output = [];
@@ -44,6 +51,18 @@
         output.push(`<blockquote><p>${renderInline(quote.join(" "))}</p></blockquote>`);
         continue;
       }
+      if (isTableStart(lines, index)) {
+        const headers = markdownTableCells(line);
+        index += 2;
+        const rows = [];
+        while (index < lines.length && lines[index].trim() && lines[index].includes("|")) rows.push(markdownTableCells(lines[index++]));
+        output.push('<div class="news-table-scroll"><table><thead><tr>'
+          + headers.map(cell => `<th>${renderInline(cell)}</th>`).join("")
+          + "</tr></thead><tbody>"
+          + rows.map(row => "<tr>" + headers.map((header, cellIndex) => `<td>${renderInline(row[cellIndex] || "")}</td>`).join("") + "</tr>").join("")
+          + "</tbody></table></div>");
+        continue;
+      }
       const list = line.match(/^\s*(?:([-*])|(\d+)\.)\s+(.+)$/);
       if (list) {
         const ordered = Boolean(list[2]);
@@ -61,7 +80,7 @@
       }
       const paragraph = [line.trim()];
       index += 1;
-      while (index < lines.length && lines[index].trim() && !/^(?:#{1,3}\s+|```|>\s?|\s*[-*]\s+|\s*\d+\.\s+)/.test(lines[index])) paragraph.push(lines[index++].trim());
+      while (index < lines.length && lines[index].trim() && !/^(?:#{1,3}\s+|```|>\s?|\s*[-*]\s+|\s*\d+\.\s+)/.test(lines[index]) && !isTableStart(lines, index)) paragraph.push(lines[index++].trim());
       output.push(`<p>${renderInline(paragraph.join(" "))}</p>`);
     }
     return output.join("\n");
