@@ -5232,10 +5232,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
-  const compactDesktopMap = nowcastContainerWidth >= 1250;
-  const width = compactDesktopMap ? 640 : 360;
-  const height = compactDesktopMap ? 640 : 360;
+  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
+  const height = 360;
   const radarCells = (radar?.cells || []).map((cell, index) => ({
     ...cell,
     id: cell.id || String.fromCharCode(65 + index)
@@ -5248,7 +5246,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const targetY = height / 2;
     const scale = width === 360
       ? (width - 32) / (mapRadiusKm * 2)
-      : (height - 32) / (mapRadiusKm * 2.02);
+      : (height - 64) / (mapRadiusKm * 2.2);
     const rings = [20, 40, 60].filter(distance => distance <= mapRadiusKm).map(distance => {
       const radius = distance * scale;
       const labelX = targetX;
@@ -5266,10 +5264,10 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const primaryPoints = primaryProjection?.points || points;
   const secondaryTrackPoints = etaProjectionCells.flatMap(cell => cell.id === threat.id ? [] : cell.track.points);
   const extentPoints = [{ eastKm: 0, northKm: 0, uncertaintyKm: 3 }, ...radarCells, ...secondaryTrackPoints, ...(primaryPoints.length ? primaryPoints : [threat])];
-  const paddingX = width === 360 ? 20 : 16;
-  const paddingY = width === 360 ? 20 : 16;
-  const eastRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.01);
-  const northRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.01);
+  const paddingX = width === 360 ? 20 : 48;
+  const paddingY = width === 360 ? 20 : 32;
+  const eastRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
+  const northRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
   const scale = Math.min((width - paddingX * 2) / (eastRadiusKm * 2), (height - paddingY * 2) / (northRadiusKm * 2));
   const x = eastKm => width / 2 + Number(eastKm || 0) * scale;
   const y = northKm => height / 2 - Number(northKm || 0) * scale;
@@ -5584,13 +5582,11 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
-  const compactDesktopMap = nowcastContainerWidth >= 1250;
-  const width = compactDesktopMap ? 640 : 360;
-  const height = compactDesktopMap ? 640 : 360;
+  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
+  const height = 360;
   const scale = width === 360
     ? (width - 32) / (mapRadiusKm * 2)
-    : Math.min((width - 32) / (mapRadiusKm * 2.02), (height - 32) / (mapRadiusKm * 2.02));
+    : Math.min((width - 96) / (mapRadiusKm * 2.2), (height - 64) / (mapRadiusKm * 2.2));
   const eastExtentKm = width / (2 * scale);
   const northExtentKm = height / (2 * scale);
   const latitudeKm = 111.32;

@@ -903,16 +903,16 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-map-meta small { min-height: 18px; display: flex; align-items: end; justify-content: center; color: #70838d; font-size: 8px; font-weight: 750; line-height: 1.05; }
 
 @media (min-width: 1051px) {
-  .nowcast-cell-map-overlay { width: min(300px, calc(100% - 20px)); padding: 10px 11px 9px; font-size: 12px; }
+  .nowcast-cell-map-overlay { width: min(320px, calc(100% - 20px)); padding: 10px 11px 9px; font-size: 13px; }
   .nowcast-cell-map-head { gap: 3px 9px; }
-  .nowcast-cell-map-head strong { font-size: 21px; }
-  .nowcast-cell-map-head span, .nowcast-cell-map-head b { font-size: 12px; }
+  .nowcast-cell-map-head strong { font-size: 22px; }
+  .nowcast-cell-map-head span, .nowcast-cell-map-head b { font-size: 13px; }
   .nowcast-cell-map-intensities { gap: 7px; margin: 8px 0 7px; padding: 7px 4px; }
   .nowcast-cell-map-intensities .week-metric-pictogram svg { width: 25px; height: 25px; flex-basis: 25px; }
   .nowcast-cell-map-intensities .week-metric-scale { width: 60px; }
   .nowcast-cell-map-intensities .week-metric-scale i { height: 8px; }
-  .nowcast-cell-map-meta b { font-size: 14px; }
-  .nowcast-cell-map-meta small { min-height: 14px; font-size: 11px; line-height: 1.1; }
+  .nowcast-cell-map-meta b { font-size: 15px; }
+  .nowcast-cell-map-meta small { min-height: 15px; font-size: 12px; line-height: 1.1; }
 }
 .nowcast-cell-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .nowcast-cell-link { min-height: 36px; padding: 5px 12px; border: 1px solid #d5c05d; border-radius: 7px; cursor: pointer; color: #746500; background: #fff8c9; font: 800 12px system-ui; white-space: nowrap; }
@@ -1184,8 +1184,6 @@ button:hover { background: #eef7fb; }
 .storm-cell-missing strong { color: #50646e; }
 .storm-cell-missing span { color: #687b84; font-size: 11px; font-weight: 750; }
 
-
-
 @media (max-width: 1100px) {
   .three-hour-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1197,25 +1195,5 @@ button:hover { background: #eef7fb; }
 .sandbox-badge{position:fixed;right:8px;bottom:8px;z-index:9999;padding:4px 7px;border-radius:6px;color:#fff;background:#7b4db3;font:800 9px system-ui;letter-spacing:.08em;box-shadow:0 2px 7px rgba(41,25,62,.22)}.header-meta{gap:7px;margin-top:0}.header-info-links{display:flex;min-height:32px;align-items:center;gap:6px;color:#a0a8ac;font-size:14px;font-weight:750;line-height:1}.header-info-links a{color:#6f7f87;text-decoration:none}.header-info-links a:hover{color:#397a9e;text-decoration:underline}@media(max-width:760px){.header-info-links{min-height:28px;font-size:12px}}
 
 .nowcast-map-attribution{position:absolute;left:50%;bottom:3px;z-index:3;transform:translateX(-50%);padding:1px 4px;border-radius:3px;color:#61737d;background:rgba(255,255,255,.72);font:600 7px system-ui;white-space:nowrap}.nowcast-map-attribution a{color:inherit;text-decoration:none}
-/* nowcast-container-layout:start */
-.radar-nowcast { container: nowcast / inline-size; }
-
-@container nowcast (max-width: 1249px) {
-  .nowcast-workspace { height: auto; overflow: visible; border: 0; background: transparent; }
-  .nowcast-map-column { height: auto; aspect-ratio: auto; }
-  .nowcast-map-column .storm-map-controls { position: static; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
-  .nowcast-map-column .north-arrow { transform: none; }
-  .nowcast-map-column .storm-map, .nowcast-map-column .storm-map > svg { width: 100%; height: auto; min-height: 0; aspect-ratio: 1 / 1; }
-  .nowcast-map-column .storm-map { border: 1px solid #c8dce6; border-radius: 12px; }
-}
-
-@container nowcast (min-width: 1250px) {
-  .nowcast-workspace { height: auto; overflow: hidden; border: 1px solid #c8dce6; border-radius: 12px; background: #fff; }
-  .nowcast-map-column { height: auto; aspect-ratio: 1 / 1; }
-  .nowcast-map-column .storm-map-controls { position: absolute; z-index: 4; top: 8px; left: 8px; margin: 0; padding: 3px; border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 1px 5px rgba(31,75,96,.15); }
-  .nowcast-map-column .storm-map, .nowcast-map-column .storm-map > svg { width: 100%; height: 100%; min-height: 0; aspect-ratio: 1 / 1; }
-  .nowcast-map-column .storm-map { border: 0; border-radius: 0; }
-}
-/* nowcast-container-layout:end */
 
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
