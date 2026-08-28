@@ -66,6 +66,7 @@ button:hover { background: #eef7fb; }
 .title h2 { margin: 0; font-size: 19px; }
 .forecast-tab-row { display: none; }
 .three-hour-overview { padding: 22px 28px 24px; border-bottom: 1px solid #d7e3e8; background: #f3f9fc; }
+.three-hour-layout { min-width: 0; background: #f3f9fc; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .section-heading h2 { margin: 0; color: #173f57; font-size: 20px; letter-spacing: -.015em; }
 #forecast-week-title { white-space: nowrap; }
@@ -901,6 +902,23 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-map-meta > span + span { border-left: 1px solid rgba(119,151,168,.22); }
 .nowcast-cell-map-meta b { max-width: 100%; overflow: hidden; color: #173f57; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .nowcast-cell-map-meta small { min-height: 18px; display: flex; align-items: end; justify-content: center; color: #70838d; font-size: 8px; font-weight: 750; line-height: 1.05; }
+
+@media (min-width: 901px) {
+  .three-hour-layout { display: grid; grid-template-columns: minmax(300px, .36fr) minmax(0, .64fr); align-items: start; border-bottom: 1px solid #d7e3e8; }
+  .three-hour-layout > .three-hour-overview { min-width: 0; height: 100%; border-right: 1px solid #d7e3e8; border-bottom: 0; }
+  .three-hour-layout > .three-hour-details { min-width: 0; }
+  .three-hour-layout .three-hour-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .nowcast-cell-map-overlay { width: min(300px, calc(100% - 20px)); padding: 10px 11px 9px; font-size: 12px; }
+  .nowcast-cell-map-head { gap: 3px 9px; }
+  .nowcast-cell-map-head strong { font-size: 21px; }
+  .nowcast-cell-map-head span, .nowcast-cell-map-head b { font-size: 12px; }
+  .nowcast-cell-map-intensities { gap: 7px; margin: 8px 0 7px; padding: 7px 4px; }
+  .nowcast-cell-map-intensities .week-metric-pictogram svg { width: 25px; height: 25px; flex-basis: 25px; }
+  .nowcast-cell-map-intensities .week-metric-scale { width: 60px; }
+  .nowcast-cell-map-intensities .week-metric-scale i { height: 8px; }
+  .nowcast-cell-map-meta b { font-size: 14px; }
+  .nowcast-cell-map-meta small { min-height: 14px; font-size: 11px; line-height: 1.1; }
+}
 .nowcast-cell-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .nowcast-cell-link { min-height: 36px; padding: 5px 12px; border: 1px solid #d5c05d; border-radius: 7px; cursor: pointer; color: #746500; background: #fff8c9; font: 800 12px system-ui; white-space: nowrap; }
 .nowcast-cell-link.passage-medium { border-color: #e2a35c; color: #9a5800; background: #fff0d3; }
@@ -1180,7 +1198,7 @@ button:hover { background: #eef7fb; }
 
 
 
-@media (max-width: 1100px) {
+@media (min-width: 721px) and (max-width: 900px) {
   .three-hour-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

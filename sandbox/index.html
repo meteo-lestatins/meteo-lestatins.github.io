@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
   <link rel="preconnect" href="https://ensemble-api.open-meteo.com" crossorigin>
   <link rel="preconnect" href="https://nicolas.sindelar.fr" crossorigin>
-  <link rel="stylesheet" href="style.css?v=164">
+  <link rel="stylesheet" href="style.css?v=165">
   <title>Sandbox · Météo les Tatins</title>
 </head>
 <body><span class="sandbox-badge" aria-label="Version de test">SANDBOX</span>
@@ -27,26 +27,28 @@
   </header>
   <a id="news-alert" class="vigilance-alert news-alert" href="news/" aria-live="polite" hidden><span id="news-alert-message"></span><span class="news-alert-arrow" aria-hidden="true">→</span></a>
   <section id="cell-approach-alert" class="vigilance-alert cell-approach-alert" aria-live="polite" hidden></section>
-  <section class="three-hour-overview" aria-labelledby="three-hour-title">
-    <div class="section-heading">
-      <h2 id="three-hour-title">Dans les 3 h</h2>
-      <div id="three-hour-api-links" class="section-api-links" aria-label="API de la synthèse sur 3 heures" hidden></div>
-    </div>
-    <div id="three-hour-summary" class="three-hour-summary" aria-live="polite"></div>
-  </section>
-  <section id="panel-rain" class="rain-section three-hour-details" aria-label="Détails des prévisions sur 3 heures">
-    <div id="rain-details" class="three-hour-detail" hidden>
-      <div class="rain-section-heading">
-        <div class="rain-section-tools"><div id="rain-api-links" class="section-api-links" aria-label="Sources de la prévision de pluie" hidden></div></div>
+  <div class="three-hour-layout">
+    <section class="three-hour-overview" aria-labelledby="three-hour-title">
+      <div class="section-heading">
+        <h2 id="three-hour-title">Dans les 3 h</h2>
+        <div id="three-hour-api-links" class="section-api-links" aria-label="API de la synthèse sur 3 heures" hidden></div>
       </div>
-      <div id="now-chart" class="now-chart"><div id="rain-bars" class="rain-bars"></div></div>
-      <div id="rain-axis" class="rain-axis" aria-label="Heures des précipitations"></div>
-    </div>
-    <div id="nowcast-details" class="three-hour-detail" hidden>
-      <div class="section-heading page-section-heading nowcast-heading"><h2><button id="nowcast-title-toggle" type="button" aria-controls="nowcast-details" aria-expanded="true">Nowcasting <span aria-hidden="true">⌃</span></button></h2><div id="nowcast-api-links" class="section-api-links" aria-label="API du nowcasting" hidden></div></div>
-      <div id="radar-nowcast" class="radar-nowcast" aria-live="polite"></div>
-    </div>
-  </section>
+      <div id="three-hour-summary" class="three-hour-summary" aria-live="polite"></div>
+    </section>
+    <section id="panel-rain" class="rain-section three-hour-details" aria-label="Détails des prévisions sur 3 heures">
+      <div id="rain-details" class="three-hour-detail" hidden>
+        <div class="rain-section-heading">
+          <div class="rain-section-tools"><div id="rain-api-links" class="section-api-links" aria-label="Sources de la prévision de pluie" hidden></div></div>
+        </div>
+        <div id="now-chart" class="now-chart"><div id="rain-bars" class="rain-bars"></div></div>
+        <div id="rain-axis" class="rain-axis" aria-label="Heures des précipitations"></div>
+      </div>
+      <div id="nowcast-details" class="three-hour-detail" hidden>
+        <div class="section-heading page-section-heading nowcast-heading"><h2><button id="nowcast-title-toggle" type="button" aria-controls="nowcast-details" aria-expanded="true">Nowcasting <span aria-hidden="true">⌃</span></button></h2><div id="nowcast-api-links" class="section-api-links" aria-label="API du nowcasting" hidden></div></div>
+        <div id="radar-nowcast" class="radar-nowcast" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
   <section id="panel-48h" class="forecast-section page-forecast-section" aria-labelledby="forecast-48h-title" hidden>
     <div class="section-heading page-section-heading forecast-48h-heading">
       <h2 id="forecast-48h-title"><button id="forecast-48h-title-toggle" type="button" aria-controls="forecast-48h-content" aria-expanded="true"><span id="forecast-48h-title-label">Prévisions</span><span class="forecast-title-chevron" aria-hidden="true">⌃</span></button></h2>
@@ -67,8 +69,8 @@
   </section>
 </main>
 <div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
-<script src="runtime-config.js?v=3.145"></script>
+<script src="runtime-config.js?v=3.146"></script>
 <script src="analytics.js?v=1"></script>
-<script src="app.js?v=227"></script>
+<script src="app.js?v=228"></script>
 </body>
 </html>
