@@ -880,7 +880,7 @@ button:hover { background: #eef7fb; }
 .storm-map-controls .forecast-source-button { min-width: 82px; min-height: 36px; padding-inline: 14px; font-size: 13px; }
 .nowcast-workspace { display: block; }
 .nowcast-map-column { min-width: 0; position: relative; }
-.nowcast-map-column .storm-map-controls { width: auto; position: static; gap: 6px; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.nowcast-map-column .storm-map-controls { width: auto; position: absolute; z-index: 4; top: 8px; left: 8px; gap: 6px; margin: 0; padding: 3px; border: 0; border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 1px 5px rgba(31,75,96,.15); }
 .nowcast-map-column .storm-map-controls .forecast-source-button { min-width: 66px; min-height: 31px; padding-inline: 9px; font-size: 11px; }
 .nowcast-map-column .north-arrow { transform: none; }
 @media (min-width: 1101px) {
