@@ -904,10 +904,12 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-map-meta small { min-height: 18px; display: flex; align-items: end; justify-content: center; color: #70838d; font-size: 8px; font-weight: 750; line-height: 1.05; }
 
 @media (min-width: 1051px) {
-  .three-hour-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); align-items: start; border-bottom: 1px solid #d7e3e8; }
-  .three-hour-layout > .three-hour-overview { min-width: 0; height: 100%; border-right: 1px solid #d7e3e8; border-bottom: 0; }
-  .three-hour-layout > .three-hour-details { min-width: 0; }
-  .three-hour-layout .three-hour-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .three-hour-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 18px; padding-inline: 28px; border-bottom: 1px solid #d7e3e8; }
+  .three-hour-layout > .three-hour-overview { min-width: 0; height: 100%; grid-column: 1 / 3; padding-inline: 0; border-bottom: 0; }
+  .three-hour-layout > .three-hour-details { min-width: 0; grid-column: 3; padding-top: 58px; }
+  .three-hour-layout .three-hour-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .three-hour-layout #nowcast-details, .three-hour-layout .radar-nowcast { padding-top: 0; }
+  .three-hour-layout .radar-nowcast { margin-inline: 0; }
   .nowcast-cell-map-overlay { width: min(300px, calc(100% - 20px)); padding: 10px 11px 9px; font-size: 12px; }
   .nowcast-cell-map-head { gap: 3px 9px; }
   .nowcast-cell-map-head strong { font-size: 21px; }

@@ -6590,6 +6590,7 @@ function registerServiceWorker() {
 
 bindForecastLayout();
 bindHeaderNowcastLink();
+setNowcastOpen(true);
 registerServiceWorker();
 if (window.location.hash === "#radar-nowcast") {
   const nowcastDetails = $("nowcast-details");
