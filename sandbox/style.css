@@ -300,6 +300,10 @@ button:hover { background: #eef7fb; }
 .daily-period-card.daily-period-alert-yellow summary:hover { background: rgba(238, 192, 35, .19); }
 .daily-period-card.daily-period-alert-orange summary:hover { background: rgba(226, 129, 50, .3); }
 .daily-period-card.daily-period-alert-red summary:hover { background: rgba(207, 77, 71, .34); }
+.daily-period-card.daily-period-past { background: #edf1f3; }
+.daily-period-card.daily-period-past summary { color: #77858c; background: #edf1f3; filter: grayscale(1); opacity: .58; }
+.daily-period-card.daily-period-past summary:hover { background: #e3e8ea; }
+.daily-period-card.daily-period-past .daily-period-details { background: #f0f3f4; filter: grayscale(1); opacity: .62; }
 .daily-period-title { grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
 .daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 3px; }
@@ -879,6 +883,9 @@ button:hover { background: #eef7fb; }
 .nowcast-map-column .storm-map-controls { width: auto; position: static; gap: 6px; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .nowcast-map-column .storm-map-controls .forecast-source-button { min-width: 66px; min-height: 31px; padding-inline: 9px; font-size: 11px; }
 .nowcast-map-column .north-arrow { transform: none; }
+@media (min-width: 1101px) {
+  .nowcast-workspace { width: calc(66.6667% - 6px); }
+}
 .nowcast-cell-map-overlay { width: min(238px, calc(100% - 16px)); position: absolute; z-index: 3; box-sizing: border-box; padding: 7px 8px 6px; overflow: hidden; border: 1px solid #bdd4df; border-radius: 11px; color: #173f57; background: rgba(255,255,255,.96); box-shadow: 0 5px 18px rgba(24,67,88,.24); opacity: 0; pointer-events: none; font: 750 10px/1.15 system-ui; font-variant-numeric: tabular-nums; }
 .nowcast-cell-map-overlay[hidden] { display: none; }
 .nowcast-cell-map-overlay.is-measuring { visibility: hidden; }
