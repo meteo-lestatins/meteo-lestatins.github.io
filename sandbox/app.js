@@ -1029,7 +1029,7 @@ function onlyDrizzleInThreeHours(steps) {
 
 function rainIntensityLabel(intensityLevel = 0) {
   const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  return level >= 5 ? "Pluie violente" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : "Pluie";
+  return level >= 5 ? "Pluie violente" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : level >= 2 ? "Pluie" : "Pluie faible";
 }
 
 function rainPhaseForStep(step) {
@@ -1043,7 +1043,7 @@ function rainPhaseForStep(step) {
 }
 
 function rainPhaseLabel(phase) {
-  return phase?.dry ? "Fin de l’épisode de pluie" : phase?.drizzle ? "Gouttes" : rainIntensityLabel(phase?.level);
+  return phase?.dry ? "Fin de l’épisode de pluie" : phase?.drizzle ? "Pluie faible" : rainIntensityLabel(phase?.level);
 }
 
 function rainPhaseRank(phase) {
@@ -1078,7 +1078,7 @@ function nextRainPhaseTransition(steps, now, currentPhase) {
     // Les baisses d’intensité n’ont pas d’intérêt dans le résumé : tant que
     // l’épisode continue, on attend soit une intensification, soit sa fin.
     if (!currentPhase.drizzle && rainPhaseRank(phase) <= currentRank) continue;
-    // Pour des gouttes, la première pluie mesurable reste l’unique cas où
+    // Pour une pluie faible, la première pluie plus marquée reste l’unique cas où
     // l’on raconte explicitement les deux étapes avec « puis ».
     if (currentPhase.drizzle && phase.drizzle) continue;
     return { currentPhase, nextPhase: phase, step, etaMinutes };
@@ -1089,13 +1089,12 @@ function nextRainPhaseTransition(steps, now, currentPhase) {
 function shortTermRainTransitionLabel(transition, passageRisk = 100) {
   if (!transition) return "";
   const eta = " dans " + compactMinutesLabel(transition.etaMinutes);
-  if (transition.nextPhase?.dry && transition.dropsUntilDry && transition.dropsPossibleUntilDry) return "Gouttes possibles pendant encore " + compactMinutesLabel(transition.etaMinutes);
-  if (transition.nextPhase?.dry && transition.dropsUntilDry) return "Gouttes pendant encore " + compactMinutesLabel(transition.etaMinutes);
+  if (transition.nextPhase?.dry && transition.dropsUntilDry) return "Pluie faible pendant encore " + compactMinutesLabel(transition.etaMinutes);
   if (transition.nextPhase?.dry) return "Fin de l’épisode de pluie" + eta;
   const next = rainPhaseLabel(transition.nextPhase);
   const qualifier = shortTermRiskQualifier(passageRisk);
   return transition.currentPhase?.drizzle
-    ? "Gouttes puis " + next.toLowerCase() + qualifier + eta
+    ? "Pluie faible puis " + next.toLowerCase() + qualifier + eta
     : next + qualifier + eta;
 }
 
@@ -1146,15 +1145,15 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0,
   const eta = etaMinutes == null ? null : Number(etaMinutes);
   if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
   return eta < 1
-    ? "Gouttes possibles maintenant"
-    : "Gouttes possibles dans " + compactMinutesLabel(Math.max(1, eta));
+    ? "Pluie faible maintenant"
+    : "Pluie faible possible dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
 function shortTermRainSequenceLabel(etaMinutes, intensityLevel = 0, passageRisk = 100) {
   const eta = etaMinutes == null ? null : Number(etaMinutes);
-  if (!Number.isFinite(eta) || eta < 0) return "Gouttes possibles";
+  if (!Number.isFinite(eta) || eta < 0) return "Pluie faible possible";
   const rain = rainIntensityLabel(intensityLevel).toLowerCase() + (eta < 1 ? "" : shortTermRiskQualifier(passageRisk));
-  return "Gouttes puis " + rain + (eta < 1
+  return "Pluie faible puis " + rain + (eta < 1
     ? " maintenant"
     : " dans " + compactMinutesLabel(Math.max(1, eta)));
 }
@@ -5521,7 +5520,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
   // La couleur signale le pic des 3 h, mais le texte décrit le premier pas
   // qui arrive réellement. Une pluie soutenue prévue plus tard ne doit pas
-  // être annoncée comme déjà présente pendant que la frise montre des gouttes.
+  // être annoncée comme déjà présente pendant que la frise montre une pluie faible.
   const rainLabelStep = dropsThenRain ? measurableRainArrival : rainArrival;
   const rainLabelStepIntensity = rainLabelStep
     ? rainRateFromAccumulation(rainLabelStep.totalPrecipitation, rainLabelStep.intervalEnd - rainLabelStep.intervalStart)
@@ -5744,7 +5743,7 @@ function renderPiaf(piaf, radar = null) {
     const height = trace ? 2 : wet ? Math.min(100, Math.max(2, precipitation / fullScaleRain * 100)) : 0;
     // Si une quantité est dessinée, afficher cette quantité plutôt qu'un 0 %
     // provenant d'une source probabiliste distincte.
-    const label = trace ? "gouttes" : wet ? precipitation.toFixed(2) + " mm" : probability == null ? "" : probability + "%";
+    const label = trace ? "pluie faible" : wet ? precipitation.toFixed(2) + " mm" : probability == null ? "" : probability + "%";
     const slotTime = hourFormat.format(slotTimes[index]);
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
