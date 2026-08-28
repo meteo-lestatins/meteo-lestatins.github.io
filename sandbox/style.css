@@ -428,6 +428,7 @@ button:hover { background: #eef7fb; }
 .week-metric-pictogram.storm { --metric-color: #d29319; }
 .week-metric-pictogram.hail { --metric-color: #547f99; }
 .week-metric-pictogram.hail svg .hailstone { fill: currentColor; stroke: none; }
+.week-metric-pictogram.hail svg .hail-letter { fill: currentColor; stroke: none; font: 900 8px/1 system-ui; }
 .week-metric-pictogram.rain svg path, .week-metric-pictogram.cloud svg path, .week-metric-pictogram.storm svg path { fill: currentColor; fill-opacity: .15; }
 .week-metric-scale { width: 66px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
 .week-metric-scale i { height: 9px; display: block; border-radius: 3px; background: #dfe7eb; }
@@ -895,11 +896,11 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-map-intensities .week-metric-pictogram svg { width: 20px; height: 20px; flex-basis: 20px; }
 .nowcast-cell-map-intensities .week-metric-scale { width: 48px; gap: 2px; }
 .nowcast-cell-map-intensities .week-metric-scale i { height: 7px; border-radius: 4px; }
-.nowcast-cell-map-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; }
+.nowcast-cell-map-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
 .nowcast-cell-map-meta > span { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding-inline: 4px; text-align: center; }
 .nowcast-cell-map-meta > span + span { border-left: 1px solid rgba(119,151,168,.22); }
 .nowcast-cell-map-meta b { max-width: 100%; overflow: hidden; color: #173f57; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
-.nowcast-cell-map-meta small { color: #70838d; font-size: 8px; font-weight: 750; }
+.nowcast-cell-map-meta small { min-height: 18px; display: flex; align-items: end; justify-content: center; color: #70838d; font-size: 8px; font-weight: 750; line-height: 1.05; }
 .nowcast-cell-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .nowcast-cell-link { min-height: 36px; padding: 5px 12px; border: 1px solid #d5c05d; border-radius: 7px; cursor: pointer; color: #746500; background: #fff8c9; font: 800 12px system-ui; white-space: nowrap; }
 .nowcast-cell-link.passage-medium { border-color: #e2a35c; color: #9a5800; background: #fff0d3; }

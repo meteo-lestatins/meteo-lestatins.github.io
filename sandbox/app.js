@@ -3265,7 +3265,7 @@ function renderWeekForecast() {
     wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>',
-    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>',
+    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><text class="hail-letter" x="12" y="11.4" text-anchor="middle">G</text><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>',
   };
   const metricPictogram = (kind, lowStep, highStep, label) => {
     const low = Math.max(0, Math.min(5, Math.round(Number(lowStep) || 0)));
@@ -5724,7 +5724,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path class="storm-cloud" d="M4.2 14.2a3.4 3.4 0 0 1 .4-6.8A5.3 5.3 0 0 1 15 6a3.8 3.8 0 0 1 3.1 1.6 3.3 3.3 0 0 1 .7 6.6H4.2Z"/><path class="storm-bolt" d="M11.2 10.8 7.8 16h3l-1.4 6 7-9h-3.2l1.5-2.2h-3.5Z"/>',
     lightning: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>',
-    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>'
+    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><text class="hail-letter" x="12" y="11.4" text-anchor="middle">G</text><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>'
   };
   const nowcastMetricPictogram = (kind, step, label, showSymbol = true, showScale = true, nativeTitle = true) => {
     const level = Math.max(0, Math.min(5, Math.round(Number(step) || 0)));
@@ -6063,7 +6063,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
     const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + passageRisk + ' %</b><b>ETA ' + escapeText(etaText) + '</b></div>'
       + '<div class="nowcast-cell-map-intensities" aria-label="Intensités grêle, pluie et foudre"><span class="hail">' + hailPictogram + '</span><span class="rain">' + rainPictogram + '</span><span class="lightning">' + lightningPictogram + '</span></div>'
-      + '<div class="nowcast-cell-map-meta"><span><b>' + escapeText(speedText) + '</b><small>km/h</small></span><span><small>depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><b>' + escapeText(confidenceText) + '</b><small>confiance</small></span></div>';
+      + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>confiance trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
     return { tone: riskTone(passageRisk), label, markup };
   };
   const cellsInRange = nearbyCells
