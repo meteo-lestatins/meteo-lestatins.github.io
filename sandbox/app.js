@@ -5807,11 +5807,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         ? "Orage possible"
         : "pas d’orage";
   const stormDurationText = hasStormEta
-    ? relevantStormDurationUncertain || relevantStormDurationBeyondHorizon
-      ? "Durée incertaine"
-      : Number.isFinite(relevantStormDurationMinutes) && relevantStormDurationMinutes > 0
-        ? "Pluie projetée ~" + compactMinutesLabel(Math.max(5, Math.round(relevantStormDurationMinutes / 5) * 5))
-        : ""
+    && !relevantStormDurationUncertain
+    && !relevantStormDurationBeyondHorizon
+    && Number.isFinite(relevantStormDurationMinutes)
+    && relevantStormDurationMinutes > 0
+    ? "Pluie projetée ~" + compactMinutesLabel(Math.max(5, Math.round(relevantStormDurationMinutes / 5) * 5))
     : "";
   const stormUpcomingText = stormEtaSelection.upcomingCount > 1
     ? stormEtaSelection.upcomingCount + " cellules à venir"
