@@ -27,6 +27,9 @@ let lastEnsembleStamp = 0;
 let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
+let threeHourMessageSequenceTimer = 0;
+let threeHourMessageSequenceState = { signature: "", index: 0 };
+let threeHourRainPassageHistory = [];
 let dashboardSync = { status: "loading", error: null };
 const defaultForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
 let activeForecastSource = defaultForecastSource;
@@ -3848,6 +3851,197 @@ function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) 
     : 100;
 }
 
+function mergeThreeHourRainPassages(passages) {
+  const merged = [];
+  for (const item of [...(passages || [])]
+    .filter(passage => Number.isFinite(Number(passage?.start))
+      && Number.isFinite(Number(passage?.end))
+      && Number(passage.end) > Number(passage.start))
+    .sort((left, right) => Number(left.start) - Number(right.start))) {
+    const previous = merged.at(-1);
+    if (previous && Number(item.start) <= Number(previous.end) + 60000) {
+      previous.end = Math.max(Number(previous.end), Number(item.end));
+      previous.drizzleOnly &&= Boolean(item.drizzleOnly);
+      previous.peakIntensity = Math.max(Number(previous.peakIntensity) || 0, Number(item.peakIntensity) || 0);
+      previous.passageRisk = Math.max(Number(previous.passageRisk) || 0, Number(item.passageRisk) || 0);
+      previous.firstStep ||= item.firstStep;
+    } else merged.push({ ...item });
+  }
+  return merged;
+}
+
+function threeHourRainMessageSequence(steps, now, events = []) {
+  const referenceTime = Number(now);
+  if (!Number.isFinite(referenceTime)) return [];
+  const horizonEnd = referenceTime + 3 * 3600000;
+  const recentPastCutoff = referenceTime - 30 * 60000;
+  const timeline = [...(steps || [])]
+    .filter(step => Number.isFinite(Number(step?.intervalStart))
+      && Number.isFinite(Number(step?.intervalEnd))
+      && Number(step.intervalEnd) > Number(step.intervalStart))
+    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
+  const passages = [];
+  let passage = null;
+  for (const step of timeline) {
+    const amount = Math.max(0, Number(step.totalPrecipitation) || 0);
+    if (amount < possibleDrizzleThreshold) {
+      passage = null;
+      continue;
+    }
+    const start = Number(step.intervalStart);
+    const end = Number(step.intervalEnd);
+    if (!passage || start > passage.end + 60000) {
+      passage = {
+        start,
+        end,
+        firstStep: step,
+        drizzleOnly: amount < .2,
+        peakIntensity: rainRateFromAccumulation(amount, end - start)
+      };
+      passages.push(passage);
+      continue;
+    }
+    passage.end = Math.max(passage.end, end);
+    passage.drizzleOnly &&= amount < .2;
+    passage.peakIntensity = Math.max(passage.peakIntensity, rainRateFromAccumulation(amount, end - start));
+  }
+  const recentEtaPassages = (events || []).filter(event =>
+    nowcastEtaRainEligible(event, referenceTime)
+    && Number(event.eventStart) <= referenceTime
+    && Number(event.eventEnd) > recentPastCutoff
+  ).map(event => {
+    const profilePeak = Math.max(0, ...(event.intensityProfile || []).map(segment => Number(segment.intensity) || 0));
+    const peakIntensity = Math.max(profilePeak, Number(event.conditionalIntensity) || 0);
+    return {
+      start: Number(event.eventStart),
+      end: Number(event.eventEnd),
+      firstStep: null,
+      drizzleOnly: peakIntensity < 2.4,
+      peakIntensity,
+      passageRisk: Number(event.passage) || 0
+    };
+  });
+  const currentPassages = mergeThreeHourRainPassages([...passages, ...recentEtaPassages])
+    .filter(item => item.end > recentPastCutoff && item.start < horizonEnd);
+  const currentActive = currentPassages.some(item => item.start <= referenceTime && item.end > referenceTime);
+  const retainedHistory = (threeHourRainPassageHistory || []).map(item =>
+    item.end > referenceTime && !currentActive ? { ...item, end: referenceTime } : item
+  );
+  threeHourRainPassageHistory = mergeThreeHourRainPassages([
+    ...retainedHistory.filter(item => item.end > recentPastCutoff),
+    ...currentPassages.filter(item => item.start <= referenceTime)
+  ]).filter(item => item.end > recentPastCutoff && item.start <= referenceTime);
+  const recentPast = threeHourRainPassageHistory.filter(item => item.end <= referenceTime).at(-1);
+  const activeOrFuture = currentPassages.filter(item => item.end > referenceTime);
+  const selected = recentPast ? [recentPast, ...activeOrFuture] : activeOrFuture;
+  const hasActive = selected.some(item => item.start <= referenceTime && item.end > referenceTime);
+  let futureIndex = 0;
+  return selected.map(item => {
+    const state = item.end <= referenceTime ? "past" : item.start <= referenceTime ? "active" : "future";
+    const rawDurationMinutes = Math.max(1, (item.end - item.start) / 60000);
+    const durationMinutes = Math.max(5, Math.round(rawDurationMinutes / 5) * 5);
+    const subject = item.drizzleOnly ? "Pluie faible" : rainIntensityLabel(rainIntensityStep(item.peakIntensity));
+    const passageRisk = Number.isFinite(Number(item.passageRisk)) && Number(item.passageRisk) > 0
+      ? Number(item.passageRisk)
+      : rainPassageForStep(item.firstStep, events, possibleDrizzleThreshold);
+    let relation;
+    let label;
+    let detail;
+    if (state === "past") {
+      relation = "Passé";
+      const elapsedMinutes = Math.max(1, Math.ceil((referenceTime - item.end) / 60000));
+      label = subject + " · fin il y a " + compactMinutesLabel(elapsedMinutes);
+      detail = "durée " + compactMinutesLabel(durationMinutes);
+    } else if (state === "active") {
+      relation = "En cours";
+      const remainingMinutes = Math.max(5, Math.round((item.end - referenceTime) / 300000) * 5);
+      label = subject + " maintenant";
+      detail = "encore " + compactMinutesLabel(remainingMinutes);
+    } else {
+      relation = hasActive || futureIndex > 0 ? "Ensuite" : "À venir";
+      const etaMinutes = Math.max(1, Math.ceil((item.start - referenceTime) / 60000));
+      label = subject
+        + (item.drizzleOnly ? " possible" : shortTermRiskQualifier(passageRisk))
+        + " dans " + compactMinutesLabel(etaMinutes);
+      detail = "durée " + compactMinutesLabel(durationMinutes);
+      futureIndex += 1;
+    }
+    return {
+      key: [item.start, item.end, Math.round(item.peakIntensity * 10), state].join(":"),
+      state,
+      relation,
+      label,
+      detail
+    };
+  });
+}
+
+function threeHourMessageSequenceInitialIndex(messages) {
+  const activeIndex = (messages || []).findIndex(message => message?.state === "active");
+  if (activeIndex >= 0) return activeIndex;
+  const futureIndex = (messages || []).findIndex(message => message?.state === "future");
+  return futureIndex >= 0 ? futureIndex : Math.max(0, (messages || []).length - 1);
+}
+
+function threeHourMessagePosition(index, selectedIndex) {
+  if (index === selectedIndex) return "current";
+  if (index === selectedIndex - 1) return "previous";
+  if (index === selectedIndex + 1) return "next";
+  return index < selectedIndex ? "before" : "after";
+}
+
+function threeHourMessageSequenceMarkup(messages) {
+  const sequence = (messages || []).filter(message => message?.label);
+  if (!sequence.length) return "";
+  const initialIndex = threeHourMessageSequenceInitialIndex(sequence);
+  const signature = sequence.map(message => message.key).join("|");
+  return '<span class="three-hour-action-value three-hour-message-sequence" data-three-hour-message-sequence data-sequence-signature="' + escapeText(signature) + '" data-sequence-initial-index="' + initialIndex + '" aria-hidden="true">'
+    + sequence.map((message, index) => '<span class="three-hour-message" data-three-hour-message data-position="' + threeHourMessagePosition(index, initialIndex) + '"><span class="three-hour-message-meta"><small class="three-hour-message-relation">' + escapeText(message.relation) + '</small><em>' + escapeText(message.detail) + '</em></span><b>' + escapeText(message.label) + '</b></span>').join("")
+    + '</span>';
+}
+
+function clearThreeHourMessageSequence(reset = false) {
+  clearInterval(threeHourMessageSequenceTimer);
+  threeHourMessageSequenceTimer = 0;
+  if (reset) {
+    threeHourMessageSequenceState = { signature: "", index: 0 };
+    threeHourRainPassageHistory = [];
+  }
+}
+
+function positionThreeHourMessageSequence(container, selectedIndex, animate = true) {
+  const items = [...container.querySelectorAll("[data-three-hour-message]")];
+  if (!items.length) return;
+  const boundedIndex = Math.max(0, Math.min(items.length - 1, Number(selectedIndex) || 0));
+  container.classList.toggle("is-resetting", !animate);
+  items.forEach((item, index) => { item.dataset.position = threeHourMessagePosition(index, boundedIndex); });
+  container.dataset.sequenceIndex = String(boundedIndex);
+  threeHourMessageSequenceState.index = boundedIndex;
+  if (!animate) requestAnimationFrame(() => container.classList.remove("is-resetting"));
+}
+
+function initializeThreeHourMessageSequence(root) {
+  clearThreeHourMessageSequence();
+  const container = root?.querySelector("[data-three-hour-message-sequence]");
+  if (!container) return;
+  const items = [...container.querySelectorAll("[data-three-hour-message]")];
+  const initialIndex = Math.max(0, Math.min(items.length - 1, Number(container.dataset.sequenceInitialIndex) || 0));
+  const signature = String(container.dataset.sequenceSignature || "");
+  const selectedIndex = threeHourMessageSequenceState.signature === signature
+    ? Math.max(initialIndex, Math.min(items.length - 1, threeHourMessageSequenceState.index))
+    : initialIndex;
+  threeHourMessageSequenceState = { signature, index: selectedIndex };
+  positionThreeHourMessageSequence(container, selectedIndex, false);
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  if (window.METEO_REPLAY || reducedMotion || selectedIndex >= items.length - 1) return;
+  threeHourMessageSequenceTimer = window.setInterval(() => {
+    if (!container.isConnected || document.hidden || container.closest(".three-hour-action")?.matches(":hover, :focus-within")) return;
+    const currentIndex = Number(container.dataset.sequenceIndex) || initialIndex;
+    const nextIndex = currentIndex >= items.length - 1 ? initialIndex : currentIndex + 1;
+    positionThreeHourMessageSequence(container, nextIndex, currentIndex < items.length - 1);
+  }, 5000);
+}
+
 function piafQuarterHourRain(piaf, radar = null) {
   const runTime = piafRunTime(piaf);
   const fiveMinutes = 5 * 60000;
@@ -4831,12 +5025,46 @@ function nowcastCellRepresentativeRain(cell, currentPrecipitation = null) {
   return representative;
 }
 
-function nowcastFlashesNearCell(cell, lightning) {
-  return (lightning?.flashes || []).filter(flash => radarCellPointDistance(
-    cell,
-    Number(flash.eastKm || 0),
-    Number(flash.northKm || 0)
-  ) <= 8).length;
+function nowcastEvidenceIsFresh(evidenceObservedAt, radarObservedAt, referenceTime = Date.now()) {
+  const evidenceTime = Date.parse(evidenceObservedAt || "");
+  const radarTime = Date.parse(radarObservedAt || "");
+  const currentTime = Number(referenceTime);
+  return Number.isFinite(evidenceTime)
+    && Number.isFinite(radarTime)
+    && Number.isFinite(currentTime)
+    && Math.abs(evidenceTime - radarTime) <= 12 * 60000
+    && Math.abs(currentTime - radarTime) <= 15 * 60000
+    && Math.abs(currentTime - evidenceTime) <= 20 * 60000;
+}
+
+function nowcastFlashesNearCell(cell, lightning, radarObservedAt = null, referenceTime = Date.now()) {
+  const radarTime = Date.parse(radarObservedAt || "");
+  if (!Number.isFinite(radarTime)
+    || !nowcastEvidenceIsFresh(lightning?.observedAt, radarObservedAt, referenceTime)) return 0;
+  return (lightning?.flashes || []).filter(flash => {
+    const temporallyRelevant = nowcastEvidenceIsFresh(flash?.time, radarObservedAt, referenceTime);
+    return temporallyRelevant
+      && radarCellPointDistance(cell, Number(flash.eastKm || 0), Number(flash.northKm || 0)) <= 8;
+  }).length;
+}
+
+function nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime = Date.now()) {
+  const signal = cell?.signals?.convective;
+  return signal?.detected === true
+    && String(signal.source || "").trim().length > 0
+    && nowcastEvidenceIsFresh(signal.observedAt, radarObservedAt, referenceTime);
+}
+
+function nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime = Date.now()) {
+  return cell?.polarimetry?.classification === "hail"
+    && polarimetricHailRisk(cell) >= 20
+    && nowcastEvidenceIsFresh(cell.polarimetry.observedAt, radarObservedAt, referenceTime);
+}
+
+function nowcastCellHasStormEvidence(cell, lightning, radarObservedAt, referenceTime = Date.now()) {
+  return nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime)
+    || nowcastFlashesNearCell(cell, lightning, radarObservedAt, referenceTime) > 0
+    || nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime);
 }
 
 function radarCellShapeRuns(cell) {
@@ -5105,7 +5333,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     return intensityLevel && probabilityValue ? Math.max(1, Math.min(5, Math.ceil(intensityLevel * (.5 + probabilityValue / 200)))) : 0;
   };
   const mapFlashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
-  const mapFlashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
+  const mapFlashesNearCell = cell => nowcastFlashesNearCell(cell, lightning, radar.observedAt, appNow());
   const cells = radarCells.map((cell, index) => {
     const legacyRadius = Math.max(5, Number(cell.radiusKm || 1) * scale);
     const selected = Math.abs(cell.eastKm - threat.eastKm) < .1 && Math.abs(cell.northKm - threat.northKm) < .1;
@@ -5120,7 +5348,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const eta = cell.etaMinutes == null ? '—' : cell.etaMinutes <= 0 ? 'en cours' : (etaBasis === "possible" ? 'possible ' : '') + Math.round(cell.etaMinutes) + ' min';
     const risks = cell.risks || {};
     const trajectoryBasis = cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire";
-    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + (cell.etaMinutes == null ? '' : '\nETA basée sur : ' + etaBasis) + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + polarimetricHailLabel(cell) + '\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface réelle : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
+    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + (cell.etaMinutes == null ? '' : '\nETA basée sur : ' + etaBasis) + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nIndice pluie radar : ' + Math.round(Number(risks.storm) || 0) + ' / 100\nGrêle : ' + polarimetricHailLabel(cell) + '\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface réelle : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
     const cellX = x(cell.eastKm);
     const cellY = y(cell.northKm);
     const tatinsX = x(0);
@@ -5301,6 +5529,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     .map(button => button.getAttribute("aria-controls"))
     .filter(Boolean));
   if (!radar) {
+    clearThreeHourMessageSequence(true);
     if (summaryElement) summaryElement.innerHTML = "";
     element.innerHTML = '<strong>Radar</strong><span>Acquisition de la première trame en cours…</span>';
     return;
@@ -5387,6 +5616,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   };
   const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null, stormDetails = null, colorLevelOverride = null, stableTooltip = false) => {
     const stormLayout = stormPassageLevel != null;
+    const messageSequence = Array.isArray(value) ? value.filter(message => message?.label) : [];
+    const messageSequenceMarkup = messageSequence.length ? threeHourMessageSequenceMarkup(messageSequence) : "";
+    const messageSequenceDetail = messageSequence.map(message => [message.relation, message.label, message.detail].filter(Boolean).join(" · ")).join(" ; ");
     const colorSource = colorLevelOverride == null ? (stormLayout ? stormPassageLevel : level) : colorLevelOverride;
     const colorLevel = Math.max(0, Math.min(5, Math.round(Number(colorSource) || 0)));
     const passageDetail = stormDetails?.passage || detail;
@@ -5403,9 +5635,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : '';
     const metric = stormLayout
       ? stormIndicator + stormTiming + stormEta + actionGraph
-      : nowcastMetricPictogram(kind, level, detail, true, true, !stableTooltip) + (trend ? trendMarkup(kind, trend, detail, !stableTooltip) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '') + actionGraph;
+      : nowcastMetricPictogram(kind, level, detail, true, true, !stableTooltip) + (trend ? trendMarkup(kind, trend, detail, !stableTooltip) : '') + (messageSequenceMarkup || (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '')) + actionGraph;
     const actionLabel = target === "rain" ? "Ouvrir les précipitations sur 3 h" : target === "nowcast" ? "Ouvrir le nowcasting" : target === "wind48" ? "Ouvrir les prévisions de vent sur 48 h" : "";
-    const accessibleDetail = actionLabel ? actionLabel + " — " + detail : detail;
+    const accessibleSummary = [messageSequenceDetail, detail].filter(Boolean).join(" — ");
+    const accessibleDetail = actionLabel ? actionLabel + " — " + accessibleSummary : accessibleSummary;
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + (stableTooltip ? ' chart-point' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '"' + (stableTooltip ? ' data-tooltip="' + escapeText(detail) + '"' : ' title="' + escapeText(accessibleDetail) + '"') + '><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
@@ -5417,9 +5650,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const nearbyCells = cells.filter(cell => cellDistance(cell) < 60 || nowcastCellHasEtaProjection(cell));
   const nearbyCellIds = new Set(nearbyCells.map(cell => cell.id));
   const stormCandidateCells = nearbyCells.filter(cell =>
-    nowcastFlashesNearCell(cell, lightning) > 0
-    || polarimetricHailRisk(cell) >= 20
-    || Number(cell.risks?.storm) >= 30
+    nowcastCellHasStormEvidence(cell, lightning, radar.observedAt, now)
   );
   const maximumPassageRisk = Math.max(0, ...stormCandidateCells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
   const vigilanceNow = Date.now();
@@ -5496,7 +5727,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     lightning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 2-8 12h6l-2 8 8-12h-6l2-8Z"></path></svg>'
   };
   const hazardMetric = (kind, tone, title, pictogram) => '<span class="cell-hazard pictogram-only ' + tone + '" title="' + escapeText(title) + '">' + pictogram + '</span>';
-  const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
+  const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning, radar.observedAt, now);
   const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
   const localProjectedRainFor = cell => {
     const projected = etaRainEvents.filter(event => String(event.cell?.id) === String(cell?.id)
@@ -5690,7 +5921,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const detailsId = "cell-details-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
     const details = [
       detailMetric("Distance du centre", cellCenterDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"),
-      risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice convectif</dt><dd>' + nowcastMetricPictogram("storm", probabilityStep(Number(risks.storm)), "Indice convectif : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
+      risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice pluie radar</dt><dd>' + nowcastMetricPictogram("rain", probabilityStep(Number(risks.storm)), "Indice pluie radar : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
       detailMetric("Vitesse estimée", Number.isFinite(Number(cell.track?.speedKmh)) ? Number(cell.track.speedKmh).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km/h" : null),
       detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
       detailMetric("Base trajectoire", cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire"),
@@ -5802,7 +6033,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : departingStormIntensity
       ? "Orage s’éloignant"
     : rainyCellCandidate
-      ? "cellule pluvieuse"
+      ? "Cellule pluvieuse"
       : stormForecastSourceCount > 0 || orangeVigilanceActive
         ? "Orage possible"
         : "pas d’orage";
@@ -5929,6 +6160,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         rainLabelLevel,
         rainPassageRisk
       );
+  const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const gustDetail = [
     Number.isFinite(maximumOpenMeteoGust) ? "Open-Meteo : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
@@ -5939,12 +6171,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
   const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('gust', gustValue, gustLevel, gustDetail, gustTrend, 'wind48', null, null, gustColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
+    initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
         button.setAttribute("aria-controls", "panel-48h");
