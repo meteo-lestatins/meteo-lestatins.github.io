@@ -27,6 +27,9 @@ let lastEnsembleStamp = 0;
 let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
+let threeHourMessageSequenceTimer = 0;
+let threeHourMessageSequenceState = { signature: "", index: 0 };
+let threeHourRainPassageHistory = [];
 let dashboardSync = { status: "loading", error: null };
 const defaultForecastSource = window.METEO_REPLAY ? "openmeteo" : "meteofrance";
 let activeForecastSource = defaultForecastSource;
@@ -59,6 +62,7 @@ let nowcastMapRadiusManuallySelected = initialNowcastMapRadius !== null;
 let nowcastMapAutoExpanded = false;
 let nowcastLeafletMap = null;
 let nowcastLeafletResizeObserver = null;
+let nowcastCellOverlayResizeObserver = null;
 let nowcastMapRequest = 0;
 let leafletAssetsPromise = null;
 let nowcastMapAssetsPromise = null;
@@ -3261,7 +3265,7 @@ function renderWeekForecast() {
     wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>',
-    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>',
+    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><text class="hail-letter" x="12" y="11.4" text-anchor="middle">G</text><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>',
   };
   const metricPictogram = (kind, lowStep, highStep, label) => {
     const low = Math.max(0, Math.min(5, Math.round(Number(lowStep) || 0)));
@@ -3846,6 +3850,197 @@ function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) 
   return contributors.length
     ? Math.max(0, ...contributors.map(event => Number(event.passage) || 0))
     : 100;
+}
+
+function mergeThreeHourRainPassages(passages) {
+  const merged = [];
+  for (const item of [...(passages || [])]
+    .filter(passage => Number.isFinite(Number(passage?.start))
+      && Number.isFinite(Number(passage?.end))
+      && Number(passage.end) > Number(passage.start))
+    .sort((left, right) => Number(left.start) - Number(right.start))) {
+    const previous = merged.at(-1);
+    if (previous && Number(item.start) <= Number(previous.end) + 60000) {
+      previous.end = Math.max(Number(previous.end), Number(item.end));
+      previous.drizzleOnly &&= Boolean(item.drizzleOnly);
+      previous.peakIntensity = Math.max(Number(previous.peakIntensity) || 0, Number(item.peakIntensity) || 0);
+      previous.passageRisk = Math.max(Number(previous.passageRisk) || 0, Number(item.passageRisk) || 0);
+      previous.firstStep ||= item.firstStep;
+    } else merged.push({ ...item });
+  }
+  return merged;
+}
+
+function threeHourRainMessageSequence(steps, now, events = []) {
+  const referenceTime = Number(now);
+  if (!Number.isFinite(referenceTime)) return [];
+  const horizonEnd = referenceTime + 3 * 3600000;
+  const recentPastCutoff = referenceTime - 30 * 60000;
+  const timeline = [...(steps || [])]
+    .filter(step => Number.isFinite(Number(step?.intervalStart))
+      && Number.isFinite(Number(step?.intervalEnd))
+      && Number(step.intervalEnd) > Number(step.intervalStart))
+    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
+  const passages = [];
+  let passage = null;
+  for (const step of timeline) {
+    const amount = Math.max(0, Number(step.totalPrecipitation) || 0);
+    if (amount < possibleDrizzleThreshold) {
+      passage = null;
+      continue;
+    }
+    const start = Number(step.intervalStart);
+    const end = Number(step.intervalEnd);
+    if (!passage || start > passage.end + 60000) {
+      passage = {
+        start,
+        end,
+        firstStep: step,
+        drizzleOnly: amount < .2,
+        peakIntensity: rainRateFromAccumulation(amount, end - start)
+      };
+      passages.push(passage);
+      continue;
+    }
+    passage.end = Math.max(passage.end, end);
+    passage.drizzleOnly &&= amount < .2;
+    passage.peakIntensity = Math.max(passage.peakIntensity, rainRateFromAccumulation(amount, end - start));
+  }
+  const recentEtaPassages = (events || []).filter(event =>
+    nowcastEtaRainEligible(event, referenceTime)
+    && Number(event.eventStart) <= referenceTime
+    && Number(event.eventEnd) > recentPastCutoff
+  ).map(event => {
+    const profilePeak = Math.max(0, ...(event.intensityProfile || []).map(segment => Number(segment.intensity) || 0));
+    const peakIntensity = Math.max(profilePeak, Number(event.conditionalIntensity) || 0);
+    return {
+      start: Number(event.eventStart),
+      end: Number(event.eventEnd),
+      firstStep: null,
+      drizzleOnly: peakIntensity < 2.4,
+      peakIntensity,
+      passageRisk: Number(event.passage) || 0
+    };
+  });
+  const currentPassages = mergeThreeHourRainPassages([...passages, ...recentEtaPassages])
+    .filter(item => item.end > recentPastCutoff && item.start < horizonEnd);
+  const currentActive = currentPassages.some(item => item.start <= referenceTime && item.end > referenceTime);
+  const retainedHistory = (threeHourRainPassageHistory || []).map(item =>
+    item.end > referenceTime && !currentActive ? { ...item, end: referenceTime } : item
+  );
+  threeHourRainPassageHistory = mergeThreeHourRainPassages([
+    ...retainedHistory.filter(item => item.end > recentPastCutoff),
+    ...currentPassages.filter(item => item.start <= referenceTime)
+  ]).filter(item => item.end > recentPastCutoff && item.start <= referenceTime);
+  const recentPast = threeHourRainPassageHistory.filter(item => item.end <= referenceTime).at(-1);
+  const activeOrFuture = currentPassages.filter(item => item.end > referenceTime);
+  const selected = recentPast ? [recentPast, ...activeOrFuture] : activeOrFuture;
+  const hasActive = selected.some(item => item.start <= referenceTime && item.end > referenceTime);
+  let futureIndex = 0;
+  return selected.map(item => {
+    const state = item.end <= referenceTime ? "past" : item.start <= referenceTime ? "active" : "future";
+    const rawDurationMinutes = Math.max(1, (item.end - item.start) / 60000);
+    const durationMinutes = Math.max(5, Math.round(rawDurationMinutes / 5) * 5);
+    const subject = item.drizzleOnly ? "Pluie faible" : rainIntensityLabel(rainIntensityStep(item.peakIntensity));
+    const passageRisk = Number.isFinite(Number(item.passageRisk)) && Number(item.passageRisk) > 0
+      ? Number(item.passageRisk)
+      : rainPassageForStep(item.firstStep, events, possibleDrizzleThreshold);
+    let relation;
+    let label;
+    let detail;
+    if (state === "past") {
+      relation = "Passé";
+      const elapsedMinutes = Math.max(1, Math.ceil((referenceTime - item.end) / 60000));
+      label = subject + " · fin il y a " + compactMinutesLabel(elapsedMinutes);
+      detail = "durée " + compactMinutesLabel(durationMinutes);
+    } else if (state === "active") {
+      relation = "En cours";
+      const remainingMinutes = Math.max(5, Math.round((item.end - referenceTime) / 300000) * 5);
+      label = subject + " maintenant";
+      detail = "encore " + compactMinutesLabel(remainingMinutes);
+    } else {
+      relation = hasActive || futureIndex > 0 ? "Ensuite" : "À venir";
+      const etaMinutes = Math.max(1, Math.ceil((item.start - referenceTime) / 60000));
+      label = subject
+        + (item.drizzleOnly ? " possible" : shortTermRiskQualifier(passageRisk))
+        + " dans " + compactMinutesLabel(etaMinutes);
+      detail = "durée " + compactMinutesLabel(durationMinutes);
+      futureIndex += 1;
+    }
+    return {
+      key: [item.start, item.end, Math.round(item.peakIntensity * 10), state].join(":"),
+      state,
+      relation,
+      label,
+      detail
+    };
+  });
+}
+
+function threeHourMessageSequenceInitialIndex(messages) {
+  const activeIndex = (messages || []).findIndex(message => message?.state === "active");
+  if (activeIndex >= 0) return activeIndex;
+  const futureIndex = (messages || []).findIndex(message => message?.state === "future");
+  return futureIndex >= 0 ? futureIndex : Math.max(0, (messages || []).length - 1);
+}
+
+function threeHourMessagePosition(index, selectedIndex) {
+  if (index === selectedIndex) return "current";
+  if (index === selectedIndex - 1) return "previous";
+  if (index === selectedIndex + 1) return "next";
+  return index < selectedIndex ? "before" : "after";
+}
+
+function threeHourMessageSequenceMarkup(messages) {
+  const sequence = (messages || []).filter(message => message?.label);
+  if (!sequence.length) return "";
+  const initialIndex = threeHourMessageSequenceInitialIndex(sequence);
+  const signature = sequence.map(message => message.key).join("|");
+  return '<span class="three-hour-action-value three-hour-message-sequence" data-three-hour-message-sequence data-sequence-signature="' + escapeText(signature) + '" data-sequence-initial-index="' + initialIndex + '" aria-hidden="true">'
+    + sequence.map((message, index) => '<span class="three-hour-message" data-three-hour-message data-position="' + threeHourMessagePosition(index, initialIndex) + '"><span class="three-hour-message-meta"><small class="three-hour-message-relation">' + escapeText(message.relation) + '</small><em>' + escapeText(message.detail) + '</em></span><b>' + escapeText(message.label) + '</b></span>').join("")
+    + '</span>';
+}
+
+function clearThreeHourMessageSequence(reset = false) {
+  clearInterval(threeHourMessageSequenceTimer);
+  threeHourMessageSequenceTimer = 0;
+  if (reset) {
+    threeHourMessageSequenceState = { signature: "", index: 0 };
+    threeHourRainPassageHistory = [];
+  }
+}
+
+function positionThreeHourMessageSequence(container, selectedIndex, animate = true) {
+  const items = [...container.querySelectorAll("[data-three-hour-message]")];
+  if (!items.length) return;
+  const boundedIndex = Math.max(0, Math.min(items.length - 1, Number(selectedIndex) || 0));
+  container.classList.toggle("is-resetting", !animate);
+  items.forEach((item, index) => { item.dataset.position = threeHourMessagePosition(index, boundedIndex); });
+  container.dataset.sequenceIndex = String(boundedIndex);
+  threeHourMessageSequenceState.index = boundedIndex;
+  if (!animate) requestAnimationFrame(() => container.classList.remove("is-resetting"));
+}
+
+function initializeThreeHourMessageSequence(root) {
+  clearThreeHourMessageSequence();
+  const container = root?.querySelector("[data-three-hour-message-sequence]");
+  if (!container) return;
+  const items = [...container.querySelectorAll("[data-three-hour-message]")];
+  const initialIndex = Math.max(0, Math.min(items.length - 1, Number(container.dataset.sequenceInitialIndex) || 0));
+  const signature = String(container.dataset.sequenceSignature || "");
+  const selectedIndex = threeHourMessageSequenceState.signature === signature
+    ? Math.max(initialIndex, Math.min(items.length - 1, threeHourMessageSequenceState.index))
+    : initialIndex;
+  threeHourMessageSequenceState = { signature, index: selectedIndex };
+  positionThreeHourMessageSequence(container, selectedIndex, false);
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  if (window.METEO_REPLAY || reducedMotion || selectedIndex >= items.length - 1) return;
+  threeHourMessageSequenceTimer = window.setInterval(() => {
+    if (!container.isConnected || document.hidden || container.closest(".three-hour-action")?.matches(":hover, :focus-within")) return;
+    const currentIndex = Number(container.dataset.sequenceIndex) || initialIndex;
+    const nextIndex = currentIndex >= items.length - 1 ? initialIndex : currentIndex + 1;
+    positionThreeHourMessageSequence(container, nextIndex, currentIndex < items.length - 1);
+  }, 5000);
 }
 
 function piafQuarterHourRain(piaf, radar = null) {
@@ -4831,12 +5026,46 @@ function nowcastCellRepresentativeRain(cell, currentPrecipitation = null) {
   return representative;
 }
 
-function nowcastFlashesNearCell(cell, lightning) {
-  return (lightning?.flashes || []).filter(flash => radarCellPointDistance(
-    cell,
-    Number(flash.eastKm || 0),
-    Number(flash.northKm || 0)
-  ) <= 8).length;
+function nowcastEvidenceIsFresh(evidenceObservedAt, radarObservedAt, referenceTime = Date.now()) {
+  const evidenceTime = Date.parse(evidenceObservedAt || "");
+  const radarTime = Date.parse(radarObservedAt || "");
+  const currentTime = Number(referenceTime);
+  return Number.isFinite(evidenceTime)
+    && Number.isFinite(radarTime)
+    && Number.isFinite(currentTime)
+    && Math.abs(evidenceTime - radarTime) <= 12 * 60000
+    && Math.abs(currentTime - radarTime) <= 15 * 60000
+    && Math.abs(currentTime - evidenceTime) <= 20 * 60000;
+}
+
+function nowcastFlashesNearCell(cell, lightning, radarObservedAt = null, referenceTime = Date.now()) {
+  const radarTime = Date.parse(radarObservedAt || "");
+  if (!Number.isFinite(radarTime)
+    || !nowcastEvidenceIsFresh(lightning?.observedAt, radarObservedAt, referenceTime)) return 0;
+  return (lightning?.flashes || []).filter(flash => {
+    const temporallyRelevant = nowcastEvidenceIsFresh(flash?.time, radarObservedAt, referenceTime);
+    return temporallyRelevant
+      && radarCellPointDistance(cell, Number(flash.eastKm || 0), Number(flash.northKm || 0)) <= 8;
+  }).length;
+}
+
+function nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime = Date.now()) {
+  const signal = cell?.signals?.convective;
+  return signal?.detected === true
+    && String(signal.source || "").trim().length > 0
+    && nowcastEvidenceIsFresh(signal.observedAt, radarObservedAt, referenceTime);
+}
+
+function nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime = Date.now()) {
+  return cell?.polarimetry?.classification === "hail"
+    && polarimetricHailRisk(cell) >= 20
+    && nowcastEvidenceIsFresh(cell.polarimetry.observedAt, radarObservedAt, referenceTime);
+}
+
+function nowcastCellHasStormEvidence(cell, lightning, radarObservedAt, referenceTime = Date.now()) {
+  return nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime)
+    || nowcastFlashesNearCell(cell, lightning, radarObservedAt, referenceTime) > 0
+    || nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime);
 }
 
 function radarCellShapeRuns(cell) {
@@ -4929,15 +5158,86 @@ function radarCellExtent(cell, directionEast, directionNorth, absolute = false) 
   }));
 }
 
-function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMapRadius) {
+function nowcastRectangleIntersectionArea(left, right) {
+  if (!left || !right) return 0;
+  return Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left))
+    * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+}
+
+function nowcastRectangleDistance(left, right) {
+  if (!left || !right) return 0;
+  const horizontal = Math.max(0, left.left - right.right, right.left - left.right);
+  const vertical = Math.max(0, left.top - right.bottom, right.top - left.bottom);
+  return Math.hypot(horizontal, vertical);
+}
+
+// Choisit une position proche de la cellule, contenue dans la carte et, dès
+// que possible, hors de la zone occupée par Les Tatins et son libellé.
+function nowcastCellOverlayPlacement({ cellBounds, targetBounds = null, viewport, overlaySize }) {
+  const margin = 8;
+  const gap = 8;
+  const width = Math.min(Math.max(1, Number(overlaySize?.width) || 1), Math.max(1, viewport.right - viewport.left - margin * 2));
+  const height = Math.min(Math.max(1, Number(overlaySize?.height) || 1), Math.max(1, viewport.bottom - viewport.top - margin * 2));
+  const visibleCell = {
+    left: Math.max(viewport.left + margin, cellBounds.left),
+    top: Math.max(viewport.top + margin, cellBounds.top),
+    right: Math.min(viewport.right - margin, cellBounds.right),
+    bottom: Math.min(viewport.bottom - margin, cellBounds.bottom)
+  };
+  const cellCenterX = (cellBounds.left + cellBounds.right) / 2;
+  const cellCenterY = (cellBounds.top + cellBounds.bottom) / 2;
+  const candidates = [];
+  const add = (left, top, placement, insideCell = false) => candidates.push({ left, top, placement, insideCell });
+  const largeVisibleCell = visibleCell.right - visibleCell.left >= width + gap * 2
+    && visibleCell.bottom - visibleCell.top >= height + gap * 2;
+  if (largeVisibleCell) {
+    add(visibleCell.left + gap, visibleCell.top + gap, "cell-top-left", true);
+    add(visibleCell.right - width - gap, visibleCell.top + gap, "cell-top-right", true);
+    add(visibleCell.left + gap, visibleCell.bottom - height - gap, "cell-bottom-left", true);
+    add(visibleCell.right - width - gap, visibleCell.bottom - height - gap, "cell-bottom-right", true);
+  }
+  add(cellBounds.right + gap, cellCenterY - height / 2, "right");
+  add(cellBounds.left - width - gap, cellCenterY - height / 2, "left");
+  add(cellCenterX - width / 2, cellBounds.top - height - gap, "above");
+  add(cellCenterX - width / 2, cellBounds.bottom + gap, "below");
+  add(cellBounds.right + gap, cellBounds.top, "top-right");
+  add(cellBounds.left - width - gap, cellBounds.top, "top-left");
+  add(cellBounds.right + gap, cellBounds.bottom - height, "bottom-right");
+  add(cellBounds.left - width - gap, cellBounds.bottom - height, "bottom-left");
+  if (largeVisibleCell) {
+    add(viewport.left + margin, viewport.top + margin, "map-top-left", true);
+    add(viewport.right - width - margin, viewport.top + margin, "map-top-right", true);
+    add(viewport.left + margin, viewport.bottom - height - margin, "map-bottom-left", true);
+    add(viewport.right - width - margin, viewport.bottom - height - margin, "map-bottom-right", true);
+  }
+  const minLeft = viewport.left + margin;
+  const maxLeft = viewport.right - width - margin;
+  const minTop = viewport.top + margin;
+  const maxTop = viewport.bottom - height - margin;
+  return candidates.map((candidate, index) => {
+    const left = Math.max(minLeft, Math.min(maxLeft, candidate.left));
+    const top = Math.max(minTop, Math.min(maxTop, candidate.top));
+    const rectangle = { left, top, right: left + width, bottom: top + height };
+    const targetOverlap = nowcastRectangleIntersectionArea(rectangle, targetBounds);
+    const overflow = Math.abs(left - candidate.left) + Math.abs(top - candidate.top);
+    const associationDistance = nowcastRectangleDistance(rectangle, cellBounds);
+    const targetClearance = targetBounds ? nowcastRectangleDistance(rectangle, targetBounds) : 0;
+    const score = (targetOverlap > 0 ? 1e9 : 0) + targetOverlap * 1e7 + overflow * 1e4
+      + associationDistance * 2 - (candidate.insideCell ? 500 : 0) - Math.min(400, targetClearance) * .25 + index * .01;
+    return { ...rectangle, width, height, placement: candidate.placement, avoidsTarget: targetOverlap === 0, score };
+  }).sort((left, right) => left.score - right.score)[0];
+}
+
+function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMapRadius, cellPresentations = new Map()) {
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
-  const compactDesktopMap = nowcastContainerWidth >= 1250;
-  const width = compactDesktopMap ? 640 : 360;
-  const height = compactDesktopMap ? 640 : 360;
-  const radarCells = (radar?.cells || []).filter(cell => {
+  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
+  const height = 360;
+  const radarCells = (radar?.cells || []).map((cell, index) => ({
+    ...cell,
+    id: cell.id || String.fromCharCode(65 + index)
+  })).filter(cell => {
     return radarCellEdgeDistance(cell) <= mapRadiusKm;
   });
   const threat = radarCells.find(cell => cell.id === radar?.threat?.id) || radarCells[0] || null;
@@ -4946,7 +5246,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const targetY = height / 2;
     const scale = width === 360
       ? (width - 32) / (mapRadiusKm * 2)
-      : (height - 32) / (mapRadiusKm * 2.02);
+      : (height - 64) / (mapRadiusKm * 2.2);
     const rings = [20, 40, 60].filter(distance => distance <= mapRadiusKm).map(distance => {
       const radius = distance * scale;
       const labelX = targetX;
@@ -4964,10 +5264,10 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const primaryPoints = primaryProjection?.points || points;
   const secondaryTrackPoints = etaProjectionCells.flatMap(cell => cell.id === threat.id ? [] : cell.track.points);
   const extentPoints = [{ eastKm: 0, northKm: 0, uncertaintyKm: 3 }, ...radarCells, ...secondaryTrackPoints, ...(primaryPoints.length ? primaryPoints : [threat])];
-  const paddingX = width === 360 ? 20 : 16;
-  const paddingY = width === 360 ? 20 : 16;
-  const eastRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.01);
-  const northRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.01);
+  const paddingX = width === 360 ? 20 : 48;
+  const paddingY = width === 360 ? 20 : 32;
+  const eastRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
+  const northRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
   const scale = Math.min((width - paddingX * 2) / (eastRadiusKm * 2), (height - paddingY * 2) / (northRadiusKm * 2));
   const x = eastKm => width / 2 + Number(eastKm || 0) * scale;
   const y = northKm => height / 2 - Number(northKm || 0) * scale;
@@ -5097,81 +5397,44 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     cell
   )).join('');
   const directionChevrons = radarCells.map(cell => directionChevronsFor(cell.track?.points || [], cell)).join('');
-  const mapProbabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
-  const mapRainIntensityStep = value => value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
-  const mapRainSynthesisStep = (probability, intensity) => {
-    const intensityLevel = mapRainIntensityStep(intensity);
-    const probabilityValue = Math.max(0, Math.min(100, Number(probability) || 0));
-    return intensityLevel && probabilityValue ? Math.max(1, Math.min(5, Math.ceil(intensityLevel * (.5 + probabilityValue / 200)))) : 0;
-  };
-  const mapFlashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
-  const mapFlashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
+  const cellOverlays = [];
   const cells = radarCells.map((cell, index) => {
     const legacyRadius = Math.max(5, Number(cell.radiusKm || 1) * scale);
     const selected = Math.abs(cell.eastKm - threat.eastKm) < .1 && Math.abs(cell.northKm - threat.northKm) < .1;
     const cellId = cell.id || String.fromCharCode(65 + index);
     const name = 'Cellule ' + cellId;
-    const distance = Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
-    const point15 = cell.track?.points?.find(point => point.minutes === 15);
-    const distance15 = point15 ? Math.hypot(Number(point15.eastKm || 0), Number(point15.northKm || 0)) : null;
-    const radialSpeed = distance15 == null ? null : Math.round((distance15 - distance) * 4);
-    const relativeMotion = radialSpeed == null ? 'Évolution de la distance : à confirmer' : radialSpeed > 1 ? 'Vitesse d’éloignement : ' + radialSpeed + ' km/h' : radialSpeed < -1 ? 'Vitesse de rapprochement : ' + Math.abs(radialSpeed) + ' km/h' : 'Distance quasiment stable';
-    const etaBasis = cell.etaBasis === "envelope" ? "possible" : "noyau";
-    const eta = cell.etaMinutes == null ? '—' : cell.etaMinutes <= 0 ? 'en cours' : (etaBasis === "possible" ? 'possible ' : '') + Math.round(cell.etaMinutes) + ' min';
-    const risks = cell.risks || {};
-    const trajectoryBasis = cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire";
-    const detail = name + '\nDistance : ' + distance.toFixed(1) + ' km\n' + relativeMotion + '\nETA : ' + eta + (cell.etaMinutes == null ? '' : '\nETA basée sur : ' + etaBasis) + '\nPassage : ' + Math.round(Number(risks.passage) || 0) + ' %\nOrage : ' + Math.round(Number(risks.storm) || 0) + ' %\nGrêle : ' + polarimetricHailLabel(cell) + '\nPluie intense : ' + Math.round(Number(risks.intenseRain) || 0) + ' %\nTrajectoire : ' + trajectoryBasis + '\nConfiance : ' + Math.round(Number(cell.track?.confidence) || 0) + ' %\nHorizon : ' + Math.round(Number(cell.track?.horizonMinutes) || 0) + ' min\nSurface réelle : ' + Number(cell.areaKm2 || 0).toFixed(0) + ' km²\nPluie maximale : ' + Number(cell.maximum || 0).toFixed(1) + ' mm/h\nPluie moyenne : ' + Number(cell.mean || 0).toFixed(1) + ' mm/h';
-    const cellX = x(cell.eastKm);
-    const cellY = y(cell.northKm);
-    const tatinsX = x(0);
-    const tatinsY = y(0);
-    const edgeDistance = radarCellEdgeDistance(cell);
-    const distanceLabel = edgeDistance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const rainLevel = mapRainSynthesisStep(Math.round(Number(risks.intenseRain) || 0), nowcastCellRepresentativeRain(cell, radar.currentPrecipitation));
-    const mapHailRisk = polarimetricHailRisk(cell);
-    const hailLevel = mapHailRisk == null ? 0 : mapProbabilityStep(mapHailRisk);
-    const lightningLevel = mapFlashCountStep(mapFlashesNearCell(cell));
-    const cellIntensityLevel = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
-    const linkLength = Math.max(1, Math.hypot(tatinsX - cellX, tatinsY - cellY));
-    const linkX = (tatinsX - cellX) / linkLength;
-    const linkY = (tatinsY - cellY) / linkLength;
+    const presentation = cellPresentations.get(String(cellId));
+    const overlayId = "nowcast-cell-overlay-" + (String(cellId).replace(/[^a-z0-9_-]/gi, "") || index);
+    const interactionAttributes = presentation
+      ? ' tabindex="0" role="button" data-nowcast-cell-trigger="' + escapeText(cellId) + '" aria-controls="' + escapeText(overlayId) + '" aria-expanded="false" aria-label="' + escapeText(presentation.label) + '"'
+      : ' aria-label="' + escapeText(name) + '"';
     const shapeRuns = radarCellShapeRuns(cell);
     const footprint = Array.isArray(cell.footprint) && cell.footprint.length >= 3 ? cell.footprint : null;
-    const nearestShapePoint = shapeRuns.map(run => ({
-      eastKm: Math.max(Number(run.westKm), Math.min(Number(run.eastKm), 0)),
-      northKm: Math.max(Number(run.southKm), Math.min(Number(run.northKm), 0))
-    })).sort((left, right) => Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))[0];
-    const nearestFootprintPoint = footprint?.flatMap((point, pointIndex) => {
-      const next = footprint[(pointIndex + 1) % footprint.length];
-      const dx = Number(next.eastKm) - Number(point.eastKm);
-      const dy = Number(next.northKm) - Number(point.northKm);
-      const lengthSquared = dx * dx + dy * dy;
-      const ratio = lengthSquared ? Math.max(0, Math.min(1, -(Number(point.eastKm) * dx + Number(point.northKm) * dy) / lengthSquared)) : 0;
-      return [{ eastKm: Number(point.eastKm) + dx * ratio, northKm: Number(point.northKm) + dy * ratio }];
-    }).sort((left, right) => Math.hypot(left.eastKm, left.northKm) - Math.hypot(right.eastKm, right.northKm))[0];
-    const nearestEdgePoint = nearestShapePoint || nearestFootprintPoint;
-    const cellEdgeX = nearestEdgePoint ? x(nearestEdgePoint.eastKm) : cellX + linkX * legacyRadius;
-    const cellEdgeY = nearestEdgePoint ? y(nearestEdgePoint.northKm) : cellY + linkY * legacyRadius;
-    const labelX = cellEdgeX + (tatinsX - cellEdgeX) * .32 - linkY * 13;
-    const labelY = cellEdgeY + (tatinsY - cellEdgeY) * .32 + linkX * 13;
-    const labelWidth = Math.max(72, distanceLabel.length * 6.3 + 12);
-    const intensityDots = Array.from({ length: 5 }, (_, dotIndex) => '<circle class="cell-intensity-dot' + (dotIndex < cellIntensityLevel ? ' active' : '') + '" style="fill:' + (dotIndex < cellIntensityLevel ? '#d29319' : '#dfe7eb') + '" cx="' + (-16 + dotIndex * 8) + '" cy="10" r="2.3"></circle>').join('');
-    const rasterPath = shapeRuns.map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1) + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
-    const cellShape = shapeRuns.length
-      ? '<path class="radar-cell raster-shape' + (selected ? ' selected' : '') + '" d="' + rasterPath + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
+    const rasterPath = shapeRuns.map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
+      + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1)
+      + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
+    const shape = shapeRuns.length
+      ? '<path class="radar-cell raster-shape' + (selected ? ' selected' : '') + '" d="' + rasterPath + '"' + interactionAttributes + '></path>'
       : footprint
-        ? '<path class="radar-cell' + (selected ? ' selected' : '') + '" d="' + footprint.map((point, pointIndex) => (pointIndex ? 'L' : 'M') + x(point.eastKm).toFixed(1) + ' ' + y(point.northKm).toFixed(1)).join(' ') + 'Z" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></path>'
-      : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + cellX.toFixed(1) + '" cy="' + cellY.toFixed(1) + '" r="' + legacyRadius.toFixed(1) + '" tabindex="0" aria-label="' + escapeText(name + " · bord à " + distanceLabel + " des Tatins · intensité " + cellIntensityLevel + " sur 5") + '"></circle>';
-    const cellLabelX = shapeRuns.length ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4 : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : cellX - legacyRadius - 4;
-    const cellLabelY = shapeRuns.length ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4 : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : cellY - legacyRadius - 4;
-    return '<g class="radar-cell-marker" data-nowcast-cell="' + escapeText(cellId) + '">' + cellShape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + cellLabelX.toFixed(1) + '" y="' + cellLabelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text><line class="cell-distance-link" x1="' + cellEdgeX.toFixed(1) + '" y1="' + cellEdgeY.toFixed(1) + '" x2="' + tatinsX.toFixed(1) + '" y2="' + tatinsY.toFixed(1) + '"></line><g class="cell-distance-badge" transform="translate(' + labelX.toFixed(1) + ' ' + labelY.toFixed(1) + ')"><rect x="' + (-labelWidth / 2).toFixed(1) + '" y="-16" width="' + labelWidth.toFixed(1) + '" height="34" rx="8"></rect><text x="0" y="-3" text-anchor="middle">' + distanceLabel + '</text><g aria-hidden="true">' + intensityDots + '</g></g></g>';
+        ? '<path class="radar-cell' + (selected ? ' selected' : '') + '" d="' + footprint.map((point, pointIndex) => (pointIndex ? 'L' : 'M') + x(point.eastKm).toFixed(1) + ' ' + y(point.northKm).toFixed(1)).join(' ') + 'Z"' + interactionAttributes + '></path>'
+      : '<circle class="radar-cell' + (selected ? ' selected' : '') + '" cx="' + x(cell.eastKm).toFixed(1) + '" cy="' + y(cell.northKm).toFixed(1) + '" r="' + legacyRadius.toFixed(1) + '"' + interactionAttributes + '></circle>';
+    const labelX = shapeRuns.length
+      ? Math.min(...shapeRuns.map(run => x(run.westKm))) - 4
+      : footprint ? Math.min(...footprint.map(point => x(point.eastKm))) - 4 : x(cell.eastKm) - legacyRadius - 4;
+    const labelY = shapeRuns.length
+      ? Math.min(...shapeRuns.map(run => y(run.northKm))) - 4
+      : footprint ? Math.min(...footprint.map(point => y(point.northKm))) - 4 : y(cell.northKm) - legacyRadius - 4;
+    if (presentation) {
+      cellOverlays.push('<aside class="nowcast-cell-map-overlay passage-' + escapeText(presentation.tone) + '" id="' + escapeText(overlayId) + '" data-nowcast-cell-overlay="' + escapeText(cellId) + '" role="tooltip" hidden>' + presentation.markup + '</aside>');
+    }
+    return '<g class="radar-cell-marker" data-nowcast-cell-marker="' + escapeText(cellId) + '">' + shape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
   const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
   const secondaryTracks = '';
   const milestones = '';
   const targetX = x(0).toFixed(1);
   const targetY = y(0).toFixed(1);
-  const rangeRings = [20, 40, 60].filter(distance => distance * scale <= Math.min(width / 2 - paddingX, height / 2 - paddingY)).map(distance => {
+  const rangeRings = [20, 40, 60].filter(distance => distance <= mapRadiusKm && ((mapRadiusKm === 20 && distance === 20) || distance * scale <= Math.min(width / 2 - paddingX, height / 2 - paddingY))).map(distance => {
     const radius = distance * scale;
     const labelX = x(0);
     const labelY = y(0) - radius;
@@ -5183,15 +5446,128 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const distanceMiddleX = (x(0) + threatX) / 2;
   const distanceMiddleY = (y(0) + threatY) / 2;
   const distanceLink = '';
-  const scaleBarKm = scale * 20 > 150 ? 10 : 20;
-  const scaleBarWidth = scaleBarKm * scale;
-  const coneLegend = etaProjectionCells.length ? '<span><i class="legend-cone"></i> trajectoire avec ETA</span>' : '';
-  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.esri.com/" target="_blank" rel="noopener">Fond © Esri</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
+  return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.esri.com/" target="_blank" rel="noopener">Fond © Esri</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="group" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cones + secondaryTracks + cells + lightningMarks + directionChevrons + milestones +
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
-    '<g class="scale-bar"><path d="M24 ' + (height - 26) + 'v5h' + scaleBarWidth.toFixed(1) + 'v-5"></path><text x="24" y="' + (height - 32) + '">' + scaleBarKm + ' km</text></g>' +
-    '</svg><div class="map-legend"><span><i class="legend-cell"></i> cellule</span>' + coneLegend + (window.METEO_REPLAY ? '' : '<span><i class="legend-lightning">ϟ</i> foudre</span>') + '</div></div>';
+    '</svg>' + cellOverlays.join("") + '</div>';
+}
+
+function initializeNowcastCellOverlays(root) {
+  if (nowcastCellOverlayResizeObserver) {
+    nowcastCellOverlayResizeObserver.disconnect();
+    nowcastCellOverlayResizeObserver = null;
+  }
+  const map = root.querySelector(".storm-map");
+  if (!map) return;
+  const markers = [...map.querySelectorAll("[data-nowcast-cell-marker]")];
+  const panels = [...map.querySelectorAll("[data-nowcast-cell-overlay]")];
+  if (!markers.length || !panels.length) return;
+  let pinnedTrigger = null;
+  let activeTrigger = null;
+  const panelFor = trigger => {
+    const panel = document.getElementById(trigger?.getAttribute("aria-controls") || "");
+    return panel && map.contains(panel) ? panel : null;
+  };
+  const closeAll = () => {
+    markers.forEach(marker => marker.classList.remove("is-active"));
+    panels.forEach(panel => {
+      panel.hidden = true;
+      panel.classList.remove("is-visible", "is-measuring");
+    });
+    map.querySelectorAll("[data-nowcast-cell-trigger]").forEach(trigger => trigger.setAttribute("aria-expanded", "false"));
+    activeTrigger = null;
+  };
+  const positionPanel = (trigger, panel) => {
+    panel.style.left = "0px";
+    panel.style.top = "0px";
+    panel.hidden = false;
+    panel.classList.add("is-measuring");
+    const mapRectangle = map.getBoundingClientRect();
+    const cellRectangle = trigger.getBoundingClientRect();
+    const panelRectangle = panel.getBoundingClientRect();
+    const targetRectangle = map.querySelector(".target-point")?.getBoundingClientRect();
+    const relative = rectangle => rectangle ? {
+      left: rectangle.left - mapRectangle.left,
+      top: rectangle.top - mapRectangle.top,
+      right: rectangle.right - mapRectangle.left,
+      bottom: rectangle.bottom - mapRectangle.top
+    } : null;
+    const targetBounds = relative(targetRectangle);
+    if (targetBounds) {
+      targetBounds.left -= 8;
+      targetBounds.top -= 8;
+      targetBounds.right += 8;
+      targetBounds.bottom += 8;
+    }
+    const placement = nowcastCellOverlayPlacement({
+      cellBounds: relative(cellRectangle),
+      targetBounds,
+      viewport: { left: 0, top: 0, right: mapRectangle.width, bottom: mapRectangle.height },
+      overlaySize: { width: panelRectangle.width, height: panelRectangle.height }
+    });
+    panel.style.left = placement.left.toFixed(1) + "px";
+    panel.style.top = placement.top.toFixed(1) + "px";
+    panel.dataset.placement = placement.placement;
+    panel.classList.remove("is-measuring");
+  };
+  const show = trigger => {
+    const panel = panelFor(trigger);
+    if (!panel) return;
+    closeAll();
+    positionPanel(trigger, panel);
+    panel.classList.add("is-visible");
+    trigger.setAttribute("aria-expanded", "true");
+    trigger.closest("[data-nowcast-cell-marker]")?.classList.add("is-active");
+    activeTrigger = trigger;
+  };
+  const restorePinnedOrClose = marker => {
+    if (marker?.matches(":hover") || marker?.contains(document.activeElement)) return;
+    if (pinnedTrigger) show(pinnedTrigger);
+    else closeAll();
+  };
+  markers.forEach(marker => {
+    const trigger = marker.querySelector("[data-nowcast-cell-trigger]");
+    if (!trigger) return;
+    marker.addEventListener("pointerenter", () => show(trigger));
+    marker.addEventListener("pointerleave", () => restorePinnedOrClose(marker));
+    marker.addEventListener("focusin", () => show(trigger));
+    marker.addEventListener("focusout", () => requestAnimationFrame(() => restorePinnedOrClose(marker)));
+    trigger.addEventListener("click", event => {
+      event.stopPropagation();
+      if (pinnedTrigger === trigger) {
+        pinnedTrigger = null;
+        closeAll();
+        return;
+      }
+      pinnedTrigger = trigger;
+      show(trigger);
+    });
+    trigger.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        pinnedTrigger = null;
+        closeAll();
+        trigger.focus();
+      }
+    });
+  });
+  map.addEventListener("click", () => {
+    pinnedTrigger = null;
+    closeAll();
+  });
+  nowcastCellOverlayResizeObserver = new ResizeObserver(() => {
+    if (activeTrigger) {
+      const panel = panelFor(activeTrigger);
+      if (panel && !panel.hidden) positionPanel(activeTrigger, panel);
+    }
+  });
+  nowcastCellOverlayResizeObserver.observe(map);
 }
 
 function initializeNowcastMapBackground(mapRadiusKm) {
@@ -5206,13 +5582,11 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const nowcastContainerWidth = Number(document.querySelector("#radar-nowcast")?.clientWidth) || Number(document.querySelector("#panel-rain")?.clientWidth) || window.innerWidth;
-  const compactDesktopMap = nowcastContainerWidth >= 1250;
-  const width = compactDesktopMap ? 640 : 360;
-  const height = compactDesktopMap ? 640 : 360;
+  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
+  const height = 360;
   const scale = width === 360
     ? (width - 32) / (mapRadiusKm * 2)
-    : Math.min((width - 32) / (mapRadiusKm * 2.02), (height - 32) / (mapRadiusKm * 2.02));
+    : Math.min((width - 96) / (mapRadiusKm * 2.2), (height - 64) / (mapRadiusKm * 2.2));
   const eastExtentKm = width / (2 * scale);
   const northExtentKm = height / (2 * scale);
   const latitudeKm = 111.32;
@@ -5297,10 +5671,8 @@ function initializeNowcastMapBackground(mapRadiusKm) {
 function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const element = $("radar-nowcast");
   const summaryElement = $("three-hour-summary");
-  const expandedCellDetailIds = new Set([...element.querySelectorAll('.nowcast-cell-card-button[aria-expanded="true"]')]
-    .map(button => button.getAttribute("aria-controls"))
-    .filter(Boolean));
   if (!radar) {
+    clearThreeHourMessageSequence(true);
     if (summaryElement) summaryElement.innerHTML = "";
     element.innerHTML = '<strong>Radar</strong><span>Acquisition de la première trame en cours…</span>';
     return;
@@ -5344,7 +5716,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path class="storm-cloud" d="M4.2 14.2a3.4 3.4 0 0 1 .4-6.8A5.3 5.3 0 0 1 15 6a3.8 3.8 0 0 1 3.1 1.6 3.3 3.3 0 0 1 .7 6.6H4.2Z"/><path class="storm-bolt" d="M11.2 10.8 7.8 16h3l-1.4 6 7-9h-3.2l1.5-2.2h-3.5Z"/>',
     lightning: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>',
-    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>'
+    hail: '<path d="M5 13.5a4 4 0 0 1 .2-8A6 6 0 0 1 17 6.5a3.5 3.5 0 1 1 .5 7H5Z"/><text class="hail-letter" x="12" y="11.4" text-anchor="middle">G</text><circle class="hailstone" cx="7.5" cy="18" r="1.6"/><circle class="hailstone" cx="12.5" cy="20" r="1.6"/><circle class="hailstone" cx="17.5" cy="18" r="1.6"/>'
   };
   const nowcastMetricPictogram = (kind, step, label, showSymbol = true, showScale = true, nativeTitle = true) => {
     const level = Math.max(0, Math.min(5, Math.round(Number(step) || 0)));
@@ -5387,6 +5759,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   };
   const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null, stormDetails = null, colorLevelOverride = null, stableTooltip = false) => {
     const stormLayout = stormPassageLevel != null;
+    const messageSequence = Array.isArray(value) ? value.filter(message => message?.label) : [];
+    const messageSequenceMarkup = messageSequence.length ? threeHourMessageSequenceMarkup(messageSequence) : "";
+    const messageSequenceDetail = messageSequence.map(message => [message.relation, message.label, message.detail].filter(Boolean).join(" · ")).join(" ; ");
     const colorSource = colorLevelOverride == null ? (stormLayout ? stormPassageLevel : level) : colorLevelOverride;
     const colorLevel = Math.max(0, Math.min(5, Math.round(Number(colorSource) || 0)));
     const passageDetail = stormDetails?.passage || detail;
@@ -5403,23 +5778,21 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : '';
     const metric = stormLayout
       ? stormIndicator + stormTiming + stormEta + actionGraph
-      : nowcastMetricPictogram(kind, level, detail, true, true, !stableTooltip) + (trend ? trendMarkup(kind, trend, detail, !stableTooltip) : '') + (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '') + actionGraph;
+      : nowcastMetricPictogram(kind, level, detail, true, true, !stableTooltip) + (trend ? trendMarkup(kind, trend, detail, !stableTooltip) : '') + (messageSequenceMarkup || (value ? '<b class="three-hour-action-value">' + escapeText(value) + '</b>' : '')) + actionGraph;
     const actionLabel = target === "rain" ? "Ouvrir les précipitations sur 3 h" : target === "nowcast" ? "Ouvrir le nowcasting" : target === "wind48" ? "Ouvrir les prévisions de vent sur 48 h" : "";
-    const accessibleDetail = actionLabel ? actionLabel + " — " + detail : detail;
+    const accessibleSummary = [messageSequenceDetail, detail].filter(Boolean).join(" — ");
+    const accessibleDetail = actionLabel ? actionLabel + " — " + accessibleSummary : accessibleSummary;
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + (stableTooltip ? ' chart-point' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '"' + (stableTooltip ? ' data-tooltip="' + escapeText(detail) + '"' : ' title="' + escapeText(accessibleDetail) + '"') + '><span class="three-hour-action-body">' + metric + '</span></button>';
   };
   const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
   const threat = radar.threat;
   const cells = (radar.cells || []).map((cell, index) => ({ ...cell, id: cell.id || String.fromCharCode(65 + index) }));
-  const cellCenterDistance = cell => Math.hypot(Number(cell.eastKm || 0), Number(cell.northKm || 0));
   // La distance utile est celle du bord le plus proche, pas celle du centre.
   const cellDistance = radarCellEdgeDistance;
   const nearbyCells = cells.filter(cell => cellDistance(cell) < 60 || nowcastCellHasEtaProjection(cell));
   const nearbyCellIds = new Set(nearbyCells.map(cell => cell.id));
   const stormCandidateCells = nearbyCells.filter(cell =>
-    nowcastFlashesNearCell(cell, lightning) > 0
-    || polarimetricHailRisk(cell) >= 20
-    || Number(cell.risks?.storm) >= 30
+    nowcastCellHasStormEvidence(cell, lightning, radar.observedAt, now)
   );
   const maximumPassageRisk = Math.max(0, ...stormCandidateCells.map(cell => Math.round(Number(cell.risks?.passage) || 0)));
   const vigilanceNow = Date.now();
@@ -5489,14 +5862,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     return hours + " h" + (remaining ? " " + remaining : "");
   };
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
-  const hazardIcons = {
-    hail: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 14a4 4 0 0 1 .2-8A6 6 0 0 1 17 7a3.5 3.5 0 1 1 .5 7H5Z"></path><circle cx="8" cy="18" r="1.5"></circle><circle cx="13" cy="19" r="1.5"></circle><circle cx="18" cy="17.5" r="1.5"></circle></svg>',
-    wind: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3.5 0 3.5-4.5.5-4.5-1.3 0-2.2.7-2.6 1.7M3 12h16M3 16h10c3.7 0 3.7 4.5.5 4.5-1.4 0-2.3-.7-2.7-1.8"></path></svg>',
-    rain: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C9 7.2 6.5 10.4 6.5 14a5.5 5.5 0 0 0 11 0C17.5 10.4 15 7.2 12 3Z"></path></svg>',
-    lightning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 2-8 12h6l-2 8 8-12h-6l2-8Z"></path></svg>'
-  };
-  const hazardMetric = (kind, tone, title, pictogram) => '<span class="cell-hazard pictogram-only ' + tone + '" title="' + escapeText(title) + '">' + pictogram + '</span>';
-  const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning);
+  const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning, radar.observedAt, now);
   const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
   const localProjectedRainFor = cell => {
     const projected = etaRainEvents.filter(event => String(event.cell?.id) === String(cell?.id)
@@ -5649,21 +6015,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       : null;
   const stormTrend = savedStormTrend || guardedStormTrend;
   if (savedStormTrend) pendingDecline = sameObservationSnapshot.pendingDecline || null;
-  const passageTrendMarkup = cell => {
-    const trend = passageTrendFor(cell);
-    if (!trend) return "";
-    const arrow = trend.label === "croissant" ? "↗" : trend.label === "decroissant" ? "↘" : "→";
-    const wording = trend.label === "croissant" ? "Risque en hausse" : trend.label === "decroissant" ? "Risque en baisse" : "Risque stable";
-    const change = Number(trend.change);
-    const radialChange = Number(trend.radialChangeKm);
-    const motionDetail = Number.isFinite(radialChange) && Math.abs(radialChange) >= .1
-      ? " · cellule " + (radialChange > 0 ? "plus éloignée de " : "plus proche de ") + Math.abs(radialChange).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km à +15 min"
-      : "";
-    const detail = (Number.isFinite(change) && change !== 0 ? wording + " de " + Math.abs(change) + " point" + (Math.abs(change) > 1 ? "s" : "") : wording) + motionDetail;
-    return '<span class="cell-passage-trend ' + trend.label + '" title="' + escapeText(detail) + '" aria-label="' + escapeText(detail) + '">' + arrow + '</span>';
-  };
-  const detailMetric = (label, value) => value == null || value === "" ? "" : '<div><dt>' + escapeText(label) + '</dt><dd>' + escapeText(value) + '</dd></div>';
-  const cellCard = cell => {
+  const cellPresentation = cell => {
     const risks = cell.risks || {};
     const passageRisk = Math.round(Number(risks.passage) || 0);
     const hailRisk = polarimetricHailRisk(cell);
@@ -5672,75 +6024,44 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const rainIntensityLabel = Number.isFinite(rainIntensity)
       ? rainIntensity.toLocaleString("fr-FR", { minimumFractionDigits: rainIntensity < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h"
       : null;
-    const rainMean = Number(cell.mean);
-    const rainMeanLabel = Number.isFinite(rainMean) ? rainMean.toLocaleString("fr-FR", { minimumFractionDigits: rainMean < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h" : null;
     const flashes = flashesNearCell(cell);
-    const lightningTone = flashes >= 5 ? "high" : flashes >= 2 ? "medium" : flashes > 0 ? "low" : "none";
     const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, nowcastCellRepresentativeRain(cell, radar.currentPrecipitation)) : 0;
-    const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""));
-    const hailLabel = "Grêle : " + polarimetricHailLabel(cell);
-    const hailPictogram = nowcastMetricPictogram("hail", hailRisk == null ? 0 : probabilityStep(hailRisk), hailLabel, true, hailRisk != null);
-    const lightningPictogram = nowcastMetricPictogram("lightning", flashCountStep(flashes), "Éclairs : " + flashes + (flashes === 1 ? " éclair détecté près de la cellule" : " éclairs détectés près de la cellule"));
     const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
     const lightningLevel = flashCountStep(flashes);
-    const cellIntensityLevel = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
-    const hazards = hazardMetric("hail", riskTone(hailRisk), hailLabel, hailPictogram)
-      + hazardMetric("rain", riskTone(rainRisk), "Pluie : niveau " + rainLevel + " sur 5 · risque " + rainRisk + " %" + (rainIntensityLabel ? " · maximale " + rainIntensityLabel : "") + (rainMeanLabel ? " · moyenne " + rainMeanLabel : ""), rainPictogram)
-      + (window.METEO_REPLAY ? "" : hazardMetric("lightning", lightningTone, "Éclairs : " + flashes + " détecté" + (flashes === 1 ? "" : "s") + " près de la cellule", lightningPictogram));
-    const detailsId = "cell-details-" + String(cell.id).replace(/[^a-z0-9_-]/gi, "");
-    const details = [
-      detailMetric("Distance du centre", cellCenterDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"),
-      risks.storm == null ? "" : '<div class="nowcast-convective"><dt>Indice convectif</dt><dd>' + nowcastMetricPictogram("storm", probabilityStep(Number(risks.storm)), "Indice convectif : niveau " + probabilityStep(Number(risks.storm)) + " sur 5", false) + "</dd></div>",
-      detailMetric("Vitesse estimée", Number.isFinite(Number(cell.track?.speedKmh)) ? Number(cell.track.speedKmh).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km/h" : null),
-      detailMetric("Confiance trajectoire", cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence)) + " %"),
-      detailMetric("Base trajectoire", cell.track?.source === "history" ? "historique cellule" : cell.track?.source === "blended" ? "historique + radar global" : cell.track?.source === "global" ? "radar global" : "stationnaire"),
-      detailMetric("Horizon trajectoire", Number.isFinite(Number(cell.track?.horizonMinutes)) ? Math.round(Number(cell.track.horizonMinutes)) + " min" : null),
-      detailMetric("Base ETA", cell.etaBasis === "envelope" ? "cône probable" : cell.etaBasis === "core" ? "noyau cellule" : null),
-      detailMetric("Suivie depuis", cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : null)
-    ];
+    const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · intensité radar maximale " + rainIntensityLabel : ""), true, true, false);
+    const hailLabel = "Grêle : " + polarimetricHailLabel(cell);
+    const hailPictogram = nowcastMetricPictogram("hail", hailLevel, hailLabel, true, true, false);
+    const lightningLabel = lightning == null
+      ? (window.METEO_REPLAY ? "Foudre : donnée non archivée" : "Foudre : donnée indisponible")
+      : "Foudre : niveau " + lightningLevel + " sur 5 · " + flashes + (flashes === 1 ? " éclair détecté" : " éclairs détectés") + " près de la cellule";
+    const lightningPictogram = nowcastMetricPictogram("lightning", lightningLevel, lightningLabel, true, true, false);
     const distanceKm = cellDistance(cell);
     const distance = distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const distanceMarkup = distanceKm > .05
-      ? '<span class="nowcast-cell-distance">' + escapeText(distance) + '</span>'
-      : '';
     const etaMinutes = cell.etaMinutes == null ? null : Number(cell.etaMinutes);
-    const etaText = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240
-      ? etaMinutes < 1 ? "Now" : compactMinutesLabel(Math.max(1, etaMinutes))
-      : "";
-    const etaDetail = etaText
+    const hasEta = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240;
+    const etaText = hasEta
+      ? etaMinutes < 1 ? "0min" : compactMinutesLabel(Math.max(1, etaMinutes))
+      : "—";
+    const etaDetail = hasEta
       ? etaMinutes < 1 ? "ETA maintenant" : "ETA dans " + compactMinutesLabel(Math.max(1, etaMinutes))
-      : "";
-    const eta = etaText
-      ? '<span class="nowcast-cell-eta" title="' + (cell.etaBasis === "envelope" ? "ETA possible · " : "") + escapeText(etaDetail) + '">' + escapeText(etaText) + '</span>'
-      : '';
-    const detailTitle = "Cellule " + cell.id + " · probabilité " + passageRisk + " %" + (distanceKm > .05 ? " · distance " + distance : "") + (etaDetail ? " · " + etaDetail : "");
-    return '<article class="nowcast-cell-card passage-' + riskTone(passageRisk) + '"><button class="nowcast-cell-card-button" type="button" data-nowcast-cell="' + escapeText(cell.id) + '" aria-expanded="false" aria-controls="' + escapeText(detailsId) + '" title="' + escapeText(detailTitle) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong>' + distanceMarkup + eta + '</span><span class="nowcast-cell-primary"><b>Passage : ' + passageRisk + ' %</b>' + passageTrendMarkup(cell) + '</span><span class="nowcast-cell-intensity"><strong>intensité</strong>' + nowcastMetricPictogram('storm', cellIntensityLevel, 'Intensité : niveau ' + cellIntensityLevel + ' sur 5', false) + '</span></button><dl class="nowcast-cell-details" id="' + escapeText(detailsId) + '" hidden><div class="nowcast-cell-detail-hazards"><dt>Intensité détaillée</dt><dd><span class="cell-hazards">' + hazards + '</span></dd></div>' + details.filter(Boolean).join("") + '</dl></article>';
+      : "ETA non calculée";
+    const speed = Number(cell.track?.speedKmh);
+    const speedText = Number.isFinite(speed) ? speed.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "—";
+    const trackedSince = cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : "—";
+    const confidence = cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence));
+    const confidenceText = Number.isFinite(confidence) ? confidence + " %" : "—";
+    const label = "Cellule " + cell.id + " · bord à " + distance + " des Tatins · passage " + passageRisk + " % · " + etaDetail
+      + " · grêle " + hailLevel + " sur 5 · pluie " + rainLevel + " sur 5 · foudre " + lightningLevel + " sur 5"
+      + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
+    const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + passageRisk + ' %</b><b>ETA ' + escapeText(etaText) + '</b></div>'
+      + '<div class="nowcast-cell-map-intensities" aria-label="Intensités grêle, pluie et foudre"><span class="hail">' + hailPictogram + '</span><span class="rain">' + rainPictogram + '</span><span class="lightning">' + lightningPictogram + '</span></div>'
+      + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
+    return { tone: riskTone(passageRisk), label, markup };
   };
   const cellsInRange = nearbyCells
-    .filter(cell => cellDistance(cell) < activeNowcastMapRadius)
+    .filter(cell => cellDistance(cell) <= activeNowcastMapRadius)
     .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
-  const disappearedCellEdgeDistance = cell => {
-    const exact = Number(cell.lastEdgeDistanceKm);
-    if (Number.isFinite(exact)) return Math.max(0, exact);
-    const centerDistance = Number.isFinite(Number(cell.lastDistanceKm)) ? Number(cell.lastDistanceKm) : cellCenterDistance(cell);
-    return Math.max(0, centerDistance - Math.max(0, Number(cell.radiusKm || 0)));
-  };
-  const disappearedCellsInRange = (radar.disappearedCells || [])
-    .filter(cell => disappearedCellEdgeDistance(cell) < activeNowcastMapRadius)
-    .sort((left, right) => new Date(right.disappearedAt || 0).getTime() - new Date(left.disappearedAt || 0).getTime());
-  const disappearedCellCard = cell => {
-    const distance = disappearedCellEdgeDistance(cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const disappearedAt = new Date(cell.disappearedAt || 0).getTime();
-    const referenceTime = Number.isFinite(currentObservation) ? currentObservation : Date.now();
-    const elapsedMinutes = Number.isFinite(disappearedAt) ? Math.max(0, Math.round((referenceTime - disappearedAt) / 60000)) : null;
-    const elapsed = elapsedMinutes == null ? "récemment" : "depuis " + formatMinutes(elapsedMinutes);
-    const title = "Cellule " + cell.id + " · fin de détection " + elapsed + " · dernière distance " + distance;
-    return '<article class="nowcast-cell-card disappeared"><button class="nowcast-cell-card-button" type="button" aria-disabled="true" title="' + escapeText(title) + '"><span class="nowcast-cell-name"><strong>' + escapeText(cell.id) + '</strong><small>' + escapeText(distance) + '</small></span><span class="nowcast-cell-missing-copy"><b>Fin de détection</b><small>' + escapeText(elapsed) + '</small></span></button></article>';
-  };
-  const cellCards = cellsInRange.map(cellCard).join("") + disappearedCellsInRange.map(disappearedCellCard).join("");
-  const cellsPanel = '<section class="nowcast-cells-panel" aria-label="Cellules visibles sur la carte">'
-    + (cellCards ? '<div class="nowcast-cell-grid">' + cellCards + '</div>' : '<p class="nowcast-cells-empty">Aucune cellule détectée dans ce périmètre.</p>')
-    + '</section>';
+  const cellPresentations = new Map(cellsInRange.map(cell => [String(cell.id), cellPresentation(cell)]));
   const nextProjectionSnapshot = nowcastProjectionSnapshot(etaRainEvents);
   const projectionSnapshotChanged = JSON.stringify(nextProjectionSnapshot)
     !== JSON.stringify(Array.isArray(cellPassageSnapshot?.projections) ? cellPassageSnapshot.projections : []);
@@ -5802,7 +6123,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : departingStormIntensity
       ? "Orage s’éloignant"
     : rainyCellCandidate
-      ? "cellule pluvieuse"
+      ? "Cellule pluvieuse"
       : stormForecastSourceCount > 0 || orangeVigilanceActive
         ? "Orage possible"
         : "pas d’orage";
@@ -5929,6 +6250,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         rainLabelLevel,
         rainPassageRisk
       );
+  const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
   const gustDetail = [
     Number.isFinite(maximumOpenMeteoGust) ? "Open-Meteo : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
@@ -5939,12 +6261,13 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
   const gustValue = shortTermGustLabel(gustLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('gust', gustValue, gustLevel, gustDetail, gustTrend, 'wind48', null, null, gustColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
+    initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
         button.setAttribute("aria-controls", "panel-48h");
@@ -5967,14 +6290,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     });
   }
   const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 60 ? ' active' : '') + '" type="button" data-nowcast-radius="60" aria-pressed="' + (activeNowcastMapRadius === 60) + '">60 km</button></div>';
-  element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius) + '</div>' + cellsPanel + '</div>';
-  element.querySelectorAll(".nowcast-cell-card-button").forEach(button => {
-    const detailsId = button.getAttribute("aria-controls");
-    if (!expandedCellDetailIds.has(detailsId)) return;
-    button.setAttribute("aria-expanded", "true");
-    const details = document.getElementById(detailsId);
-    if (details) details.hidden = false;
-  });
+  element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius, cellPresentations) + '</div></div>';
+  initializeNowcastCellOverlays(element);
   initializeNowcastMapBackground(activeNowcastMapRadius);
   element.querySelectorAll("[data-nowcast-radius]").forEach(button => button.addEventListener("click", event => {
     nowcastMapRadiusManuallySelected = true;
@@ -5984,76 +6301,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     } catch {}
     renderRadarNowcast(radar, piaf, arome, lightning, vigilance);
   }));
-  const showCellDetails = button => {
-    const card = button.closest(".nowcast-cell-card");
-    const grid = card?.parentElement;
-    const details = document.getElementById(button.getAttribute("aria-controls"));
-    if (!card || !grid || !details) return;
-    const cellId = button.getAttribute("data-nowcast-cell");
-    element.querySelectorAll(".radar-cell-marker.panel-selected").forEach(marker => {
-      marker.classList.remove("panel-selected");
-      marker.querySelector(".radar-cell")?.removeAttribute("aria-current");
-    });
-    const mappedMarker = [...element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]")].find(marker => marker.getAttribute("data-nowcast-cell") === cellId);
-    mappedMarker?.classList.add("panel-selected");
-    mappedMarker?.querySelector(".radar-cell")?.setAttribute("aria-current", "true");
-    grid.querySelectorAll(".nowcast-cell-card").forEach(candidate => {
-      candidate.classList.remove("row-expanded", "detail-expanded");
-      const candidateButton = candidate.querySelector(".nowcast-cell-card-button");
-      const candidateDetails = document.getElementById(candidateButton?.getAttribute("aria-controls"));
-      if (candidateButton) candidateButton.setAttribute("aria-expanded", "false");
-      if (candidateDetails) candidateDetails.hidden = true;
-    });
-    card.classList.add("row-expanded");
-    card.classList.add("detail-expanded");
-    button.setAttribute("aria-expanded", "true");
-    details.hidden = false;
-  };
-  const hideCellDetails = button => {
-    const card = button.closest(".nowcast-cell-card");
-    const details = document.getElementById(button.getAttribute("aria-controls"));
-    const cellId = button.getAttribute("data-nowcast-cell");
-    card?.classList.remove("row-expanded", "detail-expanded");
-    button.setAttribute("aria-expanded", "false");
-    if (details) details.hidden = true;
-    const mappedMarker = [...element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]")].find(marker => marker.getAttribute("data-nowcast-cell") === cellId);
-    mappedMarker?.classList.remove("panel-selected");
-    mappedMarker?.querySelector(".radar-cell")?.removeAttribute("aria-current");
-  };
-  element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]").forEach(button => {
-    const card = button.closest(".nowcast-cell-card");
-    card?.addEventListener("pointerenter", () => showCellDetails(button));
-    card?.addEventListener("pointerleave", () => hideCellDetails(button));
-    button.addEventListener("focus", () => showCellDetails(button));
-    button.addEventListener("blur", () => hideCellDetails(button));
-  });
-  const showMappedCell = marker => {
-    const cellId = marker.getAttribute("data-nowcast-cell");
-    const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
-    if (!button) return;
-    element.querySelectorAll(".nowcast-cell-card.map-selected").forEach(card => card.classList.remove("map-selected"));
-    element.querySelectorAll('.nowcast-cell-card-button[aria-current="true"]').forEach(candidate => candidate.removeAttribute("aria-current"));
-    button.closest(".nowcast-cell-card")?.classList.add("map-selected");
-    button.setAttribute("aria-current", "true");
-    showCellDetails(button);
-  };
-  const hideMappedCell = marker => {
-    const cellId = marker.getAttribute("data-nowcast-cell");
-    const button = [...element.querySelectorAll(".nowcast-cell-card-button[data-nowcast-cell]")].find(candidate => candidate.getAttribute("data-nowcast-cell") === cellId);
-    const card = button?.closest(".nowcast-cell-card");
-    const details = document.getElementById(button?.getAttribute("aria-controls"));
-    card?.classList.remove("map-selected");
-    button?.removeAttribute("aria-current");
-    if (button) hideCellDetails(button);
-    marker.classList.remove("panel-selected");
-    marker.querySelector(".radar-cell")?.removeAttribute("aria-current");
-  };
-  element.querySelectorAll(".radar-cell-marker[data-nowcast-cell]").forEach(marker => {
-    marker.addEventListener("pointerenter", () => showMappedCell(marker));
-    marker.addEventListener("pointerleave", () => hideMappedCell(marker));
-    marker.addEventListener("focusin", () => showMappedCell(marker));
-    marker.addEventListener("focusout", () => hideMappedCell(marker));
-  });
   bindChartTooltips();
 }
 
