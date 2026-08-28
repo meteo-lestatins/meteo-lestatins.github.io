@@ -877,9 +877,9 @@ button:hover { background: #eef7fb; }
 .storm-map-controls .forecast-source-button { min-width: 82px; min-height: 36px; padding-inline: 14px; font-size: 13px; }
 .nowcast-workspace { display: block; }
 .nowcast-map-column { min-width: 0; position: relative; }
-.nowcast-map-column .storm-map-controls { width: auto; position: static; gap: 6px; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.nowcast-map-column .storm-map-controls { width: auto; position: absolute; z-index: 4; top: 8px; left: 8px; gap: 6px; margin: 0; padding: 3px; border: 0; border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 1px 5px rgba(31,75,96,.15); }
 .nowcast-map-column .storm-map-controls .forecast-source-button { min-width: 66px; min-height: 31px; padding-inline: 9px; font-size: 11px; }
-.nowcast-map-column .north-arrow { transform: none; }
+.nowcast-map-column .north-arrow { transform: translateY(42px); }
 .nowcast-cell-map-overlay { width: min(238px, calc(100% - 16px)); position: absolute; z-index: 3; box-sizing: border-box; padding: 7px 8px 6px; overflow: hidden; border: 1px solid #bdd4df; border-radius: 11px; color: #173f57; background: rgba(255,255,255,.96); box-shadow: 0 5px 18px rgba(24,67,88,.24); opacity: 0; pointer-events: none; font: 750 10px/1.15 system-ui; font-variant-numeric: tabular-nums; }
 .nowcast-cell-map-overlay[hidden] { display: none; }
 .nowcast-cell-map-overlay.is-measuring { visibility: hidden; }
@@ -903,11 +903,11 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-map-meta b { max-width: 100%; overflow: hidden; color: #173f57; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .nowcast-cell-map-meta small { min-height: 18px; display: flex; align-items: end; justify-content: center; color: #70838d; font-size: 8px; font-weight: 750; line-height: 1.05; }
 
-@media (min-width: 901px) {
-  .three-hour-layout { display: grid; grid-template-columns: minmax(300px, .36fr) minmax(0, .64fr); align-items: start; border-bottom: 1px solid #d7e3e8; }
+@media (min-width: 1051px) {
+  .three-hour-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); align-items: start; border-bottom: 1px solid #d7e3e8; }
   .three-hour-layout > .three-hour-overview { min-width: 0; height: 100%; border-right: 1px solid #d7e3e8; border-bottom: 0; }
   .three-hour-layout > .three-hour-details { min-width: 0; }
-  .three-hour-layout .three-hour-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .three-hour-layout .three-hour-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .nowcast-cell-map-overlay { width: min(300px, calc(100% - 20px)); padding: 10px 11px 9px; font-size: 12px; }
   .nowcast-cell-map-head { gap: 3px 9px; }
   .nowcast-cell-map-head strong { font-size: 21px; }
@@ -926,8 +926,6 @@ button:hover { background: #eef7fb; }
 .nowcast-cell-link:hover { filter: brightness(.96); }
 .nowcast-cell-link:focus-visible { outline: 3px solid #1b6f96; outline-offset: 2px; }
 .storm-cells-table > h3 { margin: 0; padding: 10px 12px 8px; color: #173f57; font-size: 13px; }
-.range-ring { fill: none; stroke: rgba(142,169,181,.3); stroke-width: .7; stroke-dasharray: 3 7; }
-.range-distance text { fill: rgba(91,116,127,.52); font: 650 8px system-ui; }
 .map-axis { display: none; }
 .north-arrow text, .scale-bar text, .track-time text, .target-point text { fill: #6c808b; font: 700 11px system-ui; }
 .north-arrow path, .scale-bar path { fill: none; stroke: #6c808b; stroke-width: 1.5; }
@@ -953,12 +951,6 @@ button:hover { background: #eef7fb; }
 .target-point circle { fill: #da4c35; stroke: #fff; stroke-width: 2; filter: drop-shadow(0 1px 2px rgba(76,30,24,.4)); }
 .target-point path { fill: none; stroke: #da4c35; stroke-width: 2; }
 .target-point text { fill: #9c3b2d; font-size: 9px; paint-order: stroke; stroke: rgba(255,255,255,.9); stroke-width: 2px; stroke-linejoin: round; }
-.map-legend { position: absolute; right: 9px; bottom: 7px; z-index: 2; display: flex; gap: 12px; padding: 4px 7px; border-radius: 6px; color: #607784; background: rgba(255,255,255,.82); font-size: 10px; }
-.map-legend span { display: flex; align-items: center; gap: 5px; }
-.map-legend i { width: 12px; height: 8px; display: inline-block; }
-.legend-cell { border: 1px solid #e46d32; border-radius: 50%; background: rgba(236,113,51,.32); }
-.legend-cone { background: linear-gradient(90deg, rgba(43,145,198,.03), rgba(43,145,198,.34), rgba(43,145,198,.03)); }
-.legend-lightning { width: auto !important; height: auto !important; color: #b87500; font-style: normal; font-weight: 900; line-height: 1; }
 .storm-map-empty, .no-storm { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 180px; color: #607784; text-align: center; }
 .no-storm { grid-column: 1 / -1; }
 .no-storm strong { color: #113d57; font-size: 17px; }
@@ -1188,7 +1180,6 @@ button:hover { background: #eef7fb; }
 .storm-cone.projected { fill: rgba(43, 145, 198, .16); stroke: none; filter: blur(12px); }
 .storm-cone.projected.secondary { fill: rgba(94, 147, 173, .12); stroke: none; filter: blur(12px); }
 .storm-track.projected { opacity: .92; }
-.map-legend .legend-projection { width: 14px; height: 0; border-top: 2px dashed #5e93ad; }
 
 
 .storm-cell.disappeared { border-left: 3px dashed #8a9aa3; background: rgba(232, 238, 241, .58); }
@@ -1215,8 +1206,8 @@ button:hover { background: #eef7fb; }
 @container nowcast (max-width: 1249px) {
   .nowcast-workspace { height: auto; overflow: visible; border: 0; background: transparent; }
   .nowcast-map-column { height: auto; aspect-ratio: auto; }
-  .nowcast-map-column .storm-map-controls { position: static; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
-  .nowcast-map-column .north-arrow { transform: none; }
+  .nowcast-map-column .storm-map-controls { position: absolute; z-index: 4; top: 8px; left: 8px; margin: 0; padding: 3px; border: 0; border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 1px 5px rgba(31,75,96,.15); }
+  .nowcast-map-column .north-arrow { transform: translateY(42px); }
   .nowcast-map-column .storm-map, .nowcast-map-column .storm-map > svg { width: 100%; height: auto; min-height: 0; aspect-ratio: 1 / 1; }
   .nowcast-map-column .storm-map { border: 1px solid #c8dce6; border-radius: 12px; }
 }
