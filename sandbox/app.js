@@ -5231,6 +5231,15 @@ function nowcastCellOverlayPlacement({ cellBounds, targetBounds = null, viewport
   }).sort((left, right) => left.score - right.score)[0];
 }
 
+function nowcastMapScale(width, height, mapRadiusKm) {
+  const radiusKm = Math.max(1, Number(mapRadiusKm) || 20);
+  return Math.min((width - 40) / (radiusKm * 2), (height - 40) / (radiusKm * 2));
+}
+
+function nowcastRangeDistances(mapRadiusKm) {
+  return Array.from({ length: Math.floor(Math.max(0, Number(mapRadiusKm) || 0) / 10) }, (_, index) => (index + 1) * 10);
+}
+
 function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMapRadius, cellPresentations = new Map()) {
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
@@ -5247,10 +5256,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   if (!threat) {
     const targetX = width / 2;
     const targetY = height / 2;
-    const scale = width === 360
-      ? (width - 32) / (mapRadiusKm * 2)
-      : (height - 64) / (mapRadiusKm * 2.2);
-    const rings = [20, 40, 60].filter(distance => distance <= mapRadiusKm).map(distance => {
+    const scale = nowcastMapScale(width, height, mapRadiusKm);
+    const rings = nowcastRangeDistances(mapRadiusKm).map(distance => {
       const radius = distance * scale;
       const labelX = targetX;
       const labelY = targetY - radius;
@@ -5267,11 +5274,9 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const primaryPoints = primaryProjection?.points || points;
   const secondaryTrackPoints = etaProjectionCells.flatMap(cell => cell.id === threat.id ? [] : cell.track.points);
   const extentPoints = [{ eastKm: 0, northKm: 0, uncertaintyKm: 3 }, ...radarCells, ...secondaryTrackPoints, ...(primaryPoints.length ? primaryPoints : [threat])];
-  const paddingX = width === 360 ? 20 : 48;
-  const paddingY = width === 360 ? 20 : 32;
-  const eastRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
-  const northRadiusKm = mapRadiusKm * (width === 360 ? 1.05 : 1.1);
-  const scale = Math.min((width - paddingX * 2) / (eastRadiusKm * 2), (height - paddingY * 2) / (northRadiusKm * 2));
+  const paddingX = 20;
+  const paddingY = 20;
+  const scale = nowcastMapScale(width, height, mapRadiusKm);
   const x = eastKm => width / 2 + Number(eastKm || 0) * scale;
   const y = northKm => height / 2 - Number(northKm || 0) * scale;
   const minimumEast = -(width / 2 - paddingX) / scale;
@@ -5437,7 +5442,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const milestones = '';
   const targetX = x(0).toFixed(1);
   const targetY = y(0).toFixed(1);
-  const rangeRings = [20, 40, 60].filter(distance => distance <= mapRadiusKm && ((mapRadiusKm === 20 && distance === 20) || distance * scale <= Math.min(width / 2 - paddingX, height / 2 - paddingY))).map(distance => {
+  const rangeRings = nowcastRangeDistances(mapRadiusKm).map(distance => {
     const radius = distance * scale;
     const labelX = x(0);
     const labelY = y(0) - radius;
@@ -5587,9 +5592,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   if (!container || !window.L) return;
   const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
   const height = 360;
-  const scale = width === 360
-    ? (width - 32) / (mapRadiusKm * 2)
-    : Math.min((width - 96) / (mapRadiusKm * 2.2), (height - 64) / (mapRadiusKm * 2.2));
+  const scale = nowcastMapScale(width, height, mapRadiusKm);
   const eastExtentKm = width / (2 * scale);
   const northExtentKm = height / (2 * scale);
   const latitudeKm = 111.32;
@@ -5608,7 +5611,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
     boxZoom: false,
     keyboard: false,
     tap: false,
-    zoomSnap: 1,
+    zoomSnap: 0,
     fadeAnimation: false,
     zoomAnimation: false,
     markerZoomAnimation: false
@@ -5650,11 +5653,15 @@ function initializeNowcastMapBackground(mapRadiusKm) {
     candidates.forEach(place => {
       const screenPoint = nowcastLeafletMap.latLngToContainerPoint([place.latitude, place.longitude]);
       const widthEstimate = Math.max(30, place.name.length * 6 + 15);
-      const box = { left: screenPoint.x - 2, right: screenPoint.x + widthEstimate + 6, top: screenPoint.y - 15, bottom: screenPoint.y + 2 };
+      const nearTopEdge = screenPoint.y < 36;
+      const box = nearTopEdge
+        ? { left: screenPoint.x - widthEstimate / 2, right: screenPoint.x + widthEstimate / 2, top: screenPoint.y + 8, bottom: screenPoint.y + 28 }
+        : { left: screenPoint.x - 2, right: screenPoint.x + widthEstimate + 6, top: screenPoint.y - 15, bottom: screenPoint.y + 2 };
       if (box.right < 4 || box.left > container.clientWidth - 4 || box.bottom < 4 || box.top > container.clientHeight - 4) return;
       if (occupied.some(other => box.left < other.right + 5 && box.right > other.left - 5 && box.top < other.bottom + 4 && box.bottom > other.top - 4)) return;
       occupied.push(box);
-      const icon = window.L.divIcon({ className: "osm-place-label " + place.place, html: '<i class="osm-place-dot" aria-hidden="true"></i><span>' + escapeText(place.name) + '</span>', iconSize: [4, 4], iconAnchor: [2, 2] });
+      const labelPosition = nearTopEdge ? ' style="left:50%;top:12px;bottom:auto;transform:translateX(-50%)"' : '';
+      const icon = window.L.divIcon({ className: "osm-place-label " + place.place, html: '<i class="osm-place-dot" aria-hidden="true"></i><span' + labelPosition + '>' + escapeText(place.name) + '</span>', iconSize: [4, 4], iconAnchor: [2, 2] });
       window.L.marker([place.latitude, place.longitude], { icon, interactive: false, keyboard: false }).addTo(placeLayer);
     });
   };
