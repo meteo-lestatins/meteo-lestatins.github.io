@@ -300,6 +300,10 @@ button:hover { background: #eef7fb; }
 .daily-period-card.daily-period-alert-yellow summary:hover { background: rgba(238, 192, 35, .19); }
 .daily-period-card.daily-period-alert-orange summary:hover { background: rgba(226, 129, 50, .3); }
 .daily-period-card.daily-period-alert-red summary:hover { background: rgba(207, 77, 71, .34); }
+.daily-period-card.daily-period-past { background: #edf1f3; }
+.daily-period-card.daily-period-past summary { color: #77858c; background: #edf1f3; filter: grayscale(1); opacity: .58; }
+.daily-period-card.daily-period-past summary:hover { background: #e3e8ea; }
+.daily-period-card.daily-period-past .daily-period-details { background: #f0f3f4; filter: grayscale(1); opacity: .62; }
 .daily-period-title { grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; gap: 6px; }
 .daily-period-title strong { color: #173b52; font-size: 17px; }
 .daily-vigilance-icons { min-width: 0; display: inline-flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 3px; }
@@ -766,13 +770,16 @@ button:hover { background: #eef7fb; }
 .three-hour-action-body > b { min-width: 0; margin-left: auto; overflow-wrap: anywhere; font-size: 15px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1.15; text-align: right; white-space: normal; }
 .three-hour-action-value { min-width: 0; font-variant-numeric: tabular-nums; }
 .three-hour-action.metric-rain .three-hour-action-body { width: 100%; }
+.three-hour-message-static { display: inline-flex; flex: 1 1 180px; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; margin-left: auto; text-align: right; }
+.three-hour-message-static small { overflow: hidden; color: #607784; font-size: 10px; font-weight: 800; line-height: 1; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.three-hour-message-static b { min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 850; line-height: 1.15; }
 .three-hour-message-sequence { position: relative; flex: 1 1 180px; height: 96px; margin-left: auto; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent); }
 .three-hour-message { position: absolute; top: 50%; right: 0; left: 0; display: grid; gap: 2px; min-width: 0; transform-origin: right center; transition: transform .65s ease, opacity .65s ease; pointer-events: none; }
 .three-hour-message-meta { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
 .three-hour-message small, .three-hour-message em { overflow: hidden; color: #607784; font-size: 8px; font-style: normal; font-weight: 800; line-height: 1; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.three-hour-message b { min-width: 0; overflow: hidden; font-size: 12px; font-weight: 850; line-height: 1.1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.three-hour-message b { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 850; line-height: 1.1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .three-hour-message[data-position="current"] { z-index: 3; opacity: 1; transform: translateY(-50%); }
-.three-hour-message[data-position="current"] b { display: -webkit-box; overflow: hidden; font-size: 12px; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.three-hour-message[data-position="current"] b { display: -webkit-box; overflow: hidden; font-size: 15px; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .three-hour-message[data-position="previous"] { z-index: 2; opacity: .28; transform: translateY(calc(-50% - 34px)) scale(.9); }
 .three-hour-message[data-position="next"] { z-index: 2; opacity: .38; transform: translateY(calc(-50% + 34px)) scale(.9); }
 .three-hour-message[data-position="before"] { opacity: 0; transform: translateY(calc(-50% - 68px)) scale(.86); }
@@ -876,9 +883,12 @@ button:hover { background: #eef7fb; }
 .storm-map-controls .forecast-source-button { min-width: 82px; min-height: 36px; padding-inline: 14px; font-size: 13px; }
 .nowcast-workspace { display: block; }
 .nowcast-map-column { min-width: 0; position: relative; }
-.nowcast-map-column .storm-map-controls { width: auto; position: static; gap: 6px; margin: 0 0 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.nowcast-map-column .storm-map-controls { width: auto; position: absolute; z-index: 4; top: 8px; left: 8px; gap: 6px; margin: 0; padding: 3px; border: 0; border-radius: 8px; background: rgba(255,255,255,.9); box-shadow: 0 1px 5px rgba(31,75,96,.15); }
 .nowcast-map-column .storm-map-controls .forecast-source-button { min-width: 66px; min-height: 31px; padding-inline: 9px; font-size: 11px; }
-.nowcast-map-column .north-arrow { transform: none; }
+.nowcast-map-column .north-arrow { transform: translateY(44px); }
+@media (min-width: 1101px) {
+  .nowcast-workspace { width: calc(66.6667% - 6px); }
+}
 .nowcast-cell-map-overlay { width: min(238px, calc(100% - 16px)); position: absolute; z-index: 3; box-sizing: border-box; padding: 7px 8px 6px; overflow: hidden; border: 1px solid #bdd4df; border-radius: 11px; color: #173f57; background: rgba(255,255,255,.96); box-shadow: 0 5px 18px rgba(24,67,88,.24); opacity: 0; pointer-events: none; font: 750 10px/1.15 system-ui; font-variant-numeric: tabular-nums; }
 .nowcast-cell-map-overlay[hidden] { display: none; }
 .nowcast-cell-map-overlay.is-measuring { visibility: hidden; }
