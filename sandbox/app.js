@@ -997,6 +997,126 @@ function nowcastProjectionFresh(event, referenceTime = null) {
     && evaluatedAt - observedAt <= 15 * 60000;
 }
 
+function nowcastProjectionHistory(projectionSnapshot) {
+  const history = Array.isArray(projectionSnapshot?.projectionHistory)
+    ? projectionSnapshot.projectionHistory
+    : [];
+  if (history.length) return history;
+  return projectionSnapshot?.observedAt && Array.isArray(projectionSnapshot?.projections)
+    ? [{ observedAt: projectionSnapshot.observedAt, projections: projectionSnapshot.projections }]
+    : [];
+}
+
+function nowcastArrivalProjectionQuality(cell, radarObservedAt) {
+  if (cell?.track?.inherited !== true) return nowcastCellProjectionQuality(cell, radarObservedAt);
+  // Une vitesse héritée ne suffit jamais à valider une durée ou une lame d'eau,
+  // mais elle ne doit pas invalider une heure d'arrivée répétée par la géométrie.
+  return nowcastCellProjectionQuality({
+    ...cell,
+    track: { ...cell.track, inherited: false }
+  }, radarObservedAt);
+}
+
+function nowcastMedian(values) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function nowcastPresenceAssessment(event, projectionSnapshot, radarObservedAt, trackingEnabled) {
+  const currentObservation = Date.parse(radarObservedAt || "");
+  const currentStart = Number(event?.eventStart);
+  const currentPassage = Number(event?.passage);
+  const exactProjection = ["profile", "shape"].includes(event?.projectionKind)
+    && event?.cell?.etaBasis !== "envelope";
+  const quality = nowcastArrivalProjectionQuality(event?.cell, radarObservedAt);
+  const candidate = Number.isFinite(currentStart)
+    && Number.isFinite(currentPassage)
+    && currentPassage >= 55
+    && event?.cell?.etaBasis !== "envelope"
+    && quality.reliable;
+  const empty = reason => ({
+    presenceReliable: false,
+    arrivalReliable: false,
+    presenceProbability: null,
+    presenceStableScans: 0,
+    arrivalStableScans: 0,
+    presenceReason: reason,
+    arrivalReason: reason,
+    presenceCandidate: candidate,
+    arrivalCandidate: candidate && exactProjection
+  });
+  if (!candidate) return empty(quality.reliable ? "presence-not-eligible" : quality.reason);
+  if (!trackingEnabled) return {
+    ...empty("legacy"),
+    presenceReliable: true,
+    arrivalReliable: exactProjection,
+    presenceProbability: Math.round(currentPassage / 5) * 5,
+    presenceStableScans: null,
+    arrivalStableScans: exactProjection ? null : 0
+  };
+
+  const sameObservation = Date.parse(projectionSnapshot?.observedAt || "") === currentObservation
+    ? (projectionSnapshot?.projections || []).filter(projection =>
+      String(projection?.cellId) === String(event?.cell?.id)
+      && Math.abs(Number(projection?.eventStart) - currentStart) <= 10 * 60000
+    ).sort((left, right) => Math.abs(Number(left.eventStart) - currentStart) - Math.abs(Number(right.eventStart) - currentStart))[0]
+    : null;
+  if (sameObservation) return {
+    presenceReliable: sameObservation.presenceReliable === true,
+    arrivalReliable: sameObservation.arrivalReliable === true,
+    presenceProbability: Number.isFinite(Number(sameObservation.presenceProbability))
+      ? Number(sameObservation.presenceProbability) : null,
+    presenceStableScans: Math.max(0, Number(sameObservation.presenceStableScans) || 0),
+    arrivalStableScans: Math.max(0, Number(sameObservation.arrivalStableScans) || 0),
+    presenceReason: sameObservation.presenceReason || "not-confirmed",
+    arrivalReason: sameObservation.arrivalReason || "not-confirmed",
+    presenceCandidate: sameObservation.presenceCandidate === true,
+    arrivalCandidate: sameObservation.arrivalCandidate === true
+  };
+
+  const recentHistory = nowcastProjectionHistory(projectionSnapshot)
+    .map(snapshot => ({ ...snapshot, time: Date.parse(snapshot?.observedAt || "") }))
+    .filter(snapshot => Number.isFinite(snapshot.time)
+      && snapshot.time < currentObservation
+      && currentObservation - snapshot.time <= 15 * 60000)
+    .sort((left, right) => right.time - left.time)
+    .slice(0, 2);
+  const matches = recentHistory.flatMap(snapshot => (snapshot.projections || [])
+    .filter(projection => String(projection?.cellId) === String(event?.cell?.id)
+      && projection?.presenceCandidate === true
+      && Number.isFinite(Number(projection?.eventStart))
+      && Math.abs(Number(projection.eventStart) - currentStart) <= 10 * 60000)
+    .map(projection => ({ ...projection, observedAt: snapshot.observedAt }))
+  ).sort((left, right) => Math.abs(Number(left.eventStart) - currentStart) - Math.abs(Number(right.eventStart) - currentStart));
+  const compatibleMatches = [...new Map(matches.map(projection => [projection.observedAt, projection])).values()].slice(0, 2);
+  const previous = compatibleMatches[0] || null;
+  if (!previous) return empty("not-confirmed");
+
+  const rawProbability = nowcastMedian([currentPassage, ...compatibleMatches.map(projection => Number(projection.passage))]);
+  let presenceProbability = rawProbability == null ? null : Math.max(0, Math.min(100, Math.round(rawProbability / 5) * 5));
+  const previousProbability = Number(compatibleMatches.find(projection =>
+    Number.isFinite(Number(projection.presenceProbability)))?.presenceProbability);
+  if (Number.isFinite(previousProbability) && Math.abs(presenceProbability - previousProbability) < 10) {
+    presenceProbability = previousProbability;
+  }
+  const previousExact = compatibleMatches.some(projection => projection.arrivalCandidate === true
+    && ["profile", "shape"].includes(projection.projectionKind));
+  return {
+    presenceReliable: true,
+    arrivalReliable: exactProjection && previousExact,
+    presenceProbability,
+    presenceStableScans: Math.max(1, Number(previous.presenceStableScans) || 0) + 1,
+    arrivalStableScans: exactProjection && previousExact
+      ? Math.max(1, Number(previous.arrivalStableScans) || 0) + 1 : 0,
+    presenceReason: "confirmed-arrival-window",
+    arrivalReason: exactProjection && previousExact ? "confirmed-arrival" : "exact-arrival-not-confirmed",
+    presenceCandidate: true,
+    arrivalCandidate: exactProjection
+  };
+}
+
 function nowcastProjectionAssessment(event, projectionSnapshot, radarObservedAt, trackingEnabled) {
   const currentProfileSignature = nowcastProjectionProfileSignature(event);
   const currentAnchor = {
@@ -1136,10 +1256,15 @@ function nowcastProjectionAssessment(event, projectionSnapshot, radarObservedAt,
 function nowcastProjectionSnapshot(events) {
   return (events || []).map(event => ({
     cellId: event?.cell?.id,
+    etaBasis: event?.cell?.etaBasis || null,
     passageIndex: event?.passageIndex,
     passage: Number(event?.passage),
     eventStart: event?.eventStart,
     eventEnd: event?.eventEnd,
+    radarObservedAt: event?.radarObservedAt,
+    etaMinutes: event?.etaMinutes,
+    projectionEndMinutes: event?.projectionEndMinutes,
+    durationBeyondHorizon: event?.durationBeyondHorizon === true,
     durationMinutes: event?.durationMinutes,
     projectedAmountMm: event?.projectedAmountMm,
     conditionalIntensity: event?.conditionalIntensity,
@@ -1150,6 +1275,17 @@ function nowcastProjectionSnapshot(events) {
     projectionReason: event?.projectionReason || null,
     projectionCandidate: event?.projectionCandidate === true,
     stableScans: Math.max(0, Number(event?.projectionStableScans) || 0),
+    presenceReliable: event?.presenceReliable === true,
+    arrivalReliable: event?.arrivalReliable === true,
+    presenceProbability: Number.isFinite(Number(event?.presenceProbability)) ? Number(event.presenceProbability) : null,
+    presenceStableScans: Math.max(0, Number(event?.presenceStableScans) || 0),
+    arrivalStableScans: Math.max(0, Number(event?.arrivalStableScans) || 0),
+    presenceReason: event?.presenceReason || null,
+    arrivalReason: event?.arrivalReason || null,
+    presenceCandidate: event?.presenceCandidate === true,
+    arrivalCandidate: event?.arrivalCandidate === true,
+    presenceHeld: event?.presenceHeld === true,
+    presenceMisses: Math.max(0, Number(event?.presenceMisses) || 0),
     anchorPassage: event?.projectionAnchorPassage,
     anchorEventStart: event?.projectionAnchorEventStart,
     anchorEventEnd: event?.projectionAnchorEventEnd,
@@ -1158,6 +1294,19 @@ function nowcastProjectionSnapshot(events) {
     anchorConditionalIntensity: event?.projectionAnchorConditionalIntensity,
     anchorProfileSignature: event?.projectionAnchorProfileSignature
   }));
+}
+
+function nowcastNextProjectionHistory(projectionSnapshot, observedAt, projections) {
+  const currentTime = Date.parse(observedAt || "");
+  const history = nowcastProjectionHistory(projectionSnapshot)
+    .filter(snapshot => snapshot?.observedAt !== observedAt)
+    .filter(snapshot => {
+      const time = Date.parse(snapshot?.observedAt || "");
+      return Number.isFinite(time) && Number.isFinite(currentTime)
+        && time < currentTime && currentTime - time <= 20 * 60000;
+    });
+  history.push({ observedAt, projections });
+  return history.sort((left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt)).slice(-3);
 }
 
 function nowcastEtaRainEvents(radar, projectionSnapshot = typeof cellPassageSnapshot === "undefined" ? undefined : cellPassageSnapshot) {
@@ -1250,8 +1399,9 @@ function nowcastEtaRainEvents(radar, projectionSnapshot = typeof cellPassageSnap
       };
     });
   }).filter(Boolean);
-  return events.map(event => {
+  const assessedEvents = events.map(event => {
     const assessment = nowcastProjectionAssessment(event, projectionSnapshot, radar?.observedAt, projectionTrackingEnabled);
+    const presence = nowcastPresenceAssessment(event, projectionSnapshot, radar?.observedAt, projectionTrackingEnabled);
     return {
       ...event,
       projectionReliable: assessment.reliable,
@@ -1264,9 +1414,60 @@ function nowcastEtaRainEvents(radar, projectionSnapshot = typeof cellPassageSnap
       projectionAnchorDurationMinutes: assessment.anchorDurationMinutes,
       projectionAnchorProjectedAmountMm: assessment.anchorProjectedAmountMm,
       projectionAnchorConditionalIntensity: assessment.anchorConditionalIntensity,
-      projectionAnchorProfileSignature: assessment.anchorProfileSignature
+      projectionAnchorProfileSignature: assessment.anchorProfileSignature,
+      ...presence
     };
   });
+  if (!projectionTrackingEnabled) return assessedEvents;
+  const currentCellIds = new Set(assessedEvents.map(event => String(event?.cell?.id)));
+  const sameObservation = projectionSnapshot?.observedAt === radar?.observedAt;
+  const heldEvents = (projectionSnapshot?.projections || []).flatMap(projection => {
+    if (projection?.presenceReliable !== true
+      || currentCellIds.has(String(projection?.cellId))
+      || !Number.isFinite(Number(projection?.eventStart))
+      || !Number.isFinite(Number(projection?.eventEnd))
+      || Number(projection.eventEnd) <= radarObservedAt) return [];
+    const previousObservation = Date.parse(projectionSnapshot?.observedAt || "");
+    const canHold = sameObservation
+      ? projection?.presenceHeld === true
+      : Number.isFinite(previousObservation)
+        && radarObservedAt > previousObservation
+        && radarObservedAt - previousObservation <= 10 * 60000
+        && Math.max(0, Number(projection?.presenceMisses) || 0) < 1;
+    if (!canHold) return [];
+    return [{
+      cell: { id: projection.cellId, etaBasis: projection.etaBasis || "core" },
+      passageIndex: projection.passageIndex,
+      passage: Number(projection.passage),
+      presenceProbability: Number(projection.presenceProbability),
+      projectionKind: projection.projectionKind || "fallback",
+      eventStart: Number(projection.eventStart),
+      eventEnd: Number(projection.eventEnd),
+      radarObservedAt,
+      etaMinutes: Math.max(0, (Number(projection.eventStart) - radarObservedAt) / 60000),
+      projectionEndMinutes: (Number(projection.eventEnd) - radarObservedAt) / 60000,
+      durationMinutes: null,
+      projectedAmountMm: 0,
+      conditionalIntensity: 0,
+      intensityProfile: [],
+      durationBeyondHorizon: projection.durationBeyondHorizon === true,
+      projectionReliable: false,
+      projectionReason: "presence-held",
+      projectionCandidate: false,
+      projectionStableScans: 0,
+      presenceReliable: true,
+      arrivalReliable: projection.arrivalReliable === true,
+      presenceStableScans: Math.max(1, Number(projection.presenceStableScans) || 1),
+      arrivalStableScans: Math.max(0, Number(projection.arrivalStableScans) || 0),
+      presenceReason: "one-scan-hold",
+      arrivalReason: projection.arrivalReason || "one-scan-hold",
+      presenceCandidate: false,
+      arrivalCandidate: false,
+      presenceHeld: true,
+      presenceMisses: sameObservation ? 1 : Math.max(0, Number(projection.presenceMisses) || 0) + 1
+    }];
+  });
+  return [...assessedEvents, ...heldEvents];
 }
 
 function nowcastEtaRainEligible(event, referenceTime = null) {
@@ -1281,6 +1482,15 @@ function nowcastEtaRainEligible(event, referenceTime = null) {
     && Number(event.projectionEndMinutes) <= 60;
 }
 
+function nowcastPresenceRainEligible(event, referenceTime = null) {
+  return event?.presenceReliable === true
+    && nowcastProjectionFresh(event, referenceTime)
+    && Number(event?.presenceProbability) >= 55
+    && event?.cell?.etaBasis !== "envelope"
+    && Number.isFinite(Number(event?.eventStart))
+    && Number.isFinite(Number(event?.eventEnd));
+}
+
 function nowcastReliablePassageEventForCell(events, cellOrId, referenceTime = null) {
   const cellId = typeof cellOrId === "object" ? cellOrId?.id : cellOrId;
   if (cellId == null) return null;
@@ -1290,7 +1500,8 @@ function nowcastReliablePassageEventForCell(events, cellOrId, referenceTime = nu
   if (!Number.isFinite(evaluatedAt)) return null;
   return (events || [])
     .filter(event => String(event?.cell?.id) === String(cellId)
-      && event?.projectionReliable === true
+      && (event?.arrivalReliable === true
+        || (event?.arrivalReliable == null && event?.projectionReliable === true))
       && nowcastProjectionFresh(event, evaluatedAt)
       && event?.cell?.etaBasis !== "envelope"
       && ["profile", "shape"].includes(event?.projectionKind)
@@ -1308,8 +1519,9 @@ function nowcastCellLocallyObservedInterior(cell, radar) {
 }
 
 function nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar = null) {
-  if (!reliableEvent || reliableEvent.projectionReliable !== true) return null;
-  const passage = Number(reliableEvent.passage);
+  if (!reliableEvent || (reliableEvent.arrivalReliable !== true
+    && !(reliableEvent.arrivalReliable == null && reliableEvent.projectionReliable === true))) return null;
+  const passage = Number(reliableEvent.presenceProbability ?? reliableEvent.passage);
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
 }
 
@@ -1616,7 +1828,8 @@ function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId
       && Number.isFinite(Number(event.eventEnd))
       && Number(event.eventEnd) > now;
   });
-  const candidates = observedCandidates.filter(event => event?.projectionReliable === true
+  const candidates = observedCandidates.filter(event => (event?.arrivalReliable === true
+      || (event?.arrivalReliable == null && event?.projectionReliable === true))
     && event?.cell?.etaBasis !== "envelope"
     && (event?.projectionKind == null || ["profile", "shape"].includes(event.projectionKind)));
   const activeByCell = new Map();
@@ -6207,6 +6420,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
   const cellPresentations = new Map(cellsInRange.map(cell => [String(cell.id), cellPresentation(cell)]));
   const nextProjectionSnapshot = nowcastProjectionSnapshot(etaRainEvents);
+  const nextProjectionHistory = radar.observedAt
+    ? nowcastNextProjectionHistory(cellPassageSnapshot, radar.observedAt, nextProjectionSnapshot)
+    : nowcastProjectionHistory(cellPassageSnapshot);
   const projectionSnapshotChanged = JSON.stringify(nextProjectionSnapshot)
     !== JSON.stringify(Array.isArray(cellPassageSnapshot?.projections) ? cellPassageSnapshot.projections : []);
   if (radar.observedAt && (cellPassageSnapshot?.observedAt !== radar.observedAt || projectionSnapshotChanged)) {
@@ -6217,6 +6433,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         .map(cell => [cell.id, announcedPassageRiskForCell(cell)])
         .filter(([, passage]) => Number.isFinite(passage))),
       projections: nextProjectionSnapshot,
+      projectionHistory: nextProjectionHistory,
       displayedLevel: stormCombinedLevel,
       trend: stormTrend,
       pendingDecline
@@ -6230,7 +6447,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const rainyCellCandidate = nearbyCells
     .filter(cell => !stormCandidateCells.some(candidate => String(candidate.id) === String(cell.id))
       && Number(cell.risks?.passage) > 0
-      && localProjectedRainFor(cell) >= .1)
+      && localProjectedRainFor(cell) >= .1
+      && (cellDistance(cell) <= 10
+        || (cellDistance(cell) < 60 && Boolean(reliablePassageEventForCell(cell)))))
     .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
   const stormDetail = relevantStormIntensity
     ? "Orage sur 3 h · passage " + (hasAnnouncedStormPassageRisk ? maximumPassageRisk + " %" : "incertain") + " · intensité " + stormIntensityLevel + "/5"
@@ -6518,12 +6737,21 @@ function renderPiaf(piaf, radar = null) {
   const cellEtaSlots = new Map();
   const etaRainEvents = nowcastEtaRainEvents(radar);
   if (etaRainEvents.length) {
-    etaRainEvents.filter(event => nowcastEtaRainEligible(event, appNow())).forEach(event => {
+    etaRainEvents.filter(event => nowcastPresenceRainEligible(event, appNow())).forEach(event => {
       const cell = event.cell;
       slotIntervals.forEach((interval, slotIndex) => {
         if (event.eventEnd <= interval.start || event.eventStart >= interval.end) return;
         const etaRain = nowcastEtaRainAmount([event], interval.start, interval.end);
-        const entry = { id: cell.id, passage: event.passage, etaMinutes: event.etaMinutes, etaBasis: cell.etaBasis, etaRain, eventStart: event.eventStart, eventEnd: event.eventEnd };
+        const entry = {
+          id: cell.id,
+          passage: Number(event.presenceProbability),
+          etaMinutes: event.etaMinutes,
+          etaBasis: cell.etaBasis,
+          etaRain,
+          amountReliable: event.projectionReliable === true,
+          eventStart: event.eventStart,
+          eventEnd: event.eventEnd
+        };
         if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
         cellEtaSlots.get(slotIndex).push(entry);
       });
@@ -6572,17 +6800,25 @@ function renderPiaf(piaf, radar = null) {
     entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
     const basePiaf = Math.max(0, Number(item.precipitation) || 0);
     const radarAmendment = Math.round(Math.max(0, Number(item.effectiveRadarAmendment) || 0) * 100) / 100;
-    const etaRain = Math.round(Math.max(0, Number(item.effectiveEtaAmendment) || 0) * 100) / 100;
-    const nowcastAmendment = Math.round((radarAmendment + etaRain) * 100) / 100;
-    if (nowcastAmendment <= 0) return '';
-    const totalRain = Math.round(Math.max(basePiaf, Number(item.totalPrecipitation) || 0) * 100) / 100;
+    const etaRain = Math.round(Math.max(0, ...entries.filter(entry => entry.amountReliable).map(entry => Number(entry.etaRain) || 0)) * 100) / 100;
+    const interval = slotIntervals[index];
+    const radarObservedAt = Date.parse(radar?.observedAt || "");
+    const observed = item.radarCellOverPoint === true
+      && Number.isFinite(radarObservedAt)
+      && radarObservedAt >= interval.start && radarObservedAt < interval.end;
+    if (!entries.length && !observed) return '';
+    const quantitative = observed ? radarAmendment : etaRain;
+    const totalRain = Math.round((basePiaf + quantitative) * 100) / 100;
     const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
     const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
-    const totalHeight = Math.min(100, Math.max(3, totalRain / fullScaleRain * 100));
     const amendmentBottom = Math.min(97, baseHeight);
-    const amendmentHeight = Math.min(100 - amendmentBottom, Math.max(3, totalHeight - amendmentBottom));
+    const presenceOnly = !observed && etaRain <= 0;
+    const totalHeight = Math.min(100, Math.max(3, totalRain / fullScaleRain * 100));
+    const amendmentHeight = presenceOnly
+      ? Math.min(100 - amendmentBottom, 4)
+      : Math.min(100 - amendmentBottom, Math.max(3, totalHeight - amendmentBottom));
     const alpha = passage == null ? .58 : Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
-    const label = passage > 0 && passage < 100 ? Math.round(passage) + " %" : "";
+    const label = observed ? "observé" : passage > 0 ? Math.round(passage) + " %" : "";
     const etaWindowStart = entries.length ? Math.min(...entries.map(entry => entry.eventStart)) : null;
     const etaWindowEnd = entries.length ? Math.max(...entries.map(entry => entry.eventEnd)) : null;
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
@@ -6590,15 +6826,15 @@ function renderPiaf(piaf, radar = null) {
       ? " sur 1 h"
       : item.complete === false ? " sur " + Math.max(5, Math.round((Number(item.intervalEnd) - Number(item.intervalStart)) / 60000)) + " min" : " sur 15 min";
     const detail = "PIAF : " + basePiaf.toFixed(2) + " mm" + piafPeriod
-      + (radarAmendment > 0 ? "\nAmendement radar : +" + radarAmendment.toFixed(2) + " mm" : "")
-      + (etaRain > 0 ? "\nCellule(s) ETA si passage : +" + etaRain.toFixed(2) + " mm" : "")
-      + "\nTotal affiché : " + totalRain.toFixed(2) + " mm"
-      + (passage != null && passage < 100 ? "\nProbabilité de passage : " + passage + " %" : "")
+      + (observed && radarAmendment > 0 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
+      + (!observed && etaRain > 0 ? "\nNowcasting conditionnel si passage : +" + etaRain.toFixed(2) + " mm" : "")
+      + (presenceOnly ? "\nPrésence possible, cumul non assez stable" : "\nTotal affiché : " + totalRain.toFixed(2) + " mm")
+      + (passage != null ? "\nProbabilité de passage : " + passage + " %" : "")
       + (etaLabels.length ? "\n" + etaLabels.join(" · ") : "")
       + (etaWindowStart != null && etaWindowEnd != null ? "\nPrésence : " + hourFormat.format(new Date(etaWindowStart)) + "–" + hourFormat.format(new Date(etaWindowEnd)) : "")
       + "\nClic : ouvrir la carte";
     const labelMarkup = label ? '<span class="now-cell-overlay-label">' + escapeText(label) + '</span>' : '';
-    return '<button class="now-cell-overlay chart-point" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--amendment-bottom:' + amendmentBottom.toFixed(1) + '%;--amendment-height:' + amendmentHeight.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span>' + labelMarkup + '</button>';
+    return '<button class="now-cell-overlay chart-point' + (presenceOnly ? ' presence-only' : '') + (observed ? ' observed' : '') + '" type="button" data-open-nowcast="true" data-tooltip="' + escapeText(detail) + '" style="grid-column:' + (index + 1) + ';grid-row:1;--amendment-bottom:' + amendmentBottom.toFixed(1) + '%;--amendment-height:' + amendmentHeight.toFixed(1) + '%;--eta-opacity:' + alpha.toFixed(2) + '" aria-label="' + escapeText(detail) + '"><span class="now-cell-overlay-fill" aria-hidden="true"></span>' + labelMarkup + '</button>';
   }).join('');
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
