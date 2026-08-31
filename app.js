@@ -1525,6 +1525,13 @@ function nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar = null) {
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
 }
 
+function nowcastDisplayedCellPassageRisk(cell, reliableEvent, radar = null) {
+  if (nowcastCellLocallyObservedInterior(cell, radar)) return 100;
+  const announcedPassage = nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar);
+  const passage = announcedPassage ?? Number(cell?.risks?.passage);
+  return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
+}
+
 function nowcastEtaRainRateAt(event, time, referenceTime = null) {
   if (!nowcastEtaRainEligible(event, referenceTime) || time < Number(event.eventStart) || time >= Number(event.eventEnd)) return 0;
   const intensityProfile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
@@ -6369,7 +6376,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const cellPresentation = cell => {
     const risks = cell.risks || {};
     const reliablePassageEvent = reliablePassageEventForCell(cell);
-    const passageRisk = nowcastAnnouncedCellPassageRisk(cell, reliablePassageEvent, radar);
+    // Le cartouche décrit la cellule courante, même si son ETA n'est pas encore
+    // confirmée sur plusieurs scans. La synthèse 3 h reste, elle, plus prudente.
+    const passageRisk = nowcastDisplayedCellPassageRisk(cell, reliablePassageEvent, radar);
     const passageText = passageRisk == null ? "incertain" : passageRisk + " %";
     const hailRisk = polarimetricHailRisk(cell);
     const rainRisk = Math.round(Number(risks.intenseRain) || 0);
@@ -6790,7 +6799,7 @@ function renderPiaf(piaf, radar = null) {
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
     const detail = isOpenMeteo && risk ? slotTime + " · averse ? · probabilité " + probability + "%" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail;
     const visibleLabel = label;
-    return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
+    return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1;--rain-height:' + height + '%" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
   const aversePeriods = values.map((item, index) => isOpenMeteo && precipitationFor(item) <= 0 && Number(item.probability) > 0
     ? '<span class="now-averse-period" data-mobile-label="Averse" style="grid-column:' + (index + 1) + ';grid-row:1">Averse possible</span>'
@@ -6818,7 +6827,7 @@ function renderPiaf(piaf, radar = null) {
       ? Math.min(100 - amendmentBottom, 4)
       : Math.min(100 - amendmentBottom, Math.max(3, totalHeight - amendmentBottom));
     const alpha = passage == null ? .58 : Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
-    const label = observed ? "observé" : passage > 0 ? Math.round(passage) + " %" : "";
+    const label = passage > 0 ? Math.round(passage) + " %" : "";
     const etaWindowStart = entries.length ? Math.min(...entries.map(entry => entry.eventStart)) : null;
     const etaWindowEnd = entries.length ? Math.max(...entries.map(entry => entry.eventEnd)) : null;
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
