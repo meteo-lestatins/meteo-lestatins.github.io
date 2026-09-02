@@ -87,8 +87,8 @@ const measurableRainThreshold = .05;
 // Échelle commune des pictogrammes de pluie. Elle exprime une quantité
 // réellement affichée, sans transformer quelques millimètres en pluie forte.
 const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 2 : value < 15 ? 3 : value < 30 ? 4 : 5;
-// Les niveaux du vent moyen restent sensibles aux conditions locales, tandis
-// que les rafales partagent exactement l'échelle du résumé à trois heures.
+// Le vent moyen reste sensible aux conditions locales. Dans le résumé à trois
+// heures, son niveau est combiné à celui des rafales sur une échelle commune.
 const meanWindIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
   return speed <= 0 ? 0 : speed < 10 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
@@ -96,6 +96,12 @@ const meanWindIntensityLevel = value => {
 const gustIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
   return speed <= 0 ? 0 : speed < 35 ? 1 : speed < 55 ? 2 : speed < 75 ? 3 : speed < 100 ? 4 : 5;
+};
+const shortTermWindIntensityLevel = (meanWind, gust) => {
+  const meanSpeed = Math.max(0, Number(meanWind) || 0);
+  const gustSpeed = Math.max(0, Number(gust) || 0);
+  if (meanSpeed < 5 && gustSpeed < 15) return 0;
+  return Math.max(meanWindIntensityLevel(meanSpeed), gustIntensityLevel(gustSpeed));
 };
 
 function forecastSourceAlertTone({ wind = 0, gust = 0, probability = 0, rain = 0, rain3h = 0, stormRainOverlap = false, stormRainWindOverlap = false } = {}) {
@@ -1740,6 +1746,7 @@ function threeHourTrendIsSignificant(kind, trend) {
   if (!trend || trend.label === "stable") return false;
   const change = Math.abs(Number(trend.change) || 0);
   if (kind === "rain") return change >= .5;
+  if (kind === "wind") return change >= 1;
   if (kind === "gust") return change >= 15;
   if (kind === "storm") return change >= (trend.basis === "displayed-level" ? 2 : 30);
   return false;
@@ -1823,6 +1830,16 @@ function shortTermGustLabel(intensityLevel) {
     : level >= 2 ? "Rafales modérées"
     : level >= 1 ? "Rafales faibles"
     : "Pas de rafales";
+}
+
+function shortTermWindLabel(intensityLevel) {
+  const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
+  return level >= 5 ? "Vent violent"
+    : level >= 4 ? "Vent très fort"
+    : level >= 3 ? "Vent fort"
+    : level >= 2 ? "Vent modéré"
+    : level >= 1 ? "Vent faible"
+    : "Pas de vent";
 }
 
 function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
@@ -6062,6 +6079,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
   });
   const windWindow = upcomingWind.length ? upcomingWind : (arome?.hours || []).slice(0, 3);
+  const maximumWind = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windSpeed) || 0)));
   const maximumGust = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windGust) || 0)));
   const openMeteoWindHours = latestForecastData?.openMeteo?.hours || [];
   const upcomingOpenMeteoWind = openMeteoWindHours.filter(item => {
@@ -6069,13 +6087,19 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
   });
   const openMeteoWindWindow = upcomingOpenMeteoWind.length ? upcomingOpenMeteoWind : openMeteoWindHours.slice(0, 3);
+  const maximumOpenMeteoWind = openMeteoWindWindow.length
+    ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windSpeed) || 0)))
+    : null;
   const maximumOpenMeteoGust = openMeteoWindWindow.length
     ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windGust) || 0)))
     : null;
+  const openMeteoWindBackgroundTrend = backgroundTrendArrow(openMeteoWindWindow.map(item => item.windSpeed), 5);
   const openMeteoGustBackgroundTrend = backgroundTrendArrow(openMeteoWindWindow.map(item => item.windGust), 8);
+  const meteoFranceWindBackgroundTrend = backgroundTrendArrow(windWindow.map(item => item.windSpeed), 5);
   const meteoFranceGustBackgroundTrend = backgroundTrendArrow(windWindow.map(item => item.windGust), 8);
   const nowcastMetricIcons = {
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
+    wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
     gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
     storm: '<path class="storm-cloud" d="M4.2 14.2a3.4 3.4 0 0 1 .4-6.8A5.3 5.3 0 0 1 15 6a3.8 3.8 0 0 1 3.1 1.6 3.3 3.3 0 0 1 .7 6.6H4.2Z"/><path class="storm-bolt" d="M11.2 10.8 7.8 16h3l-1.4 6 7-9h-3.2l1.5-2.2h-3.5Z"/>',
     lightning: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>',
@@ -6305,8 +6329,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     ? "PIAF + Nowcasting"
     : rainTrendUsesRadar ? "PIAF amendé par le radar" : "PIAF";
   const rainTrend = shortTermRainTrend(rainTrendSteps, rainTrendSource);
-  const windTrendWindow = splitForecastWindow(windWindow, item => item.windGust);
-  const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, 4);
+  const windTrendWindow = splitForecastWindow(windWindow, item => shortTermWindIntensityLevel(item.windSpeed, item.windGust));
+  const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, .4);
   const snapshotPassages = previousPassageSnapshot
     ? Object.entries(previousPassageSnapshot.values || {})
         .filter(([id]) => nearbyCellIds.has(id))
@@ -6663,18 +6687,22 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       );
   const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
   const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
-  const gustDetail = [
-    Number.isFinite(maximumOpenMeteoGust) ? "Open-Meteo : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
-    windWindow.length ? "Météo-France : " + maximumGust + " km/h " + meteoFranceGustBackgroundTrend : ""
+  const windDetail = [
+    Number.isFinite(maximumOpenMeteoWind) && Number.isFinite(maximumOpenMeteoGust)
+      ? "Open-Meteo\nVent moyen : " + maximumOpenMeteoWind + " km/h " + openMeteoWindBackgroundTrend
+        + "\nRafales : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
+    windWindow.length
+      ? "Météo-France\nVent moyen : " + maximumWind + " km/h " + meteoFranceWindBackgroundTrend
+        + "\nRafales : " + maximumGust + " km/h " + meteoFranceGustBackgroundTrend : ""
   ].filter(Boolean).join("\n");
-  const gustTrend = { ...windTrend, detail: gustDetail };
-  const gustLevel = gustIntensityLevel(maximumGust);
-  const gustColorLevel = gustLevel >= 3 ? gustLevel : 0;
-  const gustValue = shortTermGustLabel(gustLevel);
+  const windTrendWithDetail = { ...windTrend, detail: windDetail };
+  const windLevel = shortTermWindIntensityLevel(maximumWind, maximumGust);
+  const windColorLevel = windLevel >= 3 ? windLevel : 0;
+  const windValue = shortTermWindLabel(windLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
-    + summaryAction('gust', gustValue, gustLevel, gustDetail, gustTrend, 'wind48', null, null, gustColorLevel, true)
+    + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
     summaryElement.innerHTML = generalExpertise;
