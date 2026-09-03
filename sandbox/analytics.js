@@ -25,9 +25,8 @@
     body: JSON.stringify({ visitorId: anonymousVisitor, type, target })
   }).catch(() => {});
 
-  function navigationTarget(link) {
-    let url;
-    try { url = new URL(link.href, document.baseURI); } catch { return ""; }
+  function pageTarget() {
+    const url = new URL(document.location.href);
     const pathname = url.pathname.replace(/\/+$/, "");
     if (!pathname || /^\/(?:sandbox|testing)?(?:\/index\.html)?$/i.test(pathname)) return "main";
     if (/\/about\.html$/i.test(pathname)) return "about";
@@ -36,11 +35,5 @@
     return "";
   }
 
-  document.addEventListener("click", event => {
-    const link = event.target.closest("a[href]");
-    const target = link ? navigationTarget(link) : "";
-    if (target) send("click", target);
-  }, { capture: true });
-
-  send("visit");
+  send("visit", pageTarget());
 })();
