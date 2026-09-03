@@ -29,6 +29,7 @@
     let url;
     try { url = new URL(link.href, document.baseURI); } catch { return ""; }
     const pathname = url.pathname.replace(/\/+$/, "");
+    if (!pathname || /^\/(?:sandbox|testing)?(?:\/index\.html)?$/i.test(pathname)) return "main";
     if (/\/about\.html$/i.test(pathname)) return "about";
     if (/\/news(?:\/index\.html)?$/i.test(pathname)) return "news";
     if (/\/changelog(?:\.html)?$/i.test(pathname)) return "changelog";
