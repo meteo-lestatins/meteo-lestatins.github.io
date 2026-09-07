@@ -3489,7 +3489,7 @@ function renderTestingDailyForecast() {
     const rainKind = showers ? "showers" : "rain";
     const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
     const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + rainRangeText + " mm · probabilité " + format(rainProbability, 0) + " %", rainSources) + showerPlus + '</span>';
-    const rainDetail = hideRain ? "" : periodMetricRow(rainPictogram, escapeText(rainRangeText) + " mm", rainDescription, "week-rain-row");
+    const rainDetail = periodMetricRow(rainPictogram, escapeText(rainRangeText) + " mm", rainDescription, "week-rain-row");
     const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + windRangeText + " km/h", windSources) + '</dt><dd><span class="week-metric-number">(' + direction + escapeText(windRangeText) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + gustRangeText + " km/h", gustSources) + '</dt><dd><span class="week-metric-number">(' + escapeText(gustRangeText) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
     const stormDescription = hasStorm
       ? Number(period.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + "."
@@ -3718,7 +3718,7 @@ function renderWeekForecast() {
     const summaries = modelDaySummaries(day, probabilitySummary);
     const sourceLabel = sourceKey === "meteofrance" ? "Météo-France" : "Open-Meteo";
     const cloudPresentation = cloudCoverPresentation(day);
-    const rainMarkup = hideRain ? "" : rainMetricRow([dailyRain], escapeText(precipitationTotal), [], sourceKey === "openmeteo" ? showersLevel : 0, probabilitySummary, summaries.rain);
+    const rainMarkup = rainMetricRow([dailyRain], escapeText(precipitationTotal), [], sourceKey === "openmeteo" ? showersLevel : 0, probabilitySummary, summaries.rain);
     const cloudPeriods = [
       day.cloudCoverMorningMean != null && Number.isFinite(Number(day.cloudCoverMorningMean)) ? "matin " + number(day.cloudCoverMorningMean) + " %" : "",
       day.cloudCoverAfternoonMean != null && Number.isFinite(Number(day.cloudCoverAfternoonMean)) ? "après-midi " + number(day.cloudCoverAfternoonMean) + " %" : ""
@@ -3861,7 +3861,7 @@ function renderWeekForecast() {
       + combinedPeriodDetail("maxima possibles", [ecmwf.gustPeriod, arpege.gustPeriod].filter(Boolean))
       + sourcePeriodDetail("maxima par source", ecmwf.gustPeriod, arpege.gustPeriod);
     const cloudMarkup = cloudMetricRow(cloudPresentation, cloudHoverLabel, agreement.skySummary);
-    const rainMarkup = hideRain ? "" : rainMetricRow(rainValues, escapeText(rainRange(rainValues)), [], showerLevel, agreement.rainProbability, agreement.rainSummary);
+    const rainMarkup = rainMetricRow(rainValues, escapeText(rainRange(rainValues)), [], showerLevel, agreement.rainProbability, agreement.rainSummary);
     const windMarkup = windMetricGroup(windValues, windDirectionMarkup + escapeText(range(windValues, " km/h")), gustValues, escapeText(range(gustValues, " km/h")), agreement.windSummary, windHoverLabel, gustHoverLabel);
     const stormDescription = stormModels.length >= 2 ? "Orage possible selon " + stormModels.join(" et ") + "."
       : stormModels.length ? "Orage possible selon " + stormModels[0] + " seulement." : "Pas d’orage.";
