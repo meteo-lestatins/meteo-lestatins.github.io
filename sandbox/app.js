@@ -4156,12 +4156,15 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
     const totalPrecipitation = Math.max(basePrecipitation, radarAdjustedPrecipitation, etaPrecipitation);
     const baseRain = basePrecipitation >= possibleDrizzleThreshold;
     const baseForecastAvailable = piaf?.source !== "radar-archive";
-    const nowcastReliable = item.nowcastReliable !== false;
+    // Une ancienne réponse API sans qualification ne constitue pas une
+    // confirmation de l'extrapolation radar.
+    const nowcastReliable = item.nowcastReliable === true;
     return {
       ...item,
       intervalStart,
       intervalEnd,
       basePrecipitation,
+      baseRainSource: piaf?.source || "piaf",
       radarAdjustedPrecipitation,
       etaPrecipitation,
       totalPrecipitation,
@@ -4174,12 +4177,14 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
 }
 
 function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) {
-  if (!step) return 100;
+  if (!step) return null;
   const minimum = Math.max(0, Number(threshold) || 0);
-  if (Number(step.radarAdjustedPrecipitation) >= minimum) return 100;
+  // PIAF et le déplacement de la mosaïque sont des estimations de cumul,
+  // pas des probabilités. Le champ probability joint à PIAF est PEAROME.
+  if (Number(step.radarAdjustedPrecipitation) >= minimum) return null;
   const intervalStart = Number(step.intervalStart);
   const intervalEnd = Number(step.intervalEnd);
-  if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd) || intervalEnd <= intervalStart) return 100;
+  if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd) || intervalEnd <= intervalStart) return null;
   const contributors = (events || []).filter(event =>
     Number(event?.eventEnd) > intervalStart
     && Number(event?.eventStart) < intervalEnd
@@ -4187,7 +4192,7 @@ function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) 
   );
   return contributors.length
     ? Math.max(0, ...contributors.map(event => Number(event.passage) || 0))
-    : 100;
+    : null;
 }
 
 function rainPassageFragmentsOutside(passage, protectedPassages) {
@@ -4235,6 +4240,40 @@ function mergeThreeHourRainPassages(passages) {
   return merged;
 }
 
+function threeHourRainSignalIgnored(amount, corroborated = false) {
+  return amount > 0 && amount <= .01 + 1e-9 && !corroborated;
+}
+
+function threeHourRainStepCorroborated(step) {
+  // La mosaïque et les cellules suivies sont une même source radar.
+  // Deux champs dérivés de cette source ne constituent pas une corroboration.
+  const modelRain = step.baseRainSource !== "radar-archive" && Number(step.basePrecipitation) > 0;
+  const radarRain = Number(step.radarPrecipitation) > 0 || Number(step.radarIntensity) > 0
+    || Number(step.etaPrecipitation) > 0
+    || Number(step.radarAdjustedPrecipitation) > Number(step.basePrecipitation);
+  return modelRain && radarRain;
+}
+
+function threeHourRainPassageAmount(passage, steps, events, referenceTime) {
+  const start = Number(passage.start);
+  const end = Math.min(Number(passage.end), referenceTime + 3 * 3600000);
+  const boundaries = new Set([start, end]);
+  for (const step of steps) {
+    for (const time of [Number(step.intervalStart), Number(step.intervalEnd)]) {
+      if (time > start && time < end) boundaries.add(time);
+    }
+  }
+  const times = [...boundaries].sort((a, b) => a - b);
+  return times.slice(0, -1).reduce((total, left, index) => {
+    const right = times[index + 1];
+    const base = Math.max(0, ...steps.filter(step => step.intervalStart <= left && step.intervalEnd >= right)
+      .map(step => Math.max(0, Number(step.radarAdjustedPrecipitation ?? step.totalPrecipitation) || 0)
+        * (right - left) / (step.intervalEnd - step.intervalStart)));
+    // Les projections et PIAF décrivent la même pluie : ne pas les additionner.
+    return total + Math.max(base, nowcastEtaRainAmount(events, left, right, referenceTime));
+  }, 0);
+}
+
 function threeHourRainMessageSequence(steps, now, events = []) {
   const referenceTime = Number(now);
   if (!Number.isFinite(referenceTime)) return [];
@@ -4243,7 +4282,10 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     .filter(step => Number.isFinite(Number(step?.intervalStart))
       && Number.isFinite(Number(step?.intervalEnd))
       && Number(step.intervalEnd) > Number(step.intervalStart))
-    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
+    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart))
+    .map(step => threeHourRainSignalIgnored(Number(step.totalPrecipitation), threeHourRainStepCorroborated(step))
+      ? { ...step, radarAdjustedPrecipitation: 0, totalPrecipitation: 0, etaPrecipitation: 0, dryStateReliable: false }
+      : step);
   const passages = [];
   let passage = null;
   for (const step of timeline) {
@@ -4283,6 +4325,10 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     nowcastEtaRainEligible(event, referenceTime)
     && Number(event.eventEnd) > referenceTime
     && Number(event.eventStart) < horizonEnd
+    && !threeHourRainSignalIgnored(
+      nowcastEtaRainAmount([event], Math.max(referenceTime, Number(event.eventStart)), Math.min(horizonEnd, Number(event.eventEnd)), referenceTime),
+      timeline.some(step => Number(step.basePrecipitation) > 0 && step.baseRainSource !== "radar-archive"
+        && step.intervalEnd > event.eventStart && step.intervalStart < event.eventEnd))
   ).map(event => {
     const profilePeak = Math.max(0, ...(event.intensityProfile || []).map(segment => Number(segment.intensity) || 0));
     const peakIntensity = Math.max(profilePeak, Number(event.conditionalIntensity) || 0);
@@ -4301,7 +4347,9 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     ? rainPassageFragmentsOutside(item, recentEtaPassages)
     : [item]);
   const currentPassages = mergeThreeHourRainPassages([...timelinePassages, ...recentEtaPassages])
-    .filter(item => item.end > referenceTime && item.start < horizonEnd);
+    .filter(item => item.end > referenceTime && item.start < horizonEnd)
+    .map(item => ({ ...item, amount: threeHourRainPassageAmount(item, timeline, events, referenceTime) }))
+    .filter(item => item.amount > 0);
   return currentPassages.map(item => {
     const observedAtPoint = item.firstStep?.radarCellOverPoint === true;
     const state = item.start <= referenceTime && (item.occurrenceReliable !== false || observedAtPoint) ? "active" : "future";
@@ -4322,7 +4370,7 @@ function threeHourRainMessageSequence(steps, now, events = []) {
       label = item.occurrenceReliable === false
         ? subject + " possible"
         : subject
-          + (item.drizzleOnly ? " possible" : shortTermRiskQualifier(passageRisk))
+          + (item.drizzleOnly ? " possible" : passageRisk == null ? "" : shortTermRiskQualifier(passageRisk))
           + " dans " + compactMinutesLabel(etaMinutes);
       if (item.occurrenceReliable !== false && item.endKnown === true) detail = "Durée " + compactMinutesLabel(durationMinutes);
     }
@@ -4331,6 +4379,8 @@ function threeHourRainMessageSequence(steps, now, events = []) {
       state,
       occurrenceReliable: item.occurrenceReliable !== false,
       observedAtPoint,
+      amount: item.amount,
+      passageRisk,
       label,
       detail
     };
@@ -6669,7 +6719,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && measurableRainArrivalIndex > rainArrivalIndex
     && upcomingRainSteps.slice(rainArrivalIndex, measurableRainArrivalIndex)
       .every(step => Number(step.totalPrecipitation) >= possibleDrizzleThreshold));
-  const rainColorLevel = drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
+  const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
+  const rainColorLevel = !rainMessageSequence.length || drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
   // La couleur signale le pic des 3 h, mais le texte décrit le premier pas
   // qui arrive réellement. Une pluie soutenue prévue plus tard ne doit pas
   // être annoncée comme déjà présente pendant que la frise montre une pluie faible.
@@ -6688,7 +6739,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     : null;
   const rainTransition = nextRainPhaseTransition(upcomingRainSteps, now, currentRainPhase);
   const rainTransitionPassageRisk = rainPassageForStep(rainTransition?.step, etaRainEvents, possibleDrizzleThreshold);
-  const rainValue = rainTransition
+  const rainValue = !rainMessageSequence.length
+    ? (threeHourRainSteps.length ? "Pas de pluie" : "Prévision indisponible") : rainTransition
     ? shortTermRainTransitionLabel(rainTransition, rainTransitionPassageRisk)
     : dropsThenRain
     ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainLabelLevel, measurableRainPassageRisk)
@@ -6698,8 +6750,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
         rainLabelLevel,
         rainPassageRisk
       );
-  const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
-  const rainDetail = "Cumul prévu sur 3 h : " + formatRainAmount(rainAmount) + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h";
+  const preciseAmount = field => formatRainAmount(threeHourRainSteps.reduce((sum, item) => sum + (Number(item[field]) || 0), 0), 2);
+  const rainDetail = "Cumul prévu sur 3 h : " + preciseAmount("totalPrecipitation")
+    + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h"
+    + "\nSignal de 0,01 mm ignoré s’il provient d’une seule source, sans corroboration."
+    + "\nPIAF : " + preciseAmount("basePrecipitation") + " mm (prévision déterministe, sans probabilité propre)"
+    + "\nAjout extrapolation radar : " + preciseAmount("effectiveRadarAmendment") + " mm (probabilité non disponible)"
+    + "\nAjout cellules suivies : " + preciseAmount("effectiveEtaAmendment") + " mm"
+    + (rainMessageSequence.some(message => Number.isFinite(message.passageRisk)) ? "\nProbabilité de passage des cellules : "
+      + rainMessageSequence.filter(message => Number.isFinite(message.passageRisk)).map(message => message.passageRisk + " %").join(", ") : "");
   const windDetail = [
     Number.isFinite(maximumOpenMeteoWind) && Number.isFinite(maximumOpenMeteoGust)
       ? "Open-Meteo\nVent moyen : " + maximumOpenMeteoWind + " km/h " + openMeteoWindBackgroundTrend
@@ -6713,7 +6772,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const windColorLevel = windLevel >= 3 ? windLevel : 0;
   const windValue = shortTermWindLabel(windLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainTrend, 'rain')
+    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainMessageSequence.length ? rainTrend : null, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
