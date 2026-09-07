@@ -4977,7 +4977,7 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const displayedAmount = usePearomePeriod ? Number(probabilityPoint.ensembleMean || 0) : aromeAmount;
     const measurable = displayedAmount >= measurableRainThreshold;
     const rainTrace = displayedAmount >= possibleDrizzleThreshold;
-    const drops = displayedAmount >= possibleDrizzleThreshold && displayedAmount < .2;
+    const drops = displayedAmount > 0 && displayedAmount <= .2;
     const showProbability = hasProbability && probability > 0 && (usePearomePeriod ? showPeriod : probabilityDisplayIndexes.get(probabilityPoint.time) === index);
     const probabilisticAverse = showProbability && probability >= rainRiskDisplayThreshold && !measurable;
     const height = selectedMetrics.has("rain") && rainTrace ? (measurable ? Math.min(112, Math.max(7, Math.sqrt(displayedAmount) * 35)) : 4) : 0;
