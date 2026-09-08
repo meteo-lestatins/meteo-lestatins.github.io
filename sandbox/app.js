@@ -1732,6 +1732,7 @@ function shortTermRainTransitionLabel(transition, passageRisk = 100) {
 }
 
 function shortTermRiskQualifier(risk) {
+  if (risk == null || !Number.isFinite(Number(risk))) return "";
   const probability = Math.max(0, Number(risk) || 0);
   return probability >= 80 ? "" : probability >= 55 ? " probable" : " possible";
 }
@@ -1780,12 +1781,12 @@ function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0,
   if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
   return eta < 1
     ? "Pluie faible"
-    : "Pluie faible possible dans " + compactMinutesLabel(Math.max(1, eta));
+    : "Pluie faible" + (passageRisk == null ? "" : shortTermRiskQualifier(passageRisk)) + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
 function shortTermRainSequenceLabel(etaMinutes, intensityLevel = 0, passageRisk = 100) {
   const eta = etaMinutes == null ? null : Number(etaMinutes);
-  if (!Number.isFinite(eta) || eta < 0) return "Pluie faible possible";
+  if (!Number.isFinite(eta) || eta < 0) return "Pluie faible";
   const rain = rainIntensityLabel(intensityLevel).toLowerCase() + (eta < 1 ? "" : shortTermRiskQualifier(passageRisk));
   return "Pluie faible puis " + rain + (eta < 1
     ? ""
@@ -4240,18 +4241,8 @@ function mergeThreeHourRainPassages(passages) {
   return merged;
 }
 
-function threeHourRainSignalIgnored(amount, corroborated = false) {
-  return amount > 0 && amount <= .01 + 1e-9 && !corroborated;
-}
-
-function threeHourRainStepCorroborated(step) {
-  // La mosaïque et les cellules suivies sont une même source radar.
-  // Deux champs dérivés de cette source ne constituent pas une corroboration.
-  const modelRain = step.baseRainSource !== "radar-archive" && Number(step.basePrecipitation) > 0;
-  const radarRain = Number(step.radarPrecipitation) > 0 || Number(step.radarIntensity) > 0
-    || Number(step.etaPrecipitation) > 0
-    || Number(step.radarAdjustedPrecipitation) > Number(step.basePrecipitation);
-  return modelRain && radarRain;
+function threeHourRainSignalIgnored(amount) {
+  return amount > 0 && amount <= .01 + 1e-9;
 }
 
 function threeHourRainPassageAmount(passage, steps, events, referenceTime) {
@@ -4283,7 +4274,7 @@ function threeHourRainMessageSequence(steps, now, events = []) {
       && Number.isFinite(Number(step?.intervalEnd))
       && Number(step.intervalEnd) > Number(step.intervalStart))
     .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart))
-    .map(step => threeHourRainSignalIgnored(Number(step.totalPrecipitation), threeHourRainStepCorroborated(step))
+    .map(step => threeHourRainSignalIgnored(Number(step.totalPrecipitation))
       ? { ...step, radarAdjustedPrecipitation: 0, totalPrecipitation: 0, etaPrecipitation: 0, dryStateReliable: false }
       : step);
   const passages = [];
@@ -4326,9 +4317,7 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     && Number(event.eventEnd) > referenceTime
     && Number(event.eventStart) < horizonEnd
     && !threeHourRainSignalIgnored(
-      nowcastEtaRainAmount([event], Math.max(referenceTime, Number(event.eventStart)), Math.min(horizonEnd, Number(event.eventEnd)), referenceTime),
-      timeline.some(step => Number(step.basePrecipitation) > 0 && step.baseRainSource !== "radar-archive"
-        && step.intervalEnd > event.eventStart && step.intervalStart < event.eventEnd))
+      nowcastEtaRainAmount([event], Math.max(referenceTime, Number(event.eventStart)), Math.min(horizonEnd, Number(event.eventEnd)), referenceTime))
   ).map(event => {
     const profilePeak = Math.max(0, ...(event.intensityProfile || []).map(segment => Number(segment.intensity) || 0));
     const peakIntensity = Math.max(profilePeak, Number(event.conditionalIntensity) || 0);
@@ -4368,9 +4357,9 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     } else {
       const etaMinutes = Math.max(1, Math.ceil((item.start - referenceTime) / 60000));
       label = item.occurrenceReliable === false
-        ? subject + " possible"
+        ? subject + shortTermRiskQualifier(passageRisk)
         : subject
-          + (item.drizzleOnly ? " possible" : passageRisk == null ? "" : shortTermRiskQualifier(passageRisk))
+          + (passageRisk == null ? "" : shortTermRiskQualifier(passageRisk))
           + " dans " + compactMinutesLabel(etaMinutes);
       if (item.occurrenceReliable !== false && item.endKnown === true) detail = "Durée " + compactMinutesLabel(durationMinutes);
     }
@@ -6753,7 +6742,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const preciseAmount = field => formatRainAmount(threeHourRainSteps.reduce((sum, item) => sum + (Number(item[field]) || 0), 0), 2);
   const rainDetail = "Cumul prévu sur 3 h : " + preciseAmount("totalPrecipitation")
     + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h"
-    + "\nSignal de 0,01 mm ignoré s’il provient d’une seule source, sans corroboration."
+    + "\nTraces de 0,01 mm ou moins ignorées dans la synthèse, quelle que soit leur source."
     + "\nPIAF : " + preciseAmount("basePrecipitation") + " mm (prévision déterministe, sans probabilité propre)"
     + "\nAjout extrapolation radar : " + preciseAmount("effectiveRadarAmendment") + " mm (probabilité non disponible)"
     + "\nAjout cellules suivies : " + preciseAmount("effectiveEtaAmendment") + " mm"
@@ -6777,7 +6766,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = generalExpertise;
+    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, temporalPassageCandidates, upcomingWind, now);
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
@@ -7133,3 +7122,67 @@ if (window.location.hash === "#radar-nowcast") {
 renderAppVersion();
 if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
 else refresh();
+
+function sandboxThreeHourSlots(steps, events, candidates, hours, now) {
+  return Array.from({ length: 6 }, (_, index) => {
+    const start = now + index * 1800000, end = start + 1800000;
+    const samples = steps.filter(item => item.intervalStart < end && item.intervalEnd > start);
+    const wet = samples.filter(item => Number(item.totalPrecipitation) > .01 + 1e-9);
+    const active = events.filter(event => nowcastEtaRainEligible(event, now)
+      && event.eventStart < end && event.eventEnd > start
+      && nowcastEtaRainAmount([event], Math.max(start, event.eventStart), Math.min(end, event.eventEnd), now) > .01 + 1e-9);
+    const peak = Math.max(0, ...wet.map(item => rainRateFromAccumulation(item.totalPrecipitation, item.intervalEnd - item.intervalStart)),
+      ...active.map(event => Number(event.conditionalIntensity) || 0));
+    const level = peak > 0 ? Math.max(1, rainIntensityStep(peak)) : 0;
+    // La corroboration doit porter sur le même pas que le signal nowcasting.
+    const uncorroborated = wet.some(item =>
+      (Number(item.effectiveRadarAmendment) > 0 || Number(item.effectiveEtaAmendment) > 0 || item.baseRainSource === "radar-archive")
+      && !(item.baseRainSource !== "radar-archive" && Number(item.basePrecipitation) > .01 + 1e-9))
+      || active.some(event => !wet.some(item => item.intervalStart < event.eventEnd && item.intervalEnd > event.eventStart
+        && item.baseRainSource !== "radar-archive" && Number(item.basePrecipitation) > .01 + 1e-9));
+    const risks = active.map(event => Number(event.passage)).filter(Number.isFinite);
+    const qualifier = uncorroborated ? "possible" : risks.length ? shortTermRiskQualifier(Math.max(...risks)).trim() : "";
+    const storms = active.flatMap(event => candidates.filter(candidate => String(candidate.cell.id) === String(event.cell?.id)));
+    const storm = storms.sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
+    const hail = storm && Number(storm.hailRisk) >= 20;
+    const windHours = hours.filter(hour => Date.parse(hour.time) < end && Date.parse(hour.time) + 3600000 > start);
+    const wind = windHours.length ? shortTermWindIntensityLevel(
+      Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
+      Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
+    return { start, end, level, qualifier, hail, storm, wind,
+      label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
+  });
+}
+function sandboxThreeHourTimeline(steps, events, candidates, hours, now) {
+  const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
+  const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now);
+  const time = value => new Date(value).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const stormIcon = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 25a7 7 0 0 1 0-14 10 10 0 0 1 19-3 8 8 0 0 1 3 17Z" fill="#e8eff5" stroke="currentColor" stroke-width="2.5"/><path d="m21 18-8 13h7l-3 8 12-16h-8l3-5Z" fill="#e8bb32" stroke="currentColor" stroke-width="1.5"/></svg>';
+  const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
+  const drop = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 1C9 7 2 14 2 19a10 10 0 0 0 20 0C22 14 15 7 12 1Z" fill="currentColor"/></svg>';
+  const windIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7h12c6 0 6-6 1-6M2 12h17c5 0 5 7 0 7M2 17h7c5 0 5 6 1 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const block = (slot, index) => {
+    const qualifier = slot.hail ? shortTermRiskQualifier(slot.storm.hailRisk).trim() : slot.qualifier;
+    const label = [slot.label, qualifier].filter(Boolean).join(" ");
+    const tone = slot.hail ? probabilityStep(slot.storm.hailRisk) : 0;
+    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.hail ? ' hail tone-' + tone : '') + '" style="grid-column:' + (index + 1) + '" data-summary-target="rain" aria-label="' + escapeText(time(slot.start) + '–' + time(slot.end) + ' : ' + (label || 'Pas de pluie')) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span><i aria-hidden="true">' + (slot.hail ? hailIcon : drop.repeat(slot.level)) + '</i></button>';
+  };
+  const bands = (kind, target, describe) => {
+    const groups = [];
+    slots.forEach((slot, index) => {
+      const info = describe(slot);
+      if (!info) return;
+      const previous = groups.at(-1);
+      if (previous?.label === info.label && previous.tone === info.tone && previous.end === index) previous.end++;
+      else groups.push({ ...info, start: index, end: index + 1 });
+    });
+    return groups.map(group => '<button type="button" class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" data-summary-target="' + target + '" aria-label="' + escapeText(time(slots[group.start].start) + '–' + time(slots[group.end - 1].end) + ' : ' + group.label) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></button>').join('');
+  };
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par créneau de trente minutes"><div class="horizon-timeline">'
+    + slots.map(block).join('')
+    + bands('storm', 'nowcast', slot => slot.storm?.level > 0 ? {
+      label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + shortTermRiskQualifier(slot.storm.passage),
+      tone: stormRiskIntensityStep(probabilityStep(slot.storm.passage), slot.storm.level) } : null)
+    + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
+    + '<div class="horizon-axis">' + Array.from({ length: 7 }, (_, index) => '<span style="left:' + index / 6 * 100 + '%">' + time(now + index * 1800000) + '</span>').join('') + '</div></div></section>';
+}
