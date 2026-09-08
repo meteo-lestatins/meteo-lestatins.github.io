@@ -1211,11 +1211,11 @@ button:hover { background: #eef7fb; }
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
 
 .horizon-scroll{overflow-x:auto;padding:0 12px;color:#080d68;container-type:inline-size}
-.horizon-timeline{display:grid;height:400px;grid-template-rows:62px minmax(180px,1fr) 48px 48px;min-width:780px;position:relative;isolation:isolate}
-.horizon-rain{grid-row:2/5;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:36px 20px 42px;align-content:start;justify-items:center;align-items:center;gap:3px;padding:18px 5px 8px;border:0;border-radius:10px 10px 0 0;background:linear-gradient(120deg,#eef9ff,#e3f4fd);color:#080d68;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
+.horizon-timeline{display:grid;height:262px;grid-template-rows:62px 112px 44px 44px;min-width:780px;position:relative;isolation:isolate}
+.horizon-rain{grid-row:2/5;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:32px 18px 40px;align-content:start;justify-items:center;align-items:center;gap:2px;padding:8px 5px 4px;border:0;border-radius:10px 10px 0 0;background:linear-gradient(120deg,#eef9ff,#e3f4fd);color:#080d68;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
 .horizon-rain strong{grid-row:1;max-width:100%;font-size:14px;line-height:1.15;text-wrap:balance}
 .horizon-rain>span{grid-row:2;font-size:12px;min-height:18px}
-.horizon-rain i{grid-row:3;display:flex;align-items:center;justify-content:center;max-width:100%;height:42px;gap:4px;font-style:normal;margin:0;color:#009dea}
+.horizon-rain i{grid-row:3;display:flex;align-items:center;justify-content:center;max-width:100%;height:40px;gap:4px;font-style:normal;margin:0;color:#009dea}
 .horizon-rain svg{width:16px;height:26px;min-width:0;filter:drop-shadow(0 1px 1px #ffffff80)}
 .horizon-rain.rain-1{background:linear-gradient(120deg,#d1edff,#bce3fa)}
 .horizon-rain.rain-2{background:linear-gradient(120deg,#88d6fc,#67c3f4);color:#fff}
@@ -1226,7 +1226,7 @@ button:hover { background: #eef7fb; }
 .horizon-rain.compact{padding-inline:2px}.horizon-rain.compact strong,.horizon-rain.compact>span{visibility:hidden}
 .horizon-grid-lines{grid-row:2/5;grid-column:1/-1;position:relative;pointer-events:none;z-index:1}
 .horizon-grid-lines i{position:absolute;top:0;bottom:0;border-left:1px dashed #5555eb45}
-.horizon-band{z-index:2;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;overflow:hidden;margin:2px 0;border:1px solid #333996;border-radius:12px;color:#080d68;background:linear-gradient(110deg,#f4f5f8,#e2e5ec);font:700 12px/1.2 system-ui;padding:5px}
+.horizon-band{z-index:2;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;overflow:hidden;margin:2px 0;border:1px solid #333996;border-radius:12px;color:#080d68;background:linear-gradient(110deg,#f4f5f8,#e2e5ec);font:700 12px/1.2 system-ui;padding:4px}
 button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-align:center;overflow-wrap:normal;word-break:normal}
 .horizon-storm{grid-row:3}.horizon-wind{grid-row:4}.horizon-band>svg{width:26px;height:28px;flex-shrink:0}
 .horizon-timeline .horizon-band.tone-3{background:linear-gradient(110deg,#fffbe0,#fff0a6)}
@@ -1244,7 +1244,7 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-timeline button:focus-visible{outline:3px solid #080d68;outline-offset:-3px}.horizon-timeline button:hover{filter:brightness(.97)}
 @media(max-width:700px){.horizon-scroll{margin-inline:-6px}.horizon-rain strong{font-size:14px}.horizon-band{font-size:12px}}
 
-.horizon-timeline.has-ongoing-storm{height:448px;grid-template-rows:62px minmax(180px,1fr) 48px 48px 48px}
+.horizon-timeline.has-ongoing-storm{height:306px;grid-template-rows:62px 112px 44px 44px 44px}
 .has-ongoing-storm .horizon-rain,.has-ongoing-storm .horizon-grid-lines{grid-row:2/6}
 .horizon-ongoing-storm{grid-row:3;grid-column:1/-1;justify-content:flex-start;padding-inline:12px;border-style:dashed}
 .has-ongoing-storm .horizon-storm{grid-row:4}.has-ongoing-storm .horizon-wind{grid-row:5}
