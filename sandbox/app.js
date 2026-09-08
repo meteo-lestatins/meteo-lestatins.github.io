@@ -7170,10 +7170,12 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
         && item.baseRainSource !== "radar-archive" && Number(item.basePrecipitation) > .01 + 1e-9));
     const risks = active.map(event => Number(event.passage)).filter(Number.isFinite);
     const qualifier = uncorroborated ? "possible" : risks.length ? shortTermRiskQualifier(Math.max(...risks)).trim() : "";
-    // Un horaire de présence orageuse n'exige pas un cumul de pluie fiable.
+    // Comme sur main, une présence observée au point vaut ETA 0 min.
+    // Sans projection de durée, elle ne couvre que le créneau courant.
     const storms = candidates.filter(candidate => {
       const event = nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event;
-      return event && Number(event.eventStart) < end && Number(event.eventEnd) > start;
+      return (candidate.locallyObserved && start <= now && now < end)
+        || (event && Number(event.eventStart) < end && Number(event.eventEnd) > start);
     });
     const storm = storms.sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
     const hail = storm && Number(storm.hailRisk) >= 20;
