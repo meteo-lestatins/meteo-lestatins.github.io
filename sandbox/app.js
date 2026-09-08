@@ -6766,7 +6766,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, temporalPassageCandidates, upcomingWind, now);
+    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, temporalPassageCandidates, upcomingWind, now, piafQuarterHourRain(piaf, radar));
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
@@ -7123,9 +7123,9 @@ renderAppVersion();
 if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
 else refresh();
 
-function sandboxThreeHourSlots(steps, events, candidates, hours, now) {
-  return Array.from({ length: 6 }, (_, index) => {
-    const start = now + index * 1800000, end = start + 1800000;
+function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
+  return intervals.map(interval => {
+    const start = Number(interval.intervalStart), end = Number(interval.intervalEnd);
     const samples = steps.filter(item => item.intervalStart < end && item.intervalEnd > start);
     const wet = samples.filter(item => Number(item.totalPrecipitation) > .01 + 1e-9);
     const active = events.filter(event => nowcastEtaRainEligible(event, now)
@@ -7149,13 +7149,14 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now) {
     const wind = windHours.length ? shortTermWindIntensityLevel(
       Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
       Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
-    return { start, end, level, qualifier, hail, storm, wind,
+    return { start, end, slotTime: interval.slotTime, level, qualifier, hail, storm, wind,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
 }
-function sandboxThreeHourTimeline(steps, events, candidates, hours, now) {
+function sandboxThreeHourTimeline(steps, events, candidates, hours, now, intervals) {
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
-  const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now);
+  const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals);
+  if (!slots.length) return '<p class="horizon-empty">Prévision indisponible</p>';
   const time = value => new Date(value).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const stormIcon = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 25a7 7 0 0 1 0-14 10 10 0 0 1 19-3 8 8 0 0 1 3 17Z" fill="#e8eff5" stroke="currentColor" stroke-width="2.5"/><path d="m21 18-8 13h7l-3 8 12-16h-8l3-5Z" fill="#e8bb32" stroke="currentColor" stroke-width="1.5"/></svg>';
   const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
@@ -7178,11 +7179,11 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now) {
     });
     return groups.map(group => '<button type="button" class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" data-summary-target="' + target + '" aria-label="' + escapeText(time(slots[group.start].start) + '–' + time(slots[group.end - 1].end) + ' : ' + group.label) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></button>').join('');
   };
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par créneau de trente minutes"><div class="horizon-timeline">'
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline" style="--horizon-slots:' + slots.length + '">'
     + slots.map(block).join('')
     + bands('storm', 'nowcast', slot => slot.storm?.level > 0 ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + shortTermRiskQualifier(slot.storm.passage),
       tone: stormRiskIntensityStep(probabilityStep(slot.storm.passage), slot.storm.level) } : null)
     + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
-    + '<div class="horizon-axis">' + Array.from({ length: 7 }, (_, index) => '<span style="left:' + index / 6 * 100 + '%">' + time(now + index * 1800000) + '</span>').join('') + '</div></div></section>';
+    + '<div class="horizon-axis">' + slots.map((slot, index) => '<span style="left:' + (index + .5) / slots.length * 100 + '%">' + time(slot.slotTime || slot.end) + '</span>').join('') + '</div></div></section>';
 }
