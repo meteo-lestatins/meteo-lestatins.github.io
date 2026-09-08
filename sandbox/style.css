@@ -1226,3 +1226,15 @@ button:hover { background: #eef7fb; }
 .horizon-rain strong{font-size:14px}.horizon-rain>span{font-size:12px}.horizon-rain svg{width:12px;height:23px}.horizon-band{font-size:12px;gap:3px}.horizon-storm>svg{width:24px;height:28px}
 
 .horizon-rain:first-child{border-left:1px dashed #8695dc}.horizon-axis span::before{content:"";position:absolute;left:50%;top:-10px;height:8px;border-left:1px solid #8695dc}
+
+.horizon-axis span{line-height:20px;font-variant-numeric:tabular-nums}.horizon-axis .horizon-hour{font-size:18px;font-weight:850;color:#101875}.horizon-axis .horizon-minute{font-size:11px;font-weight:500;color:#617783}
+/* Même grille et mêmes marges que les cartes de prévision semaine. */
+:root{--forecast-columns:3;--forecast-column-gap:18px;--forecast-side-padding:28px}
+.daily-cards-grid{grid-template-columns:repeat(var(--forecast-columns),minmax(0,1fr));gap:var(--forecast-column-gap)}
+.week-scroll.daily-cards-scroll{padding-inline:var(--forecast-side-padding)}
+#nowcast-details:not([hidden]){display:grid;grid-template-columns:repeat(var(--forecast-columns),minmax(0,1fr));column-gap:var(--forecast-column-gap);padding-inline:var(--forecast-side-padding)}
+#nowcast-details>.nowcast-heading,#nowcast-details>.radar-nowcast{grid-column:-2/-1;min-width:0;margin-inline:0;padding-inline:0}
+#nowcast-details .nowcast-workspace{width:100%}
+@media(max-width:1100px){:root{--forecast-columns:2}}
+@media(max-width:900px){:root{--forecast-side-padding:16px}}
+@media(max-width:720px){:root{--forecast-columns:1;--forecast-column-gap:12px}}
