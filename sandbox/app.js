@@ -7196,7 +7196,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const drop = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 1C9 7 2 14 2 19a10 10 0 0 0 20 0C22 14 15 7 12 1Z" fill="currentColor"/></svg>';
   const windIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7h12c6 0 6-6 1-6M2 12h17c5 0 5 7 0 7M2 17h7c5 0 5 6 1 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const block = ({ slot, startIndex, endIndex }) => {
-    const qualifier = slot.hail ? shortTermRiskQualifier(slot.storm.hailRisk).trim() : slot.qualifier;
+    const qualifier = slot.hail ? shortTermRiskQualifier(slot.storm.hailRisk).trim() : slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
     const label = [slot.label, qualifier].filter(Boolean).join(" ");
     const tone = slot.hail ? probabilityStep(slot.storm.hailRisk) : 0;
     const compact = slot.end - slot.start < 15 * 60000;

@@ -1228,9 +1228,9 @@ button:hover { background: #eef7fb; }
 .horizon-timeline .tone-3{border-color:#e5d875;background:#fdf7e5}.horizon-timeline .tone-4{border-color:#e2a35c;background:#f8e2d0}.horizon-timeline .tone-5{border-color:#d98f8b;background:#f2cfcd}
 .horizon-axis{grid-row:1;grid-column:1/-1;position:relative;font-variant-numeric:tabular-nums;background:transparent;margin-bottom:6px}
 .horizon-axis span{position:absolute;white-space:nowrap}
-.horizon-axis .horizon-hour-band{top:0;display:block;overflow:hidden;border-inline:1px solid #c8d9e3;height:34px;border-bottom:2px solid #a9bdcc;border-radius:0 0 6px 6px;background:#e7f0f6;text-align:center;font-size:20px;font-weight:800;line-height:32px;color:#17394d}
-.horizon-axis .horizon-minute{top:39px;transform:translateX(-50%);font-size:14px;font-weight:650;color:#617783;line-height:16px}
-.horizon-axis .horizon-minute::before{content:"";position:absolute;left:50%;top:17px;height:6px;border-left:1px solid #a9bdcc}
+.horizon-axis .horizon-hour-band{top:0;display:block;overflow:hidden;border:1px solid #b7cddc;height:56px;border-radius:6px;background:#e7f0f6;text-align:center;font-size:20px;font-weight:800;line-height:29px;color:#17394d}
+.horizon-axis .horizon-minute{top:32px;transform:translateX(-50%);padding-inline:2px;background:#e7f0f6;font-size:14px;font-weight:650;color:#617783;line-height:16px}
+.horizon-axis .horizon-minute::before{content:"";position:absolute;left:50%;top:24px;height:6px;border-left:1px solid #a9bdcc}
 .horizon-nowcast-context{display:flex;align-items:center;gap:10px;max-width:100%;margin:10px 12px 0;padding:5px 0;border:0;border-radius:0;background:transparent;color:#315970;font:13px/1.4 system-ui;text-align:left;cursor:pointer}
 .horizon-nowcast-context>span{font-size:11px;color:#617783}.horizon-nowcast-context strong{font-weight:650}.horizon-nowcast-context small{font-size:11px;color:#397a9e}
 .horizon-nowcast-context:hover{background:transparent;text-decoration:underline}
