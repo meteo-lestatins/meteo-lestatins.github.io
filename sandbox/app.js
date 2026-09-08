@@ -7143,11 +7143,14 @@ function sandboxRainGroups(slots) {
 function sandboxThreeHourAxis(slots, time) {
   const start = slots[0].start, end = slots.at(-1).end;
   const position = value => (value - start) / (end - start) * 100;
-  const ticks = [start, ...slots.map(slot => slot.end)].map(boundary => {
-    const major = boundary === start || boundary === end || new Date(boundary).getUTCMinutes() % 30 === 0;
-    return '<span class="horizon-minute' + (major ? ' major' : ' minor') + '" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>';
-  });
-  return '<div class="horizon-axis">' + ticks.join('') + '</div>';
+  const hours = [];
+  for (let hour = Math.floor(start / 3600000) * 3600000; hour < end; hour += 3600000) {
+    const left = Math.max(start, hour), right = Math.min(end, hour + 3600000);
+    hours.push('<span class="horizon-hour-band" style="left:' + position(left) + '%;width:' + (position(right) - position(left)) + '%" aria-label="' + time(left) + '–' + time(right) + '">' + (right - left >= 15 * 60000 ? Number(time(hour).split(":")[0]) + 'H' : '') + '</span>');
+  }
+  const ticks = [start, ...slots.map(slot => slot.end)].map(boundary =>
+    '<span class="horizon-minute" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary).split(":")[1] + '</span>');
+  return '<div class="horizon-axis">' + hours.join('') + ticks.join('') + '</div>';
 }
 function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
   return intervals.filter(interval => Number(interval.intervalEnd) > now).map((interval, index) => {
@@ -7204,6 +7207,10 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
     const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie");
     return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span><i aria-hidden="true">' + (slot.hail ? hailIcon : drop.repeat(slot.level ? (slot.label === 'Gouttes' ? 1 : Math.min(5, slot.level + 1)) : 0)) + '</i></button>';
   };
+  const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved
+    && !nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event)
+    .sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
+  const ongoingLabel = ongoingStorm ? 'Orage ' + (ongoingStorm.level >= 4 ? 'violent' : ongoingStorm.level >= 2 ? 'modéré' : 'faible') + ' en cours · fin indéterminée' : '';
   const bands = (kind, target, describe) => {
     const groups = [];
     slots.forEach((slot, index) => {
@@ -7224,11 +7231,12 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
 
 
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline" style="--horizon-slots:' + slots.length + ';grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
     + sandboxRainGroups(slots).map(block).join('')
-    + bands('storm', 'nowcast', slot => slot.storm ? {
+    + bands('storm', 'nowcast', slot => slot.storm && slot.storm !== ongoingStorm ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + (slot.storm.locallyObserved && slot.start <= now && now < slot.end ? '' : shortTermRiskQualifier(slot.storm.passage)),
       tone: stormRiskIntensityStep(slot.storm.locallyObserved && slot.start <= now && now < slot.end ? 5 : probabilityStep(slot.storm.passage), slot.storm.level) } : null)
+    + (ongoingStorm ? '<div role="img" class="horizon-band horizon-ongoing-storm tone-' + stormRiskIntensityStep(5, ongoingStorm.level) + '" aria-label="' + escapeText(ongoingLabel) + '">' + stormIcon + '<span>' + escapeText(ongoingLabel) + '</span></div>' : '')
     + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
     + '<div class="horizon-grid-lines" aria-hidden="true">' + guides + '</div>'
     + sandboxThreeHourAxis(slots, time) + '</div></section>';
