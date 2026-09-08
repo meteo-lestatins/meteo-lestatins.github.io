@@ -7185,5 +7185,5 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + shortTermRiskQualifier(slot.storm.passage),
       tone: stormRiskIntensityStep(probabilityStep(slot.storm.passage), slot.storm.level) } : null)
     + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
-    + '<div class="horizon-axis">' + slots.map((slot, index) => '<span style="left:' + (index + .5) / slots.length * 100 + '%">' + time(slot.slotTime || slot.end) + '</span>').join('') + '</div></div></section>';
+    + '<div class="horizon-axis">' + [slots[0].start, ...slots.map(slot => slot.end)].map((boundary, index) => '<span style="left:' + index / slots.length * 100 + '%">' + time(boundary) + '</span>').join('') + '</div></div></section>';
 }

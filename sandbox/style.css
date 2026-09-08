@@ -1210,7 +1210,7 @@ button:hover { background: #eef7fb; }
 
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
 
-.horizon-scroll{overflow-x:auto;padding:10px 0 4px;color:#101875}
+.horizon-scroll{overflow-x:auto;padding:10px 24px 4px;color:#101875}
 .horizon-timeline{display:grid;grid-template-columns:repeat(var(--horizon-slots),minmax(80px,1fr));grid-template-rows:145px 52px 52px 34px;min-width:calc(var(--horizon-slots) * 80px);position:relative;isolation:isolate}
 .horizon-rain{grid-row:1/4;display:flex;flex-direction:column;align-items:center;gap:5px;padding:24px 4px 108px;border:0;border-right:1px dashed #8695dc;border-radius:8px 8px 0 0;background:#eaf7fd;color:#101875;font:inherit;cursor:pointer;min-width:0}
 .horizon-rain strong{font-size:18px;line-height:1.15}.horizon-rain>span{font-size:15px;min-height:19px}.horizon-rain i{display:flex;justify-content:center;gap:3px;font-style:normal;margin-top:8px}.horizon-rain svg{width:19px;height:29px}
@@ -1224,3 +1224,5 @@ button:hover { background: #eef7fb; }
 .horizon-storm>svg{width:34px;height:34px;flex-shrink:0}.horizon-rain.hail i>svg{width:48px;height:52px}
 
 .horizon-rain strong{font-size:14px}.horizon-rain>span{font-size:12px}.horizon-rain svg{width:12px;height:23px}.horizon-band{font-size:12px;gap:3px}.horizon-storm>svg{width:24px;height:28px}
+
+.horizon-rain:first-child{border-left:1px dashed #8695dc}.horizon-axis span::before{content:"";position:absolute;left:50%;top:-10px;height:8px;border-left:1px solid #8695dc}
