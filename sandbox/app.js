@@ -5664,8 +5664,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   const updateTimestamp = radar?.dataUpdatedAt || radar?.fetchedAt || radar?.observedAt;
   const updateAgeMarkup = '<span class="storm-map-age">' + escapeText(radarDataAgeLabel(updateTimestamp)) + '</span>';
 
-  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
-  const height = 360;
+  const { width, height } = sandboxNowcastDimensions();
   const radarCells = (radar?.cells || []).map((cell, index) => ({
     ...cell,
     id: cell.id || String.fromCharCode(65 + index)
@@ -6012,8 +6011,7 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }
   const container = document.querySelector("#radar-nowcast .storm-map-leaflet");
   if (!container || !window.L) return;
-  const width = window.matchMedia("(max-width: 600px)").matches ? 360 : 640;
-  const height = 360;
+  const { width, height } = sandboxNowcastDimensions();
   const scale = nowcastMapScale(width, height, mapRadiusKm);
   const eastExtentKm = width / (2 * scale);
   const northExtentKm = height / (2 * scale);
@@ -6766,7 +6764,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = sandboxNowcastContext(stormEtaLabel, stormDetail) + sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, temporalPassageCandidates, upcomingWind, now, piafQuarterHourRain(piaf, radar));
+    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, temporalPassageCandidates, upcomingWind, now, piafQuarterHourRain(piaf, radar));
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
@@ -6781,7 +6779,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       button.addEventListener('click', () => {
         if (!details) return;
         if (button.dataset.summaryTarget === "nowcast") {
-          setNowcastOpen(details.hidden, details.hidden);
+          setNowcastOpen(true, true);
           return;
         }
         details.hidden = !details.hidden;
@@ -7059,6 +7057,7 @@ async function renderAppVersion() {
 }
 
 function setNowcastOpen(open, scroll = false) {
+  return; // Carte mise de côté pendant la refonte de la frise.
   const link = $("header-nowcast-link");
   const details = $("nowcast-details");
   const titleToggle = $("nowcast-title-toggle");
@@ -7080,9 +7079,9 @@ function bindHeaderNowcastLink() {
   if (!link || !details || !titleToggle) return;
   link.addEventListener("click", event => {
     event.preventDefault();
-    setNowcastOpen(details.hidden, details.hidden);
+    setNowcastOpen(true, true);
   });
-  titleToggle.addEventListener("click", () => setNowcastOpen(details.hidden));
+
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-open-nowcast-link]");
     if (!trigger) return;
@@ -7123,6 +7122,9 @@ renderAppVersion();
 if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
 else refresh();
 
+function sandboxNowcastDimensions() {
+  return { width: Math.max(320, Math.round($("radar-nowcast")?.clientWidth || 360)), height: 400 };
+}
 function sandboxNowcastContext(label, detail) {
   return '<button type="button" class="horizon-nowcast-context" data-open-nowcast-link="true" aria-controls="nowcast-details" title="' + escapeText(detail) + '"><span>Nowcasting</span><strong>' + escapeText(label) + '</strong><small>Carte ↗</small></button>';
 }
@@ -7210,13 +7212,18 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
       if (previous?.label === info.label && previous.tone === info.tone && previous.end === index) previous.end++;
       else groups.push({ ...info, start: index, end: index + 1 });
     });
-    return groups.map(group => '<button type="button" class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" data-summary-target="' + target + '" aria-label="' + escapeText(time(slots[group.start].start) + '–' + time(slots[group.end - 1].end) + ' : ' + group.label) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></button>').join('');
+    return groups.map(group => {
+      const tag = kind === 'storm' ? 'div' : 'button';
+      const action = kind === 'storm' ? ' role="img"' : ' type="button" data-summary-target="' + target + '"';
+      const detail = time(slots[group.start].start) + '–' + time(slots[group.end - 1].end) + ' : ' + group.label;
+      return '<' + tag + action + ' class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></' + tag + '>';
+    }).join('');
   };
   const totalDuration = slots.at(-1).end - slots[0].start;
   const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
-  const hasStorm = slots.some(slot => slot.storm);
-  const hasWind = slots.some(slot => slot.wind >= 2);
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline" style="--horizon-slots:' + slots.length + ';--storm-row:' + (hasStorm ? '44px' : '0px') + ';--wind-row:' + (hasWind ? '44px' : '0px') + ';grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+
+
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline" style="--horizon-slots:' + slots.length + ';grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
     + sandboxRainGroups(slots).map(block).join('')
     + bands('storm', 'nowcast', slot => slot.storm ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + shortTermRiskQualifier(slot.storm.passage),

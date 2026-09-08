@@ -1210,55 +1210,33 @@ button:hover { background: #eef7fb; }
 
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
 
-.horizon-scroll{overflow-x:auto;padding:8px 12px 12px;color:#17394d}
-.horizon-timeline{display:grid;grid-template-rows:62px 130px var(--storm-row,0px) var(--wind-row,0px);min-width:660px;position:relative;isolation:isolate}
-.horizon-rain{grid-row:2/5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:23px 5px 8px;border:0;border-radius:0;background:#edf7fc;color:#18394e;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
-.horizon-rain strong{max-width:100%;font-size:14px;line-height:1.2;text-wrap:balance}
-.horizon-rain>span{font-size:12px;min-height:15px}
-.horizon-rain i{display:flex;justify-content:center;gap:3px;font-style:normal;margin-top:8px}
+.horizon-scroll{overflow-x:auto;padding:0 12px;color:#17394d}
+.horizon-timeline{display:grid;height:400px;grid-template-rows:62px minmax(180px,1fr) 48px 48px;min-width:660px;position:relative;isolation:isolate}
+.horizon-rain{grid-row:2/5;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:40px 20px 48px;align-content:start;justify-items:center;align-items:center;gap:4px;padding:23px 5px 8px;border:0;border-radius:0;background:#edf7fc;color:#18394e;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
+.horizon-rain strong{grid-row:1;max-width:100%;font-size:14px;line-height:1.2;text-wrap:balance}
+.horizon-rain>span{grid-row:2;font-size:12px;min-height:15px}
+.horizon-rain i{grid-row:3;display:flex;align-items:center;justify-content:center;height:48px;gap:3px;font-style:normal;margin:0}
 .horizon-rain svg{width:13px;height:23px}
 .horizon-rain.rain-1{background:#d3edfc}.horizon-rain.rain-2{background:#95d4f5}.horizon-rain.rain-3{background:#55b9ed}
 .horizon-rain.rain-4,.horizon-rain.rain-5{background:#168ded;color:#fff}
 .horizon-rain.hail{background:#fff;color:#15394d}.horizon-rain.hail i>svg{width:40px;height:44px}
-.horizon-rain.compact{justify-content:center;padding:10px 2px}.horizon-rain.compact strong,.horizon-rain.compact>span{display:none}.horizon-rain.compact i{margin:0}
+.horizon-rain.compact{padding-inline:2px}.horizon-rain.compact strong,.horizon-rain.compact>span{visibility:hidden}.horizon-rain.compact i{margin:0}
 .horizon-grid-lines{grid-row:2/5;grid-column:1/-1;position:relative;pointer-events:none;z-index:1}
 .horizon-grid-lines i{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(66,118,150,.24)}
 .horizon-band{z-index:2;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;overflow:hidden;margin:3px 2px;border:1px solid #d7e3e8;border-radius:10px;color:#15394d;background:#fff;font:700 12px/1.2 system-ui;cursor:pointer;padding:4px}
 .horizon-storm{grid-row:3}.horizon-wind{grid-row:4}.horizon-band>svg{width:26px;height:28px;flex-shrink:0}
 .horizon-timeline .tone-3{border-color:#e5d875;background:#fdf7e5}.horizon-timeline .tone-4{border-color:#e2a35c;background:#f8e2d0}.horizon-timeline .tone-5{border-color:#d98f8b;background:#f2cfcd}
-.horizon-axis{grid-row:1;grid-column:1/-1;position:relative;font-variant-numeric:tabular-nums;background:#e7f0f6;border-bottom:1px solid #b7cddc;margin-bottom:6px}
+.horizon-axis{grid-row:1;grid-column:1/-1;position:relative;font-variant-numeric:tabular-nums;background:transparent;margin-bottom:6px}
 .horizon-axis span{position:absolute;white-space:nowrap}
-.horizon-axis .horizon-hour-band{top:0;display:block;overflow:hidden;border-inline:1px solid #c8d9e3;height:56px;border-bottom:0;background:transparent;text-align:center;font-size:20px;font-weight:800;line-height:28px;color:#17394d}
-.horizon-axis .horizon-minute{top:30px;transform:translateX(-50%);font-size:14px;font-weight:650;color:#617783;line-height:16px}
-.horizon-axis .horizon-minute::before{content:"";position:absolute;left:50%;top:22px;height:10px;border-left:1px solid #a9bdcc}
-.horizon-nowcast-context{display:flex;align-items:center;gap:10px;max-width:100%;margin:0 12px 8px;padding:5px 0;border:0;border-radius:0;background:transparent;color:#315970;font:13px/1.4 system-ui;text-align:left;cursor:pointer}
+.horizon-axis .horizon-hour-band{top:0;display:block;overflow:hidden;border-inline:1px solid #c8d9e3;height:34px;border-bottom:2px solid #a9bdcc;border-radius:0 0 6px 6px;background:#e7f0f6;text-align:center;font-size:20px;font-weight:800;line-height:32px;color:#17394d}
+.horizon-axis .horizon-minute{top:39px;transform:translateX(-50%);font-size:14px;font-weight:650;color:#617783;line-height:16px}
+.horizon-axis .horizon-minute::before{content:"";position:absolute;left:50%;top:17px;height:6px;border-left:1px solid #a9bdcc}
+.horizon-nowcast-context{display:flex;align-items:center;gap:10px;max-width:100%;margin:10px 12px 0;padding:5px 0;border:0;border-radius:0;background:transparent;color:#315970;font:13px/1.4 system-ui;text-align:left;cursor:pointer}
 .horizon-nowcast-context>span{font-size:11px;color:#617783}.horizon-nowcast-context strong{font-weight:650}.horizon-nowcast-context small{font-size:11px;color:#397a9e}
 .horizon-nowcast-context:hover{background:transparent;text-decoration:underline}
 .horizon-timeline button:focus-visible,.horizon-nowcast-context:focus-visible{outline:2px solid #215f83;outline-offset:-2px}.horizon-timeline button:hover{filter:brightness(.98)}
 @media(max-width:700px){.horizon-scroll{margin-inline:-6px}.horizon-nowcast-context{flex-wrap:wrap;gap:4px 8px}}
-/* Même grille et mêmes marges que les cartes de prévision semaine. */
-:root{--forecast-columns:3;--forecast-column-gap:18px;--forecast-side-padding:28px}
-.daily-cards-grid{grid-template-columns:repeat(var(--forecast-columns),minmax(0,1fr));gap:var(--forecast-column-gap)}
-.week-scroll.daily-cards-scroll{padding-inline:var(--forecast-side-padding)}
-#nowcast-details:not([hidden]){display:grid;grid-template-columns:repeat(var(--forecast-columns),minmax(0,1fr));column-gap:var(--forecast-column-gap);padding-inline:var(--forecast-side-padding)}
-#nowcast-details>.nowcast-heading,#nowcast-details>.radar-nowcast{grid-column:-2/-1;min-width:0;margin-inline:0;padding-inline:0}
-#nowcast-details .nowcast-workspace{width:100%}
-@media(max-width:1100px){:root{--forecast-columns:2}}
-@media(max-width:900px){:root{--forecast-side-padding:16px}}
-@media(max-width:720px){:root{--forecast-columns:1;--forecast-column-gap:12px}}
-
-/* La synthèse et la carte occupent la même rangée que les trois colonnes semaine. */
-@media(min-width:1101px){
-  .three-hour-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:18px;align-items:start}
-  .three-hour-overview>.section-heading{grid-column:1/3;grid-row:1}
-  .three-hour-overview>.three-hour-summary{grid-column:1/3;grid-row:2;min-width:0}
-  .three-hour-overview>#nowcast-details:not([hidden]){grid-column:3;grid-row:1/3;display:block;padding:0}
-  .three-hour-overview .nowcast-heading{padding:0 0 14px}
-  .three-hour-overview .radar-nowcast{padding:0;min-height:0}
-  .three-hour-overview .storm-map>svg{height:auto;min-height:0}
-}
-@media(max-width:1100px){
-  .three-hour-overview>#nowcast-details:not([hidden]){display:block;padding:16px 0 0}
-  .three-hour-overview .nowcast-heading{padding:0 0 12px}
-  .three-hour-overview .radar-nowcast{margin:0}
-}
+/* La carte est mise de côté ; la frise utilise toute la largeur disponible. */
+.three-hour-overview{display:block}
+.three-hour-overview>.three-hour-summary{width:100%;min-width:0}
+#nowcast-details{display:none!important}
