@@ -5490,6 +5490,51 @@ function nowcastCellHasStormEvidence(cell, lightning, radarObservedAt, reference
     || nowcastCellHasIntenseRainSignal(cell, radarObservedAt, referenceTime);
 }
 
+function nowcastLocalStormHazards(cell, radar, lightning, events, now) {
+  const observedAt = Date.parse(radar?.observedAt || "");
+  const fresh = nowcastEvidenceIsFresh(radar?.observedAt, radar?.observedAt, now);
+  const local = fresh && nowcastCellLocallyObservedInterior(cell, radar);
+  const passages = (events || []).filter(event => String(event.cell?.id) === String(cell?.id)
+    && nowcastStormEtaSelection([event], [cell.id], now, cell.id).event);
+  const profiles = passages.filter(event => nowcastEtaRainEligible(event, now) && event.projectionKind === "profile")
+    .flatMap(event => (event.intensityProfile || []).filter(segment => segment.end > now && segment.start < now + 180 * 60000));
+  const rain = Math.max(0, local ? Number(radar.currentPrecipitation) || 0 : 0,
+    ...profiles.map(segment => Number(segment.intensity) || 0));
+  const points = (cell?.track?.points || []).filter(point => Number.isFinite(Number(point.minutes))
+    && Number.isFinite(Number(point.eastKm)) && Number.isFinite(Number(point.northKm)));
+  const first = points[0];
+  const next = points.find(point => Number(point.minutes) > Number(first?.minutes));
+  const elapsed = next ? Number(next.minutes) - Number(first.minutes) : 0;
+  const east = elapsed ? (Number(next.eastKm) - Number(first.eastKm)) / elapsed : 0;
+  const north = elapsed ? (Number(next.northKm) - Number(first.northKm)) / elapsed : 0;
+  // Conserver seulement les éclairs proches du point, ou dont la zone advectée
+  // traverse le voisinage de 8 km des Tatins pendant un passage confirmé.
+  const flashes = fresh && nowcastEvidenceIsFresh(lightning?.observedAt, radar.observedAt, now)
+    ? (lightning.flashes || []).filter(flash => {
+      if (!nowcastEvidenceIsFresh(flash.time, radar.observedAt, now)
+        || !Number.isFinite(Number(flash.eastKm)) || !Number.isFinite(Number(flash.northKm))
+        || radarCellPointDistance(cell, Number(flash.eastKm), Number(flash.northKm)) > 8) return false;
+      const x = Number(flash.eastKm), y = Number(flash.northKm);
+      if (local && Math.hypot(x, y) <= 8) return true;
+      const speed2 = east * east + north * north;
+      if (!speed2) return false;
+      return passages.some(event => {
+        const start = Math.max(0, (Math.max(now, event.eventStart) - observedAt) / 60000);
+        const end = Math.min(180, (event.eventEnd - observedAt) / 60000);
+        if (end <= start) return false;
+        const minutes = Math.max(start, Math.min(end, -(x * east + y * north) / speed2));
+        return Math.hypot(x + east * minutes, y + north * minutes) <= 8;
+      });
+    }).length : 0;
+  // L'indice de grêle disponible porte sur toute la cellule : aucune
+  // localisation ne permet de l'attribuer au couloir des Tatins.
+  const hailRisk = null, hailLevel = 0;
+  const rainLevel = rainIntensityStep(rain);
+  const lightningLevel = flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
+  const level = flashes > 0 || rain >= 30 ? stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) : null;
+  return { rain, rainLevel, flashes, lightningLevel, hailRisk, hailLevel, level };
+}
+
 function radarCellShapeRuns(cell) {
   return (Array.isArray(cell?.shapeRuns) ? cell.shapeRuns : []).filter(run => {
     return Number.isFinite(Number(run?.westKm))
@@ -6308,32 +6353,20 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning, radar.observedAt, now);
   const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
-  const localProjectedRainFor = cell => {
-    const projected = etaRainEvents.filter(event => String(event.cell?.id) === String(cell?.id)
-      && nowcastEtaRainEligible(event, now)
-      && event.eventEnd >= now && event.eventStart <= now + 3 * 3600000)
-      .map(event => Number(event.conditionalIntensity)).filter(Number.isFinite);
-    const currentLocal = radarCellEdgeDistance(cell) <= .5 ? Number(radar.currentPrecipitation) : null;
-    if (projected.length) return Math.max(0, ...projected, Number.isFinite(currentLocal) ? currentLocal : 0);
-    return nowcastCellRepresentativeRain(cell, radar.currentPrecipitation);
+  const localStormHazards = new Map();
+  const localHazardsFor = cell => {
+    if (!localStormHazards.has(cell.id)) localStormHazards.set(cell.id, nowcastLocalStormHazards(cell, radar, lightning, etaRainEvents, now));
+    return localStormHazards.get(cell.id);
   };
-  const stormIntensityFor = cell => {
-    const passage = Math.round(Number(cell.risks?.passage) || 0);
-    const rain = localProjectedRainFor(cell);
-    const intenseRainRisk = Math.round(Number(cell.risks?.intenseRain) || 0);
-    const hailRisk = polarimetricHailRisk(cell);
-    const flashes = flashesNearCell(cell);
-    const rainLevel = rainSynthesisStep(intenseRainRisk, rain);
-    const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
-    const lightningLevel = lightningIntensityStep(flashes);
-    const level = stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel);
-    return { cell, passage, rain, intenseRainRisk, hailRisk, flashes, rainLevel, hailLevel, lightningLevel, level };
-  };
+  const localProjectedRainFor = cell => localHazardsFor(cell).rain;
+  const stormIntensityFor = cell => ({ cell, passage: Math.round(Number(cell.risks?.passage) || 0),
+    intenseRainRisk: null, ...localHazardsFor(cell) });
   // La cellule retenue porte l'indicateur unique risque + intensité. À
   // probabilité égale, la cellule la plus intense est prioritaire.
   const passageCandidates = stormCandidateCells
     .filter(cell => Number(cell.risks?.passage) > 0)
     .map(cell => stormIntensityFor(cell))
+    .filter(candidate => candidate.level != null)
     .sort((left, right) => right.passage - left.passage || right.level - left.level || cellDistance(left.cell) - cellDistance(right.cell));
   const relevantStormIntensity = passageCandidates[0] || null;
   const relevantStormCell = relevantStormIntensity?.cell || null;
@@ -6529,7 +6562,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     }
   }
   const rainyCellCandidate = nearbyCells
-    .filter(cell => !stormCandidateCells.some(candidate => String(candidate.id) === String(cell.id))
+    .filter(cell => !passageCandidates.some(candidate => String(candidate.cell.id) === String(cell.id))
       && Number(cell.risks?.passage) > 0
       && localProjectedRainFor(cell) >= .1
       && (cellDistance(cell) <= 10
@@ -6765,7 +6798,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id)), upcomingWind, now, piafQuarterHourRain(piaf, radar));
+    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.level != null && (candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id))), upcomingWind, now, piafQuarterHourRain(piaf, radar));
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
@@ -7213,7 +7246,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved
     && !nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event)
     .sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
-  const ongoingLabel = ongoingStorm ? 'Orage ' + (ongoingStorm.level >= 4 ? 'violent' : ongoingStorm.level >= 2 ? 'modéré' : 'faible') + ' en cours · fin indéterminée' : '';
+  const ongoingLabel = ongoingStorm ? 'Orage ' + (ongoingStorm.level >= 4 ? 'violent' : ongoingStorm.level >= 2 ? 'modéré' : 'faible') + ' en cours' : '';
   const bands = (kind, target, describe) => {
     const groups = [];
     slots.forEach((slot, index) => {
