@@ -1210,9 +1210,9 @@ button:hover { background: #eef7fb; }
 
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
 
-.horizon-scroll{overflow-x:auto;padding:0 12px;color:#080d68;container-type:inline-size}
+.horizon-scroll{overflow-x:auto;padding:0 12px;color:#080d68;container-type:inline-size;border:1px solid #c8d7de;border-radius:14px;background:linear-gradient(to bottom,#eef4f6 29px,#dbe5e9 29px,#dbe5e9 30px,#fff 30px);box-shadow:0 4px 14px rgba(36,68,84,.08)}
 .horizon-timeline{display:grid;grid-template-rows:30px var(--rain-height,80px) var(--ongoing-height,0px) var(--storm-height,0px) var(--wind-height,0px);min-width:780px;position:relative;isolation:isolate}
-.horizon-rain{grid-row:2/6;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:30px 18px;align-content:start;justify-items:center;align-items:center;gap:2px;padding:8px 5px 4px;border:0;border-radius:10px 10px 0 0;background:linear-gradient(120deg,#eef9ff,#e3f4fd);color:#080d68;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
+.horizon-rain{grid-row:2/6;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:30px 18px;align-content:start;justify-items:center;align-items:center;gap:2px;padding:8px 5px 4px;border:0;border-radius:0;background:linear-gradient(120deg,#eef9ff,#e3f4fd);color:#080d68;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
 .horizon-rain strong{grid-row:1;max-width:100%;font-size:14px;line-height:1.15;text-wrap:balance}
 .horizon-rain>span{grid-row:2;font-size:12px;min-height:18px}
 .horizon-rain i{grid-row:3;display:flex;align-items:center;justify-content:center;max-width:100%;height:40px;gap:4px;font-style:normal;margin:0;color:#009dea}
@@ -1243,7 +1243,9 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-ongoing-storm::before{content:"";position:absolute;inset:0;z-index:-1;border:1px dashed #333996;border-radius:inherit;background:var(--ongoing-fill,#e2e5ec);mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end));-webkit-mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end))}
 .horizon-ongoing-storm.tone-3{--ongoing-fill:#fff0a6}.horizon-ongoing-storm.tone-4{--ongoing-fill:#ffb778}.horizon-ongoing-storm.tone-5{--ongoing-fill:#f28282}
 
-.horizon-rain.drizzle{background:linear-gradient(120deg,#f2f7f9,#e4eff3);color:#25465c}
+.horizon-rain.drizzle{background:linear-gradient(120deg,#e7f6ff,#d8efff);color:#173b52}
+
+.horizon-timeline>.horizon-axis span{top:5px}
 .three-hour-overview{display:block}
 .three-hour-overview>.three-hour-summary{width:100%;min-width:0}
 .horizon-detail-scroll{overflow-x:auto;margin:0 28px;padding:0 12px}
