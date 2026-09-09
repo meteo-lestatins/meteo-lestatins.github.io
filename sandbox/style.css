@@ -1188,6 +1188,7 @@ button:hover { background: #eef7fb; }
 
 .storm-cone.projected { fill: rgba(43, 145, 198, .16); stroke: none; filter: blur(12px); }
 .storm-cone.projected.secondary { fill: rgba(94, 147, 173, .12); stroke: none; filter: blur(12px); }
+.storm-cone.projected.shape-projection { filter: none; }
 .storm-track.projected { opacity: .92; }
 
 

@@ -5670,6 +5670,48 @@ function nowcastEtaProjectionCells(cells) {
   return (cells || []).filter(nowcastCellHasEtaProjection);
 }
 
+function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = null) {
+  const runs = radarCellShapeRuns(cell);
+  if (!runs.length || !Array.isArray(track) || track.length < 2) return [];
+  const origin = track[0];
+  const hull = points => {
+    points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const half = values => {
+      const result = [];
+      for (const point of values) {
+        while (result.length > 1 && cross(result.at(-2), result.at(-1), point) <= 0) result.pop();
+        result.push(point);
+      }
+      return result.slice(0, -1);
+    };
+    return half(points).concat(half([...points].reverse()));
+  };
+  const polygons = [];
+  for (let index = 1; index < track.length; index++) {
+    const endpoints = [track[index - 1], track[index]];
+    for (const run of runs) {
+      const corners = endpoints.flatMap(point => {
+        const dx = Number(point.eastKm) - Number(origin.eastKm);
+        const dy = Number(point.northKm) - Number(origin.northKm);
+        const radius = uncertainty ? Math.max(0, Number(point.uncertaintyGrowthKm) || 0) : 0;
+        // Octogone circonscrit : conserver toute l'enveloppe d'incertitude.
+        const offsets = radius > 0 ? Array.from({ length: 8 }, (_, i) => [
+          Math.cos((i + .5) * Math.PI / 4) * radius / Math.cos(Math.PI / 8),
+          Math.sin((i + .5) * Math.PI / 4) * radius / Math.cos(Math.PI / 8)
+        ]) : [[0, 0]];
+        return [[run.westKm, run.southKm], [run.eastKm, run.southKm],
+          [run.eastKm, run.northKm], [run.westKm, run.northKm]]
+          .flatMap(([east, north]) => offsets.map(([ox, oy]) => [Number(east) + dx + ox, Number(north) + dy + oy]));
+      });
+      if (bounds && (corners.every(p => p[0] < bounds.westKm) || corners.every(p => p[0] > bounds.eastKm)
+        || corners.every(p => p[1] < bounds.southKm) || corners.every(p => p[1] > bounds.northKm))) continue;
+      polygons.push(hull(corners));
+    }
+  }
+  return polygons;
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
   if (shapeRuns.length) {
@@ -5863,6 +5905,32 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     const geographicLength = Math.hypot(Number(end.eastKm) - Number(start.eastKm), Number(end.northKm) - Number(start.northKm)) || 1;
     const directionEast = (Number(end.eastKm) - Number(start.eastKm)) / geographicLength;
     const directionNorth = (Number(end.northKm) - Number(start.northKm)) / geographicLength;
+    if (radarCellShapeRuns(cell).length) {
+      const bounds = { westKm: -width / (2 * scale), eastKm: width / (2 * scale),
+        southKm: -height / (2 * scale), northKm: height / (2 * scale) };
+      const sweptPath = uncertainty => nowcastSweptShapePolygons(cell, track, uncertainty, bounds)
+        .map(polygon => polygon.map((point, index) => (index ? 'L' : 'M')
+          + x(point[0]).toFixed(1) + ' ' + y(point[1]).toFixed(1)).join(' ') + 'Z').join(' ');
+      const title = 'Passage projeté cellule ' + cell.id + ' · passage '
+        + (passageKnown ? Math.round(passage) + ' %' : 'incertain')
+        + ' · bleu soutenu : forme déplacée ; bleu clair : incertitude de trajectoire';
+      const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="'
+        + startX.toFixed(1) + '" y1="' + startY.toFixed(1) + '" x2="' + endX.toFixed(1) + '" y2="' + endY.toFixed(1)
+        + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + baseOpacity.toFixed(3)
+        + '"></stop><stop offset="1" stop-color="' + color + '" stop-opacity="0"></stop></linearGradient>';
+      const observedPath = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
+        + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
+      const maskId = gradientId + '-observed';
+      const mask = '<mask id="' + maskId + '" maskUnits="userSpaceOnUse" x="0" y="0" width="' + width + '" height="' + height
+        + '"><rect width="' + width + '" height="' + height + '" fill="white"></rect><path d="'
+        + observedPath + '" fill="black"></path></mask>';
+      // Un seul chemin par couche, avec le même sens de contour : les zones
+      // communes ne cumulent pas l'opacité et ne créent pas de faux trous.
+      return '<defs>' + gradient + mask + '</defs><g class="' + className + ' shape-projection chart-point" tabindex="0" data-tooltip="'
+        + escapeText(title) + '" mask="url(#' + maskId + ')"><path d="' + sweptPath(true) + '" fill-rule="nonzero" style="fill:url(#'
+        + gradientId + ');opacity:.3;stroke:none"></path><path d="' + sweptPath(false)
+        + '" fill-rule="nonzero" style="fill:url(#' + gradientId + ');stroke:none"></path></g>';
+    }
     const forwardExtent = radarCellExtent(cell, directionEast, directionNorth);
     const lateralExtent = radarCellExtent(cell, -directionNorth, directionEast, true);
     let previousExtentKm = lateralExtent;
