@@ -5675,7 +5675,9 @@ function nowcastCellHasEtaProjection(cell) {
 }
 
 function nowcastEtaProjectionCells(cells) {
-  return (cells || []).filter(nowcastCellHasEtaProjection);
+  return (cells || []).filter(cell => nowcastCellHasEtaProjection(cell)
+    || (cell?.passageEnsemble?.status === 'ready' && cell.passageEnsemble.scenarios?.length > 0
+      && cell.track?.points?.length > 1));
 }
 
 function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = null) {
@@ -5720,7 +5722,11 @@ function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = nu
   return polygons;
 }
 
+const nowcastPassageGridCache = new Map();
+
 function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
+  const cacheKey = JSON.stringify([cell.eastKm, cell.northKm, cell.shapeRuns, cell.passageEnsemble, bounds, stepKm]);
+  if (nowcastPassageGridCache.has(cacheKey)) return nowcastPassageGridCache.get(cacheKey);
   const ensemble = cell?.passageEnsemble;
   const scenarios = ensemble?.status === 'ready' ? ensemble.scenarios || [] : [];
   const columns = Math.ceil((bounds.eastKm - bounds.westKm) / stepKm);
@@ -5753,7 +5759,10 @@ function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
     }
     for (let index = 0; index < counts.length; index++) counts[index] += covered[index] * scenario.weight;
   }
-  return { counts, columns, rows, stepKm, samples, bounds };
+  const grid = { counts, columns, rows, stepKm, samples, bounds };
+  if (nowcastPassageGridCache.size >= 8) nowcastPassageGridCache.delete(nowcastPassageGridCache.keys().next().value);
+  nowcastPassageGridCache.set(cacheKey, grid);
+  return grid;
 }
 
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
@@ -5953,16 +5962,24 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       const bounds = { westKm: -width / (2 * scale), eastKm: width / (2 * scale),
         southKm: -height / (2 * scale), northKm: height / (2 * scale) };
       if (cell.passageEnsemble?.status !== 'ready') return '';
-      const grid = nowcastPassageFrequencyGrid(cell, bounds, .5);
+      const grid = nowcastPassageFrequencyGrid(cell, bounds, .25);
       const paths = new Map();
-      grid.counts.forEach((count, index) => {
-        if (!count) return;
-        const column = index % grid.columns, row = Math.floor(index / grid.columns);
-        const west = bounds.westKm + column * grid.stepKm, south = bounds.southKm + row * grid.stepKm;
-        const rectangle = 'M' + x(west).toFixed(1) + ' ' + y(south + grid.stepKm).toFixed(1)
-          + 'H' + x(west + grid.stepKm).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
-        paths.set(Math.round(count * 1e6) / 1e6, (paths.get(Math.round(count * 1e6) / 1e6) || '') + rectangle);
-      });
+      // Fusionner les mailles adjacentes de même probabilité sans modifier les valeurs.
+      for (let row = 0; row < grid.rows; row++) {
+        for (let column = 0; column < grid.columns;) {
+          const count = Math.round(grid.counts[row * grid.columns + column] * 1e6) / 1e6;
+          let endColumn = column + 1;
+          while (endColumn < grid.columns && Math.round(grid.counts[row * grid.columns + endColumn] * 1e6) / 1e6 === count) endColumn++;
+          if (count > 0) {
+            const west = bounds.westKm + column * grid.stepKm, east = bounds.westKm + endColumn * grid.stepKm;
+            const south = bounds.southKm + row * grid.stepKm;
+            const rectangle = 'M' + x(west).toFixed(1) + ' ' + y(south + grid.stepKm).toFixed(1)
+              + 'H' + x(east).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
+            paths.set(count, (paths.get(count) || '') + rectangle);
+          }
+          column = endColumn;
+        }
+      }
       const observedPath = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
         + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
       const maskId = gradientId + '-observed';
@@ -5974,7 +5991,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
         + [...paths].map(([count, path]) => {
           const frequency = count;
           const title = 'Cellule ' + cell.id + ' · ici : ' + Math.round(frequency * 100) + ' % des trajectoires simulées sur '
-            + horizon + ' min · scénarios calculés par le serveur à partir des erreurs de déplacement observées · non calibré';
+            + horizon + ' min · estimation du déplacement et de son incertitude';
           return '<path class="chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + path
             + '" shape-rendering="crispEdges" style="fill:' + color + ';fill-opacity:' + (frequency * .6).toFixed(4) + ';stroke:none"></path>';
         }).join('') + '</g>';
