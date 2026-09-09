@@ -5914,10 +5914,16 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       const title = 'Passage projeté cellule ' + cell.id + ' · passage '
         + (passageKnown ? Math.round(passage) + ' %' : 'incertain')
         + ' · bleu soutenu : forme déplacée ; bleu clair : incertitude de trajectoire';
+      const fadeLengthKm = Math.min(geographicLength, mapRadiusKm * 2);
+      const fadeEndX = x(Number(start.eastKm) + directionEast * fadeLengthKm);
+      const fadeEndY = y(Number(start.northKm) + directionNorth * fadeLengthKm);
       const gradient = '<linearGradient id="' + gradientId + '" gradientUnits="userSpaceOnUse" x1="'
-        + startX.toFixed(1) + '" y1="' + startY.toFixed(1) + '" x2="' + endX.toFixed(1) + '" y2="' + endY.toFixed(1)
-        + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + baseOpacity.toFixed(3)
+        + startX.toFixed(1) + '" y1="' + startY.toFixed(1) + '" x2="' + fadeEndX.toFixed(1) + '" y2="' + fadeEndY.toFixed(1)
+        + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + (baseOpacity * .8).toFixed(3)
+        + '"></stop><stop offset=".45" stop-color="' + color + '" stop-opacity="' + (baseOpacity * .3).toFixed(3)
         + '"></stop><stop offset="1" stop-color="' + color + '" stop-opacity="0"></stop></linearGradient>';
+      const softEdges = '<filter id="' + gradientId + '-soft" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>'
+        + '<filter id="' + gradientId + '-halo" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>';
       const observedPath = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
         + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
       const maskId = gradientId + '-observed';
@@ -5926,10 +5932,10 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
         + observedPath + '" fill="black"></path></mask>';
       // Un seul chemin par couche, avec le même sens de contour : les zones
       // communes ne cumulent pas l'opacité et ne créent pas de faux trous.
-      return '<defs>' + gradient + mask + '</defs><g class="' + className + ' shape-projection chart-point" tabindex="0" data-tooltip="'
-        + escapeText(title) + '" mask="url(#' + maskId + ')"><path d="' + sweptPath(true) + '" fill-rule="nonzero" style="fill:url(#'
+      return '<defs>' + gradient + softEdges + mask + '</defs><g class="' + className + ' shape-projection chart-point" tabindex="0" data-tooltip="'
+        + escapeText(title) + '" mask="url(#' + maskId + ')"><path filter="url(#' + gradientId + '-halo)" d="' + sweptPath(true) + '" fill-rule="nonzero" style="fill:url(#'
         + gradientId + ');opacity:.3;stroke:none"></path><path d="' + sweptPath(false)
-        + '" fill-rule="nonzero" style="fill:url(#' + gradientId + ');stroke:none"></path></g>';
+        + '" filter="url(#' + gradientId + '-soft)" fill-rule="nonzero" style="fill:url(#' + gradientId + ');stroke:none"></path></g>';
     }
     const forwardExtent = radarCellExtent(cell, directionEast, directionNorth);
     const lateralExtent = radarCellExtent(cell, -directionNorth, directionEast, true);
