@@ -7102,6 +7102,7 @@ function setNowcastOpen(open, scroll = false) {
   details.hidden = !open;
   link?.setAttribute("aria-expanded", String(open));
   titleToggle?.setAttribute("aria-expanded", String(open));
+  $("horizon-nowcast-toggle")?.setAttribute("aria-expanded", String(open));
   document.querySelector('[data-summary-target="nowcast"]')?.setAttribute("aria-expanded", String(open));
   if (open) ensureLeafletAssets()
     .then(() => initializeNowcastMapBackground(activeNowcastMapRadius))
@@ -7110,6 +7111,7 @@ function setNowcastOpen(open, scroll = false) {
 }
 
 function bindHeaderNowcastLink() {
+  $("horizon-nowcast-toggle")?.addEventListener("click", () => setNowcastOpen($("nowcast-details").hidden));
   const link = $("header-nowcast-link");
   const details = $("nowcast-details");
   const titleToggle = $("nowcast-title-toggle");
@@ -7281,7 +7283,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
 
 
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 116 : 80) + 'px;--ongoing-height:' + (ongoingStorm ? 52 : 0) + 'px;--storm-height:' + (hasStorm ? 52 : 0) + 'px;--wind-height:' + (hasWind ? 52 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 132 : 112) + 'px;--ongoing-height:' + (ongoingStorm ? 52 : 0) + 'px;--storm-height:' + (hasStorm ? 52 : 0) + 'px;--wind-height:' + (hasWind ? 52 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
     + sandboxRainGroups(slots).map(block).join('')
     + bands('storm', 'nowcast', slot => slot.storm && slot.storm !== ongoingStorm ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + (slot.storm.locallyObserved && slot.start <= now && now < slot.end ? '' : shortTermRiskQualifier(slot.storm.passage)),
@@ -7293,12 +7295,11 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
 }
 
 function sandboxToggleRainDetails() {
-  const rain = $("rain-details"), nowcast = $("nowcast-details");
-  const open = rain.hidden || nowcast.hidden;
+  const rain = $("rain-details");
+  const open = rain.hidden;
   rain.hidden = !open;
-  setNowcastOpen(open);
   document.querySelectorAll('.horizon-scroll [data-summary-target="rain"]').forEach(button => {
-    button.setAttribute("aria-controls", "rain-details nowcast-details");
+    button.setAttribute("aria-controls", "rain-details");
     button.setAttribute("aria-expanded", String(open));
   });
 }
@@ -7320,3 +7321,4 @@ function sandboxBindRainScroll() {
     }), {passive:true});
   });
 }
+
