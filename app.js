@@ -7263,11 +7263,15 @@ function sandboxRainGroups(slots) {
   });
   return groups;
 }
+function sandboxQuietBoundary(boundary, start, end) {
+  return boundary === start || boundary === end
+    || (boundary % 3600000 === 0 && boundary - start >= 30 * 60000 && end - boundary >= 30 * 60000);
+}
 function sandboxThreeHourAxis(slots, time) {
   const start = slots[0].start, end = slots.at(-1).end;
   const position = value => (value - start) / (end - start) * 100;
   const ticks = [start, ...slots.map(slot => slot.end)].filter(boundary => boundary % 900000 === 0).map(boundary =>
-    '<span class="horizon-minute" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
+    '<span class="horizon-minute' + (sandboxQuietBoundary(boundary, start, end) ? '' : ' quiet-minor') + '" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
   return '<div class="horizon-axis">' + ticks.join('') + '</div>';
 }
 function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
@@ -7365,6 +7369,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const hasStorm = slots.some(slot => slot.storm && slot.storm !== ongoingStorm);
   const hasWind = slots.some(slot => slot.wind >= 2);
   const hasHail = slots.some(slot => slot.hail);
+  const quiet = !hasStorm && !hasWind && !hasHail && !ongoingStorm && slots.every(slot => slot.label === "Pas de pluie" && slot.total === 0);
   // Fin du premier épisode pluvieux : ne pas prolonger jusqu'à une reprise séparée.
   let rainEnd = slots[0].start;
   for (const slot of slots) {
@@ -7374,10 +7379,10 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const totalDuration = slots.at(-1).end - slots[0].start;
   const fadeStart = (rainEnd - slots[0].start) / totalDuration * 100;
   const fadeEnd = Math.min(100, fadeStart + 30 * 60000 / totalDuration * 100);
-  const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
+  const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i class="' + (sandboxQuietBoundary(boundary, slots[0].start, slots.at(-1).end) ? '' : 'quiet-minor') + '" style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
 
 
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 132 : 112) + 'px;--ongoing-height:' + (ongoingStorm ? 52 : 0) + 'px;--storm-height:' + (hasStorm ? 52 : 0) + 'px;--wind-height:' + (hasWind ? 52 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+  return '<section class="horizon-scroll' + (quiet ? ' is-quiet' : '') + '" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 132 : 112) + 'px;--ongoing-height:' + (ongoingStorm ? 52 : 0) + 'px;--storm-height:' + (hasStorm ? 52 : 0) + 'px;--wind-height:' + (hasWind ? 52 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
     + sandboxRainGroups(slots).map(block).join('')
     + bands('storm', 'nowcast', slot => slot.storm && slot.storm !== ongoingStorm ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + (slot.storm.locallyObserved && slot.start <= now && now < slot.end ? '' : shortTermRiskQualifier(slot.storm.passage)),
