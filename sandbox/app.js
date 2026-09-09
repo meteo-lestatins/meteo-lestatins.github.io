@@ -4481,6 +4481,7 @@ function piafQuarterHourRain(piaf, radar = null) {
       slotTime: new Date(complete ? bucketEnd : intervalEnd),
       endTime: bucketEnd,
       seconds: Number.isFinite(runTime) ? (intervalEnd - runTime) / 1000 : Number(items.at(-1).seconds),
+      baseRainSource: piaf?.source || "piaf",
       precipitation: sum("precipitation"),
       nowcastPrecipitation: sum("totalPrecipitation"),
       radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
@@ -7158,21 +7159,29 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     const start = index === 0 ? Math.floor(Number(interval.intervalStart) / 900000) * 900000 : Number(interval.intervalStart);
     const end = Number(interval.intervalEnd);
     const samples = steps.filter(item => item.intervalStart < end && item.intervalEnd > start);
-    const wet = samples.filter(item => Number(item.totalPrecipitation) > .01 + 1e-9);
+    // Qualifier le même cumul de quart d'heure que le diagramme en barres.
+    // Ne pas supprimer les petits pas de 5 min avant de les additionner.
+    const portion = item => Math.max(0, Math.min(end, item.intervalEnd) - Math.max(start, item.intervalStart)) / (item.intervalEnd - item.intervalStart);
+    const sum = field => samples.reduce((total, item) => total + Math.max(0, Number(item[field]) || 0) * portion(item), 0);
+    const archived = interval.baseRainSource === "radar-archive" || samples.some(item => item.baseRainSource === "radar-archive");
+    const base = archived ? 0 : Math.max(0, Number(interval.precipitation ?? sum("basePrecipitation")) || 0);
     const active = events.filter(event => nowcastEtaRainEligible(event, now)
       && event.eventStart < end && event.eventEnd > start
-      && nowcastEtaRainAmount([event], Math.max(start, event.eventStart), Math.min(end, event.eventEnd), now) > .01 + 1e-9);
-    const peak = Math.max(0, ...wet.map(item => rainRateFromAccumulation(item.totalPrecipitation, item.intervalEnd - item.intervalStart)),
-      ...active.map(event => Number(event.conditionalIntensity) || 0));
+      && nowcastEtaRainAmount([event], Math.max(start, event.eventStart), Math.min(end, event.eventEnd), now) > 0);
+    const etaAmount = nowcastEtaRainAmount(active, start, end, now);
+    const total = Math.max(Number(interval.totalPrecipitation) || 0, sum("totalPrecipitation"), active.length ? etaAmount : 0, base);
+    const nowcast = archived || Number(interval.effectiveRadarAmendment) > 0 || Number(interval.effectiveEtaAmendment) > 0
+      || sum("effectiveRadarAmendment") > 0 || sum("effectiveEtaAmendment") > 0
+      || Number(interval.radarPrecipitation) > 0 || interval.radarCellOverPoint === true
+      || samples.some(item => Number(item.radarPrecipitation) > 0 || item.radarCellOverPoint === true)
+      || active.length > 0;
+    const corroborated = base > 0 && nowcast;
+    const wet = total > .01 + 1e-9 || (total > 0 && corroborated);
+    const peak = wet ? Math.max(rainRateFromAccumulation(total, end - start),
+      ...samples.map(item => rainRateFromAccumulation(Number(item.totalPrecipitation) || 0, item.intervalEnd - item.intervalStart)),
+      ...active.map(event => Number(event.conditionalIntensity) || 0)) : 0;
     const level = peak > 0 ? Math.max(1, rainIntensityStep(peak)) : 0;
-    // La corroboration doit porter sur le même pas que le signal nowcasting.
-    const uncorroborated = wet.some(item =>
-      (Number(item.effectiveRadarAmendment) > 0 || Number(item.effectiveEtaAmendment) > 0 || item.baseRainSource === "radar-archive")
-      && !(item.baseRainSource !== "radar-archive" && Number(item.basePrecipitation) > .01 + 1e-9))
-      || active.some(event => !wet.some(item => item.intervalStart < event.eventEnd && item.intervalEnd > event.eventStart
-        && item.baseRainSource !== "radar-archive" && Number(item.basePrecipitation) > .01 + 1e-9));
-    const risks = active.map(event => Number(event.passage)).filter(Number.isFinite);
-    const qualifier = uncorroborated ? "possible" : risks.length ? shortTermRiskQualifier(Math.max(...risks)).trim() : "";
+    const qualifier = wet && nowcast && !corroborated ? "possible" : "";
     // Comme sur main, une présence observée au point vaut ETA 0 min.
     // Sans projection de durée, elle ne couvre que le créneau courant.
     const storms = candidates.filter(candidate => {
