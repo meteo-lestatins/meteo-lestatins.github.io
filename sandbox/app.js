@@ -1,4 +1,4 @@
-﻿const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const runtimeConfig = window.METEO_RUNTIME_CONFIG && typeof window.METEO_RUNTIME_CONFIG === "object"
   ? window.METEO_RUNTIME_CONFIG
   : {};
@@ -5765,6 +5765,59 @@ function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
   return grid;
 }
 
+function nowcastMotionCone(cell, track) {
+  const start = track?.[0], end = track?.at(-1);
+  const duration = Number(end?.minutes) - Number(start?.minutes);
+  if (!start || !end || duration <= 0) return null;
+  const dx = end.eastKm - start.eastKm, dy = end.northKm - start.northKm;
+  const distance = Math.hypot(dx, dy);
+  if (distance < .01) return null;
+  const east = dx / distance, north = dy / distance;
+  const lateral = radarCellShapeRuns(cell).flatMap(run => [
+    [run.westKm, run.southKm], [run.eastKm, run.southKm],
+    [run.eastKm, run.northKm], [run.westKm, run.northKm]
+  ]).map(([x, y]) => Math.abs(-(x - start.eastKm) * north + (y - start.northKm) * east));
+  const halfWidth = Math.max(.5, ...lateral);
+  const ensemble = cell?.passageEnsemble;
+  // Les anciens jeux de données restent lisibles : leur dispersion est ramenée
+  // autour de l'axe de la trajectoire, sans dessiner chaque scénario séparément.
+  let angle = Number(ensemble?.angleSpreadDegrees) * Math.PI / 180;
+  if (!Number.isFinite(angle)) {
+    const scenarios = ensemble?.scenarios || [];
+    const total = scenarios.reduce((sum, s) => sum + s.weight, 0);
+    angle = total > 0 ? Math.sqrt(scenarios.reduce((sum, s) => sum + s.weight
+      * Math.atan2(s.velocityNorth * east - s.velocityEast * north,
+        s.velocityEast * east + s.velocityNorth * north) ** 2, 0) / total) * 2 : .25;
+  }
+  angle = Math.max(.06, Math.min(Math.PI / 3, angle));
+  const speedSpread = Math.max(0, Math.min(.75, Number(ensemble?.speedSpread) || 0));
+  const length = distance * (1 + speedSpread);
+  return { start, east, north, halfWidth, length, endHalfWidth: halfWidth + length * Math.tan(angle),
+    axisEnd: { eastKm: start.eastKm + dx, northKm: start.northKm + dy } };
+}
+
+function nowcastMotionConeMarkup(cell, track, x, y, color, id) {
+  const cone = nowcastMotionCone(cell, track);
+  if (!cone) return '';
+  const point = (along, across) => [x(cone.start.eastKm + along * cone.east - across * cone.north),
+    y(cone.start.northKm + along * cone.north + across * cone.east)];
+  const first = point(0, 0);
+  const axisLength = Math.hypot(cone.axisEnd.eastKm - cone.start.eastKm, cone.axisEnd.northKm - cone.start.northKm);
+  // Ces repères ne sont pas des aplats : seule la probabilité colore la carte.
+  const edges = [-1, 1].map(side => 'M' + point(0, side * cone.halfWidth).join(' ')
+    + 'L' + point(axisLength, side * cone.halfWidth).join(' ')).join('');
+  const observed = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm) + ' ' + y(run.northKm)
+    + 'H' + x(run.eastKm) + 'V' + y(run.southKm) + 'H' + x(run.westKm) + 'Z').join('');
+  const mask = '<mask id="' + id + '-shape" maskUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000">'
+    + '<rect x="-10000" y="-10000" width="20000" height="20000" fill="white"/><path d="' + observed + '" fill="black"/></mask>';
+  const title = 'Cellule ' + cell.id + ' · axe et largeur de la projection centrale · les aplats bleus indiquent la probabilité de passage';
+  return '<defs>' + mask + '</defs><g class="motion-axis-cone chart-point" tabindex="0" data-tooltip="'
+    + escapeText(title) + '" mask="url(#' + id + '-shape)">'
+    + '<path class="motion-width" d="' + edges + '" fill="none" stroke="' + color + '" stroke-opacity=".4" stroke-width="1" stroke-dasharray="2 5"/>'
+    + '<path class="motion-axis" d="M' + first.join(' ') + 'L' + [x(cone.axisEnd.eastKm), y(cone.axisEnd.northKm)].join(' ')
+    + '" fill="none" stroke="' + color + '" stroke-opacity=".65" stroke-width="1.5" stroke-dasharray="6 5"/></g>';
+}
+
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
   if (shapeRuns.length) {
@@ -5987,14 +6040,17 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
         + '"><rect width="' + width + '" height="' + height + '" fill="white"></rect><path d="'
         + observedPath + '" fill="black"></path></mask>';
       const horizon = Math.round(Number(track.at(-1).minutes) || 0);
-      return '<defs>' + mask + '</defs><g class="' + className + ' shape-projection" mask="url(#' + maskId + ')">'
+      const smoothingId = gradientId + '-probability-smoothing';
+      const smoothing = '<filter id="' + smoothingId + '" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">'
+        + '<feGaussianBlur stdDeviation="' + Math.max(.8, Math.min(2, scale * .18)).toFixed(2) + '"/></filter>';
+      return '<defs>' + mask + smoothing + '</defs><g class="' + className + ' shape-projection" mask="url(#' + maskId + ')"><g filter="url(#' + smoothingId + ')">'
         + [...paths].map(([count, path]) => {
           const frequency = count;
           const title = 'Cellule ' + cell.id + ' · ici : ' + Math.round(frequency * 100) + ' % des trajectoires simulées sur '
             + horizon + ' min · estimation du déplacement et de son incertitude';
           return '<path class="chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + path
             + '" shape-rendering="crispEdges" style="fill:' + color + ';fill-opacity:' + (frequency * .6).toFixed(4) + ';stroke:none"></path>';
-        }).join('') + '</g>';
+        }).join('') + '</g></g>' + nowcastMotionConeMarkup(cell, track, x, y, color, gradientId);
     }
     const forwardExtent = radarCellExtent(cell, directionEast, directionNorth);
     const lateralExtent = radarCellExtent(cell, -directionNorth, directionEast, true);
@@ -6130,7 +6186,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
     '</svg>' + (etaProjectionCells.some(cell => radarCellShapeRuns(cell).length)
       ? (etaProjectionCells.some(cell => cell.passageEnsemble?.status === 'ready')
-        ? '<div class="nowcast-probability-legend" title="Estimation du passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
+        ? '<div class="nowcast-probability-legend" title="Probabilité estimée de passage sur l’horizon annoncé. Les pointillés indiquent l’axe et la largeur projetée, sans garantir le passage.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
         : '<div class="nowcast-probability-legend">Probabilité en cours d’estimation</div>') : '')
     + cellOverlays.join("") + '</div>';
 }
