@@ -1533,11 +1533,16 @@ function nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar = null) {
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
 }
 
+function nowcastCellPassageObserved(cell, radar) {
+  return (Array.isArray(cell?.shapeRuns) && cell.shapeRuns.length > 0 && nowcastCellContainsPoint(cell, 0, 0))
+    || nowcastCellLocallyObservedInterior(cell, radar);
+}
+
 function nowcastDisplayedCellPassageRisk(cell, reliableEvent, radar = null) {
+  if (nowcastCellPassageObserved(cell, radar)) return 100;
   if (cell?.passageEnsemble?.status === 'ready' && Number.isFinite(cell.passageEnsemble.pointProbability)) {
     return Math.round(cell.passageEnsemble.pointProbability * 100);
   }
-  if (nowcastCellLocallyObservedInterior(cell, radar)) return 100;
   const announcedPassage = nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar);
   const passage = announcedPassage ?? Number(cell?.risks?.passage);
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
@@ -6108,8 +6113,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
     '</svg>' + (etaProjectionCells.some(cell => radarCellShapeRuns(cell).length)
       ? (etaProjectionCells.some(cell => cell.passageEnsemble?.status === 'ready')
-        ? '<div class="nowcast-probability-legend" title="Fréquence de passage des scénarios du serveur, construits à partir des erreurs de déplacement mesurées sur les formes radar. Même calcul que le passage aux Tatins. Estimation non calibrée ; forme supposée persistante.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 % <small>Sans bleu : historique insuffisant ou passage nul dans les scénarios</small></div>'
-        : '<div class="nowcast-probability-legend">Probabilités locales : historique fiable insuffisant</div>') : '')
+        ? '<div class="nowcast-probability-legend" title="Estimation du passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
+        : '<div class="nowcast-probability-legend">Probabilité en cours d’estimation</div>') : '')
     + cellOverlays.join("") + '</div>';
 }
 
@@ -6673,11 +6678,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     // confirmée sur plusieurs scans. La synthèse 3 h reste, elle, plus prudente.
     const passageRisk = nowcastDisplayedCellPassageRisk(cell, reliablePassageEvent, radar);
     const passageText = cell.passageEnsemble?.status === 'insufficient-observations'
+      && !nowcastCellPassageObserved(cell, radar)
       ? 'incertain'
       : passageRisk == null ? "incertain" : passageRisk + " %";
-    const historyCount = Number(cell.passageEnsemble?.observationCount) || 0;
-    const historyText = cell.passageEnsemble?.status === 'insufficient-observations'
-      ? 'Historique insuffisant · ' + historyCount + (historyCount > 1 ? ' mesures fiables' : ' mesure fiable') : '';
     const hailRisk = polarimetricHailRisk(cell);
     const rainRisk = Math.round(Number(risks.intenseRain) || 0);
     const rainIntensity = Number(cell.maximum);
@@ -6697,7 +6700,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const lightningPictogram = nowcastMetricPictogram("lightning", lightningLevel, lightningLabel, true, true, false);
     const distanceKm = cellDistance(cell);
     const distance = distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const etaMinutes = nowcastCellLocallyObservedInterior(cell, radar)
+    const etaMinutes = nowcastCellPassageObserved(cell, radar)
       ? 0
       : reliablePassageEvent
         ? Math.max(0, (Number(reliablePassageEvent.eventStart) - now) / 60000)
@@ -6715,11 +6718,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const confidence = cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence));
     const confidenceText = Number.isFinite(confidence) ? confidence + " %" : "—";
     const label = "Cellule " + cell.id + " · bord à " + distance + " des Tatins · passage " + passageText + " · " + etaDetail
-      + (historyText ? " · " + historyText : "")
       + " · grêle " + hailLevel + " sur 5 · pluie " + rainLevel + " sur 5 · foudre " + lightningLevel + " sur 5"
       + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
     const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + escapeText(passageText) + '</b><b>ETA ' + escapeText(etaText) + '</b></div>'
-      + (historyText ? '<div class="nowcast-cell-map-history">' + escapeText(historyText) + '</div>' : '')
       + '<div class="nowcast-cell-map-intensities" aria-label="Intensités grêle, pluie et foudre"><span class="hail">' + hailPictogram + '</span><span class="rain">' + rainPictogram + '</span><span class="lightning">' + lightningPictogram + '</span></div>'
       + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
     return { tone: riskTone(passageRisk || 0), label, markup, passageRisk };
