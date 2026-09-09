@@ -7144,14 +7144,9 @@ function sandboxRainGroups(slots) {
 function sandboxThreeHourAxis(slots, time) {
   const start = slots[0].start, end = slots.at(-1).end;
   const position = value => (value - start) / (end - start) * 100;
-  const hours = [];
-  for (let hour = Math.floor(start / 3600000) * 3600000; hour < end; hour += 3600000) {
-    const left = Math.max(start, hour), right = Math.min(end, hour + 3600000);
-    hours.push('<span class="horizon-hour-band" style="left:' + position(left) + '%;width:' + (position(right) - position(left)) + '%" aria-label="' + time(left) + '–' + time(right) + '">' + (right - left >= 15 * 60000 ? Number(time(hour).split(":")[0]) + 'H' : '') + '</span>');
-  }
   const ticks = [start, ...slots.map(slot => slot.end)].map(boundary =>
-    '<span class="horizon-minute" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary).split(":")[1] + '</span>');
-  return '<div class="horizon-axis">' + hours.join('') + ticks.join('') + '</div>';
+    '<span class="horizon-minute" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
+  return '<div class="horizon-axis">' + ticks.join('') + '</div>';
 }
 function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
   return intervals.filter(interval => Number(interval.intervalEnd) > now).map((interval, index) => {
@@ -7206,7 +7201,6 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const time = value => hourFormat.format(new Date(value));
   const stormIcon = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 25a7 7 0 0 1 0-14 10 10 0 0 1 19-3 8 8 0 0 1 3 17Z" fill="#e8eff5" stroke="currentColor" stroke-width="2.5"/><path d="m21 18-8 13h7l-3 8 12-16h-8l3-5Z" fill="#e8bb32" stroke="currentColor" stroke-width="1.5"/></svg>';
   const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
-  const drop = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 1C9 7 2 14 2 19a10 10 0 0 0 20 0C22 14 15 7 12 1Z" fill="currentColor"/></svg>';
   const windIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7h12c6 0 6-6 1-6M2 12h17c5 0 5 7 0 7M2 17h7c5 0 5 6 1 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const block = ({ slot, startIndex, endIndex }) => {
     const qualifier = slot.hail ? shortTermRiskQualifier(slot.storm.hailRisk).trim() : slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
@@ -7214,7 +7208,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
     const tone = slot.hail ? probabilityStep(slot.storm.hailRisk) : 0;
     const compact = slot.end - slot.start < 15 * 60000;
     const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie");
-    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span><i aria-hidden="true">' + (slot.hail ? hailIcon : drop.repeat(slot.level ? (slot.label === 'Gouttes' ? 1 : Math.min(5, slot.level + 1)) : 0)) + '</i></button>';
+    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span>' + (slot.hail ? '<i aria-hidden="true">' + hailIcon + '</i>' : '') + '</button>';
   };
   const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved
     && !nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event)
@@ -7236,17 +7230,32 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
       return '<' + tag + action + ' class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></' + tag + '>';
     }).join('');
   };
+  const hasStorm = slots.some(slot => slot.storm && slot.storm !== ongoingStorm);
+  const hasWind = slots.some(slot => slot.wind >= 2);
+  const hasHail = slots.some(slot => slot.hail);
+  // Fin du premier épisode pluvieux : ne pas prolonger jusqu'à une reprise séparée.
+  let rainEnd = slots[0].start;
+  for (const slot of slots) {
+    if (!slot.level) break;
+    rainEnd = slot.end;
+  }
   const totalDuration = slots.at(-1).end - slots[0].start;
+  const fadeStart = (rainEnd - slots[0].start) / totalDuration * 100;
+  const fadeEnd = Math.min(100, fadeStart + 30 * 60000 / totalDuration * 100);
   const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
 
 
-  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+  const hourGuides = [];
+  for (let hour = Math.ceil(slots[0].start / 3600000) * 3600000; hour <= slots.at(-1).end; hour += 3600000) {
+    hourGuides.push('<i class="horizon-hour-line" style="left:' + (hour - slots[0].start) / totalDuration * 100 + '%"></i>');
+  }
+  return '<section class="horizon-scroll" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 102 : 66) + 'px;--ongoing-height:' + (ongoingStorm ? 40 : 0) + 'px;--storm-height:' + (hasStorm ? 40 : 0) + 'px;--wind-height:' + (hasWind ? 40 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
     + sandboxRainGroups(slots).map(block).join('')
     + bands('storm', 'nowcast', slot => slot.storm && slot.storm !== ongoingStorm ? {
       label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + (slot.storm.locallyObserved && slot.start <= now && now < slot.end ? '' : shortTermRiskQualifier(slot.storm.passage)),
       tone: stormRiskIntensityStep(slot.storm.locallyObserved && slot.start <= now && now < slot.end ? 5 : probabilityStep(slot.storm.passage), slot.storm.level) } : null)
-    + (ongoingStorm ? '<div role="img" class="horizon-band horizon-ongoing-storm tone-' + stormRiskIntensityStep(5, ongoingStorm.level) + '" aria-label="' + escapeText(ongoingLabel) + '">' + stormIcon + '<span>' + escapeText(ongoingLabel) + '</span></div>' : '')
+    + (ongoingStorm ? '<div role="img" class="horizon-band horizon-ongoing-storm tone-' + stormRiskIntensityStep(5, ongoingStorm.level) + '" style="--storm-fade-start:' + fadeStart + '%;--storm-fade-end:' + fadeEnd + '%" aria-label="' + escapeText(ongoingLabel) + '">' + stormIcon + '<span>' + escapeText(ongoingLabel) + '</span></div>' : '')
     + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
-    + '<div class="horizon-grid-lines" aria-hidden="true">' + guides + '</div>'
+    + '<div class="horizon-grid-lines" aria-hidden="true">' + guides + hourGuides.join('') + '</div>'
     + sandboxThreeHourAxis(slots, time) + '</div></section>';
 }
