@@ -6673,8 +6673,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     // confirmée sur plusieurs scans. La synthèse 3 h reste, elle, plus prudente.
     const passageRisk = nowcastDisplayedCellPassageRisk(cell, reliablePassageEvent, radar);
     const passageText = cell.passageEnsemble?.status === 'insufficient-observations'
-      ? 'incertain · historique ' + cell.passageEnsemble.observationCount + '/6'
+      ? 'incertain'
       : passageRisk == null ? "incertain" : passageRisk + " %";
+    const historyCount = Number(cell.passageEnsemble?.observationCount) || 0;
+    const historyText = cell.passageEnsemble?.status === 'insufficient-observations'
+      ? 'Historique insuffisant · ' + historyCount + (historyCount > 1 ? ' mesures fiables' : ' mesure fiable') : '';
     const hailRisk = polarimetricHailRisk(cell);
     const rainRisk = Math.round(Number(risks.intenseRain) || 0);
     const rainIntensity = Number(cell.maximum);
@@ -6712,9 +6715,11 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const confidence = cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence));
     const confidenceText = Number.isFinite(confidence) ? confidence + " %" : "—";
     const label = "Cellule " + cell.id + " · bord à " + distance + " des Tatins · passage " + passageText + " · " + etaDetail
+      + (historyText ? " · " + historyText : "")
       + " · grêle " + hailLevel + " sur 5 · pluie " + rainLevel + " sur 5 · foudre " + lightningLevel + " sur 5"
       + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
     const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + escapeText(passageText) + '</b><b>ETA ' + escapeText(etaText) + '</b></div>'
+      + (historyText ? '<div class="nowcast-cell-map-history">' + escapeText(historyText) + '</div>' : '')
       + '<div class="nowcast-cell-map-intensities" aria-label="Intensités grêle, pluie et foudre"><span class="hail">' + hailPictogram + '</span><span class="rain">' + rainPictogram + '</span><span class="lightning">' + lightningPictogram + '</span></div>'
       + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
     return { tone: riskTone(passageRisk || 0), label, markup, passageRisk };
