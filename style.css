@@ -1243,7 +1243,7 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-ongoing-storm::before{content:"";position:absolute;inset:0;z-index:-1;border:1px dashed #333996;border-radius:inherit;background:var(--ongoing-fill,#e2e5ec);mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end));-webkit-mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end))}
 .horizon-ongoing-storm.tone-3{--ongoing-fill:#fff0a6}.horizon-ongoing-storm.tone-4{--ongoing-fill:#ffb778}.horizon-ongoing-storm.tone-5{--ongoing-fill:#f28282}
 
-.horizon-rain.drizzle{background:linear-gradient(120deg,#e7f6ff,#d8efff);color:#173b52}
+.horizon-rain.drizzle{background:linear-gradient(120deg,#d6eaf5,#c4dfed);box-shadow:inset 0 -3px #87b6cf;color:#173b52}
 
 .horizon-timeline>.horizon-axis span{top:5px}
 
