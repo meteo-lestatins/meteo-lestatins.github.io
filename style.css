@@ -1250,7 +1250,7 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-timeline>.horizon-axis span:first-child{margin-left:10px}
 .horizon-timeline>.horizon-axis span[style="left:100%"]{margin-left:-10px}
 
-#horizon-nowcast-toggle{margin-left:auto;border:0;background:none;color:#173b52;font:700 16px/1.3 system-ui;cursor:pointer;padding:4px 0 4px 12px}
+#horizon-nowcast-toggle{margin-left:auto;border:0;background:none;color:#173f57;font-family:inherit;font-size:20px;font-weight:700;line-height:normal;letter-spacing:-.015em;cursor:pointer;padding:4px 0 4px 12px}
 #horizon-nowcast-toggle::after{content:"⌄";display:inline-block;margin-left:8px}
 #horizon-nowcast-toggle[aria-expanded="true"]::after{content:"⌃"}
 .three-hour-overview{display:block}
