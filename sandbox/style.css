@@ -1211,7 +1211,7 @@ button:hover { background: #eef7fb; }
 .nowcast-map-column .target-point text{font-size:9px!important;font-weight:800}
 
 .horizon-scroll{overflow-x:auto;padding:0 12px;color:#080d68;container-type:inline-size}
-.horizon-timeline{display:grid;grid-template-rows:28px var(--rain-height,66px) var(--ongoing-height,0px) var(--storm-height,0px) var(--wind-height,0px);min-width:780px;position:relative;isolation:isolate}
+.horizon-timeline{display:grid;grid-template-rows:30px var(--rain-height,80px) var(--ongoing-height,0px) var(--storm-height,0px) var(--wind-height,0px);min-width:780px;position:relative;isolation:isolate}
 .horizon-rain{grid-row:2/6;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:30px 18px;align-content:start;justify-items:center;align-items:center;gap:2px;padding:8px 5px 4px;border:0;border-radius:10px 10px 0 0;background:linear-gradient(120deg,#eef9ff,#e3f4fd);color:#080d68;font:inherit;cursor:pointer;min-width:0;overflow:hidden}
 .horizon-rain strong{grid-row:1;max-width:100%;font-size:14px;line-height:1.15;text-wrap:balance}
 .horizon-rain>span{grid-row:2;font-size:12px;min-height:18px}
@@ -1234,9 +1234,8 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-timeline .tone-5.horizon-band{background:linear-gradient(110deg,#ffd3bd,#f28282)}
 .horizon-axis{grid-row:1;grid-column:1/-1;position:relative;font-variant-numeric:tabular-nums}
 .horizon-axis span{position:absolute;top:0;white-space:nowrap;transform:translateX(-50%);font-size:11px;line-height:20px;color:#315970}
-.horizon-axis span[title$=":00"],.horizon-axis span:first-child,.horizon-axis span:last-child{font-size:12px;font-weight:800;color:#17394d}
-.horizon-axis span:first-child{transform:none}.horizon-axis span:last-child{transform:translateX(-100%)}
-.horizon-grid-lines .horizon-hour-line{border-left:1px solid #54718a;top:-7px}
+.horizon-axis span[title$=":00"],.horizon-axis span:first-child,.horizon-axis span[style="left:100%"]{font-size:12px;font-weight:800;color:#17394d}
+.horizon-axis span:first-child{transform:none}.horizon-axis span[style="left:100%"]{transform:translateX(-100%)}
 .horizon-timeline button:focus-visible{outline:3px solid #080d68;outline-offset:-3px}.horizon-timeline button:hover{filter:brightness(.97)}
 @media(max-width:700px){.horizon-scroll{margin-inline:-6px}.horizon-rain strong{font-size:14px}.horizon-band{font-size:12px}}
 
