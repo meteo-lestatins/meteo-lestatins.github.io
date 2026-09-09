@@ -6800,6 +6800,8 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   if (summaryElement) {
     summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.level != null && (candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id))), upcomingWind, now, piafQuarterHourRain(piaf, radar));
     initializeThreeHourMessageSequence(summaryElement);
+    summaryElement.querySelector(".horizon-scroll")?.addEventListener("click", event => { if (!event.target.closest("button")) sandboxToggleRainDetails(); });
+    sandboxBindRainScroll();
     summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
       if (button.dataset.summaryTarget === "wind48") {
         button.setAttribute("aria-controls", "panel-48h");
@@ -6811,9 +6813,10 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       button.setAttribute("aria-controls", details?.id || "");
       button.setAttribute("aria-expanded", String(details ? !details.hidden : false));
       button.addEventListener('click', () => {
+        if (button.dataset.summaryTarget === "rain" && button.closest(".horizon-scroll")) { sandboxToggleRainDetails(); return; }
         if (!details) return;
         if (button.dataset.summaryTarget === "nowcast") {
-          setNowcastOpen(true, true);
+          setNowcastOpen(details.hidden, details.hidden);
           return;
         }
         details.hidden = !details.hidden;
@@ -6846,7 +6849,7 @@ function renderPiaf(piaf, radar = null) {
   piafBaseTime.setMilliseconds(0);
   // PIAF arrive toutes les 5 minutes. La frise publique regroupe trois pas
   // afin de présenter des cumuls exacts de 15 minutes issus du même run.
-  const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf, radar);
+  const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf, radar).filter(item => item.intervalEnd > appNow());
   const slotTimes = values.map(item => item.slotTime || (isTimedForecast ? new Date(item.time) : new Date(piafBaseTime.getTime() + item.seconds * 1000)));
   const precipitationFor = item => Number(item.nowcastPrecipitation ?? item.precipitation) || 0;
   const slotIntervalFor = (item, index) => {
@@ -6915,7 +6918,7 @@ function renderPiaf(piaf, radar = null) {
     // Si une quantité est dessinée, afficher cette quantité plutôt qu'un 0 %
     // provenant d'une source probabiliste distincte.
     const label = trace ? "pluie faible" : wet ? precipitation.toFixed(2) + " mm" : risk ? probability + "%" : "";
-    const slotTime = hourFormat.format(slotTimes[index]);
+    const slotTime = hourFormat.format(new Date(slotIntervals[index].start)) + "–" + hourFormat.format(new Date(slotIntervals[index].end));
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
     const detail = isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail;
@@ -6969,6 +6972,7 @@ function renderPiaf(piaf, radar = null) {
   const noRainPeriod = !isOpenMeteo && values.every(item => precipitationFor(item) <= 0)
     ? '<span class="now-no-rain-period">Pas de pluie</span>'
     : '';
+  sandboxSyncRainDetails(slotIntervals);
   $("rain-bars").innerHTML = slices + aversePeriods + cellPeriods + noRainPeriod;
   $("rain-bars").querySelectorAll("[data-open-nowcast]").forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
@@ -7091,7 +7095,6 @@ async function renderAppVersion() {
 }
 
 function setNowcastOpen(open, scroll = false) {
-  return; // Carte mise de côté pendant la refonte de la frise.
   const link = $("header-nowcast-link");
   const details = $("nowcast-details");
   const titleToggle = $("nowcast-title-toggle");
@@ -7113,9 +7116,9 @@ function bindHeaderNowcastLink() {
   if (!link || !details || !titleToggle) return;
   link.addEventListener("click", event => {
     event.preventDefault();
-    setNowcastOpen(true, true);
+    setNowcastOpen(details.hidden, details.hidden);
   });
-
+  titleToggle.addEventListener("click", () => setNowcastOpen(details.hidden));
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-open-nowcast-link]");
     if (!trigger) return;
@@ -7157,7 +7160,7 @@ if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayloa
 else refresh();
 
 function sandboxNowcastDimensions() {
-  return { width: Math.max(320, Math.round($("radar-nowcast")?.clientWidth || 360)), height: 400 };
+  return { width: window.matchMedia("(max-width: 600px)").matches ? 360 : 640, height: 360 };
 }
 function sandboxNowcastContext(label, detail) {
   return '<button type="button" class="horizon-nowcast-context" data-open-nowcast-link="true" aria-controls="nowcast-details" title="' + escapeText(detail) + '"><span>Nowcasting</span><strong>' + escapeText(label) + '</strong><small>Carte ↗</small></button>';
@@ -7241,7 +7244,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
     const tone = slot.hail ? probabilityStep(slot.storm.hailRisk) : 0;
     const compact = slot.end - slot.start < 15 * 60000;
     const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie");
-    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span>' + (slot.hail ? '<i aria-hidden="true">' + hailIcon + '</i>' : '') + '</button>';
+    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.label === 'Gouttes' ? ' drizzle' : '') + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span>' + (slot.hail ? '<i aria-hidden="true">' + hailIcon + '</i>' : '') + '</button>';
   };
   const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved
     && !nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event)
@@ -7287,4 +7290,33 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
     + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
     + '<div class="horizon-grid-lines" aria-hidden="true">' + guides + '</div>'
     + sandboxThreeHourAxis(slots, time) + '</div></section>';
+}
+
+function sandboxToggleRainDetails() {
+  const rain = $("rain-details"), nowcast = $("nowcast-details");
+  const open = rain.hidden || nowcast.hidden;
+  rain.hidden = !open;
+  setNowcastOpen(open);
+  document.querySelectorAll('.horizon-scroll [data-summary-target="rain"]').forEach(button => {
+    button.setAttribute("aria-controls", "rain-details nowcast-details");
+    button.setAttribute("aria-expanded", String(open));
+  });
+}
+function sandboxSyncRainDetails(intervals) {
+  const slots = intervals.map((interval, index) => ({start: index === 0 ? Math.floor(interval.start / 900000) * 900000 : interval.start, end: interval.end}));
+  if (!slots.length) return;
+  $("rain-bars").style.gridTemplateColumns = slots.map(slot => (slot.end - slot.start) + 'fr').join(' ');
+  $("rain-axis").style.gridTemplateColumns = '';
+  $("rain-axis").innerHTML = sandboxThreeHourAxis(slots, value => hourFormat.format(new Date(value)));
+  sandboxBindRainScroll();
+}
+function sandboxBindRainScroll() {
+  const scrolls = [...document.querySelectorAll('.horizon-scroll, .horizon-detail-scroll')];
+  scrolls.forEach(scroller => {
+    if (scroller.dataset.syncBound) return;
+    scroller.dataset.syncBound = 'true';
+    scroller.addEventListener('scroll', () => document.querySelectorAll('.horizon-scroll, .horizon-detail-scroll').forEach(other => {
+      if (other !== scroller && other.scrollLeft !== scroller.scrollLeft) other.scrollLeft = scroller.scrollLeft;
+    }), {passive:true});
+  });
 }

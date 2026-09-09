@@ -1242,7 +1242,14 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-ongoing-storm{grid-row:3;grid-column:1/-1;justify-content:flex-start;padding-inline:12px;position:relative;background:transparent!important;border:0;isolation:isolate}
 .horizon-ongoing-storm::before{content:"";position:absolute;inset:0;z-index:-1;border:1px dashed #333996;border-radius:inherit;background:var(--ongoing-fill,#e2e5ec);mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end));-webkit-mask-image:linear-gradient(to right,#000 var(--storm-fade-start),transparent var(--storm-fade-end))}
 .horizon-ongoing-storm.tone-3{--ongoing-fill:#fff0a6}.horizon-ongoing-storm.tone-4{--ongoing-fill:#ffb778}.horizon-ongoing-storm.tone-5{--ongoing-fill:#f28282}
-/* La carte est mise de côté ; la frise utilise toute la largeur disponible. */
+
+.horizon-rain.drizzle{background:linear-gradient(120deg,#f2f7f9,#e4eff3);color:#25465c}
 .three-hour-overview{display:block}
 .three-hour-overview>.three-hour-summary{width:100%;min-width:0}
-#nowcast-details{display:none!important}
+.horizon-detail-scroll{overflow-x:auto;margin:0 28px;padding:0 12px}
+.horizon-detail-track{min-width:780px}
+.horizon-detail-track .now-chart{margin-inline:0}
+.horizon-detail-track .rain-axis{display:block;margin:6px 0 0}
+.horizon-detail-track .horizon-axis{height:24px}
+@media(max-width:900px){.horizon-detail-scroll{margin-inline:16px}}
+@media(max-width:700px){.horizon-detail-scroll{margin-inline:10px}}
