@@ -93,7 +93,7 @@ const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 
 // heures, son niveau est combiné à celui des rafales sur une échelle commune.
 const meanWindIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
-  return speed <= 0 ? 0 : speed < 10 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
+  return speed <= 0 ? 0 : speed < 12 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
 };
 const gustIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
@@ -7228,7 +7228,7 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     const wind = windHours.length ? shortTermWindIntensityLevel(
       Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
       Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
-    return { start, end, slotTime: interval.slotTime, level, qualifier, hail, storm, wind,
+    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
 }
@@ -7236,6 +7236,9 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals);
   if (!slots.length) return '<p class="horizon-empty">Prévision indisponible</p>';
+  if (slots.every(slot => slot.label === "" && slot.total === 0)) {
+    slots.forEach(slot => { slot.label = "Pas de pluie"; });
+  }
   const time = value => hourFormat.format(new Date(value));
   const stormIcon = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 25a7 7 0 0 1 0-14 10 10 0 0 1 19-3 8 8 0 0 1 3 17Z" fill="#e8eff5" stroke="currentColor" stroke-width="2.5"/><path d="m21 18-8 13h7l-3 8 12-16h-8l3-5Z" fill="#e8bb32" stroke="currentColor" stroke-width="1.5"/></svg>';
   const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
