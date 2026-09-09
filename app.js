@@ -1533,11 +1533,16 @@ function nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar = null) {
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
 }
 
+function nowcastCellPassageObserved(cell, radar) {
+  return (Array.isArray(cell?.shapeRuns) && cell.shapeRuns.length > 0 && nowcastCellContainsPoint(cell, 0, 0))
+    || nowcastCellLocallyObservedInterior(cell, radar);
+}
+
 function nowcastDisplayedCellPassageRisk(cell, reliableEvent, radar = null) {
+  if (nowcastCellPassageObserved(cell, radar)) return 100;
   if (cell?.passageEnsemble?.status === 'ready' && Number.isFinite(cell.passageEnsemble.pointProbability)) {
     return Math.round(cell.passageEnsemble.pointProbability * 100);
   }
-  if (nowcastCellLocallyObservedInterior(cell, radar)) return 100;
   const announcedPassage = nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar);
   const passage = announcedPassage ?? Number(cell?.risks?.passage);
   return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
@@ -5670,7 +5675,9 @@ function nowcastCellHasEtaProjection(cell) {
 }
 
 function nowcastEtaProjectionCells(cells) {
-  return (cells || []).filter(nowcastCellHasEtaProjection);
+  return (cells || []).filter(cell => nowcastCellHasEtaProjection(cell)
+    || (cell?.passageEnsemble?.status === 'ready' && cell.passageEnsemble.scenarios?.length > 0
+      && cell.track?.points?.length > 1));
 }
 
 function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = null) {
@@ -5715,7 +5722,11 @@ function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = nu
   return polygons;
 }
 
+const nowcastPassageGridCache = new Map();
+
 function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
+  const cacheKey = JSON.stringify([cell.eastKm, cell.northKm, cell.shapeRuns, cell.passageEnsemble, bounds, stepKm]);
+  if (nowcastPassageGridCache.has(cacheKey)) return nowcastPassageGridCache.get(cacheKey);
   const ensemble = cell?.passageEnsemble;
   const scenarios = ensemble?.status === 'ready' ? ensemble.scenarios || [] : [];
   const columns = Math.ceil((bounds.eastKm - bounds.westKm) / stepKm);
@@ -5748,7 +5759,10 @@ function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
     }
     for (let index = 0; index < counts.length; index++) counts[index] += covered[index] * scenario.weight;
   }
-  return { counts, columns, rows, stepKm, samples, bounds };
+  const grid = { counts, columns, rows, stepKm, samples, bounds };
+  if (nowcastPassageGridCache.size >= 8) nowcastPassageGridCache.delete(nowcastPassageGridCache.keys().next().value);
+  nowcastPassageGridCache.set(cacheKey, grid);
+  return grid;
 }
 
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
@@ -5948,16 +5962,24 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       const bounds = { westKm: -width / (2 * scale), eastKm: width / (2 * scale),
         southKm: -height / (2 * scale), northKm: height / (2 * scale) };
       if (cell.passageEnsemble?.status !== 'ready') return '';
-      const grid = nowcastPassageFrequencyGrid(cell, bounds, .5);
+      const grid = nowcastPassageFrequencyGrid(cell, bounds, .25);
       const paths = new Map();
-      grid.counts.forEach((count, index) => {
-        if (!count) return;
-        const column = index % grid.columns, row = Math.floor(index / grid.columns);
-        const west = bounds.westKm + column * grid.stepKm, south = bounds.southKm + row * grid.stepKm;
-        const rectangle = 'M' + x(west).toFixed(1) + ' ' + y(south + grid.stepKm).toFixed(1)
-          + 'H' + x(west + grid.stepKm).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
-        paths.set(Math.round(count * 1e6) / 1e6, (paths.get(Math.round(count * 1e6) / 1e6) || '') + rectangle);
-      });
+      // Fusionner les mailles adjacentes de même probabilité sans modifier les valeurs.
+      for (let row = 0; row < grid.rows; row++) {
+        for (let column = 0; column < grid.columns;) {
+          const count = Math.round(grid.counts[row * grid.columns + column] * 1e6) / 1e6;
+          let endColumn = column + 1;
+          while (endColumn < grid.columns && Math.round(grid.counts[row * grid.columns + endColumn] * 1e6) / 1e6 === count) endColumn++;
+          if (count > 0) {
+            const west = bounds.westKm + column * grid.stepKm, east = bounds.westKm + endColumn * grid.stepKm;
+            const south = bounds.southKm + row * grid.stepKm;
+            const rectangle = 'M' + x(west).toFixed(1) + ' ' + y(south + grid.stepKm).toFixed(1)
+              + 'H' + x(east).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
+            paths.set(count, (paths.get(count) || '') + rectangle);
+          }
+          column = endColumn;
+        }
+      }
       const observedPath = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
         + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
       const maskId = gradientId + '-observed';
@@ -5969,7 +5991,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
         + [...paths].map(([count, path]) => {
           const frequency = count;
           const title = 'Cellule ' + cell.id + ' · ici : ' + Math.round(frequency * 100) + ' % des trajectoires simulées sur '
-            + horizon + ' min · scénarios calculés par le serveur à partir des erreurs de déplacement observées · non calibré';
+            + horizon + ' min · estimation du déplacement et de son incertitude';
           return '<path class="chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + path
             + '" shape-rendering="crispEdges" style="fill:' + color + ';fill-opacity:' + (frequency * .6).toFixed(4) + ';stroke:none"></path>';
         }).join('') + '</g>';
@@ -6108,8 +6130,8 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
     '</svg>' + (etaProjectionCells.some(cell => radarCellShapeRuns(cell).length)
       ? (etaProjectionCells.some(cell => cell.passageEnsemble?.status === 'ready')
-        ? '<div class="nowcast-probability-legend" title="Fréquence de passage des scénarios du serveur, construits à partir des erreurs de déplacement mesurées sur les formes radar. Même calcul que le passage aux Tatins. Estimation non calibrée ; forme supposée persistante.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 % <small>Sans bleu : historique insuffisant ou passage nul dans les scénarios</small></div>'
-        : '<div class="nowcast-probability-legend">Probabilités locales : historique fiable insuffisant</div>') : '')
+        ? '<div class="nowcast-probability-legend" title="Estimation du passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
+        : '<div class="nowcast-probability-legend">Probabilité en cours d’estimation</div>') : '')
     + cellOverlays.join("") + '</div>';
 }
 
@@ -6673,11 +6695,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     // confirmée sur plusieurs scans. La synthèse 3 h reste, elle, plus prudente.
     const passageRisk = nowcastDisplayedCellPassageRisk(cell, reliablePassageEvent, radar);
     const passageText = cell.passageEnsemble?.status === 'insufficient-observations'
+      && !nowcastCellPassageObserved(cell, radar)
       ? 'incertain'
       : passageRisk == null ? "incertain" : passageRisk + " %";
-    const historyCount = Number(cell.passageEnsemble?.observationCount) || 0;
-    const historyText = cell.passageEnsemble?.status === 'insufficient-observations'
-      ? 'Historique insuffisant · ' + historyCount + (historyCount > 1 ? ' mesures fiables' : ' mesure fiable') : '';
     const hailRisk = polarimetricHailRisk(cell);
     const rainRisk = Math.round(Number(risks.intenseRain) || 0);
     const rainIntensity = Number(cell.maximum);
@@ -6697,7 +6717,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const lightningPictogram = nowcastMetricPictogram("lightning", lightningLevel, lightningLabel, true, true, false);
     const distanceKm = cellDistance(cell);
     const distance = distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const etaMinutes = nowcastCellLocallyObservedInterior(cell, radar)
+    const etaMinutes = nowcastCellPassageObserved(cell, radar)
       ? 0
       : reliablePassageEvent
         ? Math.max(0, (Number(reliablePassageEvent.eventStart) - now) / 60000)
@@ -6715,11 +6735,9 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const confidence = cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence));
     const confidenceText = Number.isFinite(confidence) ? confidence + " %" : "—";
     const label = "Cellule " + cell.id + " · bord à " + distance + " des Tatins · passage " + passageText + " · " + etaDetail
-      + (historyText ? " · " + historyText : "")
       + " · grêle " + hailLevel + " sur 5 · pluie " + rainLevel + " sur 5 · foudre " + lightningLevel + " sur 5"
       + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
     const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + escapeText(passageText) + '</b><b>ETA ' + escapeText(etaText) + '</b></div>'
-      + (historyText ? '<div class="nowcast-cell-map-history">' + escapeText(historyText) + '</div>' : '')
       + '<div class="nowcast-cell-map-intensities" aria-label="Intensités grêle, pluie et foudre"><span class="hail">' + hailPictogram + '</span><span class="rain">' + rainPictogram + '</span><span class="lightning">' + lightningPictogram + '</span></div>'
       + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
     return { tone: riskTone(passageRisk || 0), label, markup, passageRisk };
