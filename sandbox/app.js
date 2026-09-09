@@ -93,7 +93,7 @@ const rainPictogramStep = value => value <= 0 ? 0 : value < 3 ? 1 : value < 8 ? 
 // heures, son niveau est combiné à celui des rafales sur une échelle commune.
 const meanWindIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
-  return speed <= 0 ? 0 : speed < 10 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
+  return speed <= 0 ? 0 : speed < 12 ? 1 : speed < 20 ? 2 : speed < 30 ? 3 : speed < 40 ? 4 : 5;
 };
 const gustIntensityLevel = value => {
   const speed = Math.max(0, Number(value) || 0);
