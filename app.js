@@ -1,4 +1,4 @@
-﻿const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const runtimeConfig = window.METEO_RUNTIME_CONFIG && typeof window.METEO_RUNTIME_CONFIG === "object"
   ? window.METEO_RUNTIME_CONFIG
   : {};
@@ -5987,14 +5987,17 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
         + '"><rect width="' + width + '" height="' + height + '" fill="white"></rect><path d="'
         + observedPath + '" fill="black"></path></mask>';
       const horizon = Math.round(Number(track.at(-1).minutes) || 0);
-      return '<defs>' + mask + '</defs><g class="' + className + ' shape-projection" mask="url(#' + maskId + ')">'
+      const smoothingId = gradientId + '-probability-smoothing';
+      const smoothing = '<filter id="' + smoothingId + '" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">'
+        + '<feGaussianBlur stdDeviation="' + Math.max(.8, Math.min(2, scale * .18)).toFixed(2) + '"/></filter>';
+      return '<defs>' + mask + smoothing + '</defs><g class="' + className + ' shape-projection" mask="url(#' + maskId + ')"><g filter="url(#' + smoothingId + ')">'
         + [...paths].map(([count, path]) => {
           const frequency = count;
           const title = 'Cellule ' + cell.id + ' · ici : ' + Math.round(frequency * 100) + ' % des trajectoires simulées sur '
             + horizon + ' min · estimation du déplacement et de son incertitude';
           return '<path class="chart-point" tabindex="0" data-tooltip="' + escapeText(title) + '" d="' + path
             + '" shape-rendering="crispEdges" style="fill:' + color + ';fill-opacity:' + (frequency * .6).toFixed(4) + ';stroke:none"></path>';
-        }).join('') + '</g>';
+        }).join('') + '</g></g>';
     }
     const forwardExtent = radarCellExtent(cell, directionEast, directionNorth);
     const lateralExtent = radarCellExtent(cell, -directionNorth, directionEast, true);
@@ -6130,7 +6133,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
     '</svg>' + (etaProjectionCells.some(cell => radarCellShapeRuns(cell).length)
       ? (etaProjectionCells.some(cell => cell.passageEnsemble?.status === 'ready')
-        ? '<div class="nowcast-probability-legend" title="Estimation du passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
+        ? '<div class="nowcast-probability-legend" title="Probabilité estimée de passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
         : '<div class="nowcast-probability-legend">Probabilité en cours d’estimation</div>') : '')
     + cellOverlays.join("") + '</div>';
 }
