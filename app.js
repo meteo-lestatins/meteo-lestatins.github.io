@@ -6921,7 +6921,10 @@ function renderPiaf(piaf, radar = null) {
     const slotTime = hourFormat.format(new Date(slotIntervals[index].start)) + "–" + hourFormat.format(new Date(slotIntervals[index].end));
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
-    const detail = isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail;
+    const nowcastTotal = Math.max(precipitation, Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0);
+    const nowcastDetail = nowcastTotal > precipitation
+      ? "\nAvec nowcasting : " + nowcastTotal.toFixed(2) + " mm (estimation, passage à confirmer)" : "";
+    const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail;
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1;--rain-height:' + height + '%" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
@@ -6939,19 +6942,22 @@ function renderPiaf(piaf, radar = null) {
     const observed = item.radarCellOverPoint === true
       && Number.isFinite(radarObservedAt)
       && radarObservedAt >= interval.start && radarObservedAt < interval.end;
-    if (!entries.length && !observed) return '';
-    const quantitative = observed ? radarAmendment : etaRain;
-    const totalRain = Math.round((basePiaf + quantitative) * 100) / 100;
+    // Reprendre le cumul agrégé de la frise, y compris le radar extrapolé
+    // sur les créneaux futurs. Radar et ETA représentent la même pluie.
+    const totalRain = Math.round(Math.max(basePiaf + radarAmendment,
+      Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0, etaRain, basePiaf) * 100) / 100;
+    const quantitative = Math.max(0, totalRain - basePiaf);
+    if (!entries.length && !observed && quantitative <= 0) return '';
     const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
     const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
     const amendmentBottom = Math.min(97, baseHeight);
-    const presenceOnly = !observed && etaRain <= 0;
+    const presenceOnly = !observed && quantitative <= 0;
     const totalHeight = Math.min(100, Math.max(3, totalRain / fullScaleRain * 100));
     const amendmentHeight = presenceOnly
       ? Math.min(100 - amendmentBottom, 4)
       : Math.min(100 - amendmentBottom, Math.max(3, totalHeight - amendmentBottom));
     const alpha = passage == null ? .58 : Math.max(.32, Math.min(.86, .22 + passage / 100 * .72));
-    const label = passage > 0 ? Math.round(passage) + " %" : "";
+    const label = [quantitative > 0 ? totalRain.toFixed(2) + " mm" : "", passage > 0 ? Math.round(passage) + " %" : ""].filter(Boolean).join(" · ");
     const etaWindowStart = entries.length ? Math.min(...entries.map(entry => entry.eventStart)) : null;
     const etaWindowEnd = entries.length ? Math.max(...entries.map(entry => entry.eventEnd)) : null;
     const etaLabels = [...new Set(entries.map(entry => (entry.etaBasis === "envelope" ? "ETA possible " : "ETA ") + shortEtaLabel(entry.etaMinutes)))].slice(0, 2);
@@ -6960,7 +6966,7 @@ function renderPiaf(piaf, radar = null) {
       : item.complete === false ? " sur " + Math.max(5, Math.round((Number(item.intervalEnd) - Number(item.intervalStart)) / 60000)) + " min" : " sur 15 min";
     const detail = "PIAF : " + basePiaf.toFixed(2) + " mm" + piafPeriod
       + (observed && radarAmendment > 0 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
-      + (!observed && etaRain > 0 ? "\nNowcasting conditionnel si passage : +" + etaRain.toFixed(2) + " mm" : "")
+      + (!observed && quantitative > 0 ? "\nNowcasting prévu si passage : +" + quantitative.toFixed(2) + " mm" : "")
       + (presenceOnly ? "\nPrésence possible, cumul non assez stable" : "\nTotal affiché : " + totalRain.toFixed(2) + " mm")
       + (passage != null ? "\nProbabilité de passage : " + passage + " %" : "")
       + (etaLabels.length ? "\n" + etaLabels.join(" · ") : "")
