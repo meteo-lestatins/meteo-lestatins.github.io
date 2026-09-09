@@ -7263,15 +7263,21 @@ function sandboxRainGroups(slots) {
   });
   return groups;
 }
+function sandboxStartNearHour(start, end) {
+  const nextHour = (Math.floor(start / 3600000) + 1) * 3600000;
+  return nextHour - start < 30 * 60000 && nextHour <= end;
+}
 function sandboxQuietBoundary(boundary, start, end) {
-  return boundary === start || boundary === end
-    || (boundary % 3600000 === 0 && boundary - start >= 30 * 60000 && end - boundary >= 30 * 60000);
+  const hideStart = sandboxStartNearHour(start, end);
+  if (boundary === start) return !hideStart;
+  return boundary === end || (boundary % 3600000 === 0
+    && (hideStart || boundary - start >= 30 * 60000) && end - boundary >= 30 * 60000);
 }
 function sandboxThreeHourAxis(slots, time) {
   const start = slots[0].start, end = slots.at(-1).end;
   const position = value => (value - start) / (end - start) * 100;
   const ticks = [start, ...slots.map(slot => slot.end)].filter(boundary => boundary % 900000 === 0).map(boundary =>
-    '<span class="horizon-minute' + (sandboxQuietBoundary(boundary, start, end) ? '' : ' quiet-minor') + '" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
+    '<span class="horizon-minute' + (sandboxQuietBoundary(boundary, start, end) ? '' : ' quiet-minor') + (boundary === start && sandboxStartNearHour(start, end) ? ' near-hour-start' : '') + '" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
   return '<div class="horizon-axis">' + ticks.join('') + '</div>';
 }
 function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
@@ -7331,7 +7337,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
   const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals);
   if (!slots.length) return '<p class="horizon-empty">Prévision indisponible</p>';
-  if (slots.every(slot => slot.label === "" && slot.total === 0)) {
+  if (slots.every(slot => slot.label === "")) {
     slots.forEach(slot => { slot.label = "Pas de pluie"; });
   }
   const time = value => hourFormat.format(new Date(value));
@@ -7369,7 +7375,7 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const hasStorm = slots.some(slot => slot.storm && slot.storm !== ongoingStorm);
   const hasWind = slots.some(slot => slot.wind >= 2);
   const hasHail = slots.some(slot => slot.hail);
-  const quiet = !hasStorm && !hasWind && !hasHail && !ongoingStorm && slots.every(slot => slot.label === "Pas de pluie" && slot.total === 0);
+  const quiet = !hasStorm && !hasWind && !hasHail && !ongoingStorm && slots.every(slot => slot.label === "Pas de pluie");
   // Fin du premier épisode pluvieux : ne pas prolonger jusqu'à une reprise séparée.
   let rainEnd = slots[0].start;
   for (const slot of slots) {

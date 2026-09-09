@@ -1276,6 +1276,8 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
   body:has(.horizon-scroll.is-quiet) .horizon-detail-track{min-width:0}
   body:has(.horizon-scroll.is-quiet) .horizon-detail-track .quiet-minor{display:none}
 }
+
+@media(max-width:700px){.horizon-axis .near-hour-start{display:none}}
 .three-hour-overview{display:block}
 .three-hour-overview>.three-hour-summary{width:100%;min-width:0}
 .horizon-detail-scroll{overflow-x:auto;margin:0 28px;padding:0 1px}
