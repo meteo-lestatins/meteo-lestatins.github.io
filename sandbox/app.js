@@ -5472,9 +5472,11 @@ function nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime = D
 }
 
 function nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime = Date.now()) {
-  return cell?.polarimetry?.classification === "hail"
-    && polarimetricHailRisk(cell) >= 20
-    && nowcastEvidenceIsFresh(cell.polarimetry.observedAt, radarObservedAt, referenceTime);
+  const polar = cell?.polarimetry;
+  return nowcastEvidenceIsFresh(polar?.observedAt, radarObservedAt, referenceTime)
+    && ((["hail", "mixed"].includes(cell?.polarimetry?.classification) && polarimetricHailRisk(cell) > 0)
+      || (polar?.zones || []).some(zone => ["hail", "mixed"].includes(zone.classification)
+        && zone.scoreBasis === "fraction-of-compatible-strong-pixels" && Number(zone.score) > 0));
 }
 
 function nowcastCellHasIntenseRainSignal(cell, radarObservedAt, referenceTime = Date.now()) {
@@ -5488,6 +5490,70 @@ function nowcastCellHasStormEvidence(cell, lightning, radarObservedAt, reference
     || nowcastFlashesNearCell(cell, lightning, radarObservedAt, referenceTime) > 0
     || nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime)
     || nowcastCellHasIntenseRainSignal(cell, radarObservedAt, referenceTime);
+}
+
+function nowcastLocalHail(cell, radar, passages, now, local) {
+  const polar = cell?.polarimetry;
+  const windows = [];
+  const unavailable = { hailRisk: null, hailLevel: 0, hailWindows: windows, hailLocalized: false };
+  if (!nowcastEvidenceIsFresh(polar?.observedAt, radar?.observedAt, now)) return unavailable;
+  const points = (cell.track?.points || []).filter(point => [point.minutes, point.eastKm, point.northKm].every(value => value != null && Number.isFinite(Number(value))));
+  const first = points[0], next = points.find(point => Number(point.minutes) > Number(first?.minutes));
+  const dt = next ? Number(next.minutes) - Number(first.minutes) : 0;
+  const vx = dt ? (Number(next.eastKm) - Number(first.eastKm)) / dt : 0;
+  const vy = dt ? (Number(next.northKm) - Number(first.northKm)) / dt : 0;
+  const speed2 = vx * vx + vy * vy;
+  const origin = Date.parse(polar.observedAt);
+  const uncertaintyAt = minutes => {
+    const before = [...points].reverse().find(point => Number(point.minutes) <= minutes) || points[0];
+    const after = points.find(point => Number(point.minutes) >= minutes) || points.at(-1);
+    const width = Number(after?.minutes) - Number(before?.minutes);
+    const left = Math.max(0, Number(before?.uncertaintyGrowthKm ?? before?.uncertaintyKm) || 0), right = Math.max(0, Number(after?.uncertaintyGrowthKm ?? after?.uncertaintyKm) || 0);
+    return width > 0 ? left + (right - left) * Math.max(0, Math.min(1, (minutes - Number(before.minutes)) / width)) : left;
+  };
+  const zones = Array.isArray(polar.zones) ? polar.zones : null;
+  const positive = zone => ["hail", "mixed"].includes(zone?.classification)
+    && zone?.scoreBasis === "fraction-of-compatible-strong-pixels" && Number(zone.score) > 0;
+  const add = (start, end, score, passage = 100) => {
+    if (end <= now || start >= now + 180 * 60000 || end <= start) return;
+    // Un indice radar n'est pas une observation de grêle au sol.
+    const risk = Math.max(0, Math.min(100, Number(passage)));
+    if (risk > 0) windows.push({ start: Math.max(now, start), end: Math.min(now + 180 * 60000, end), risk, score: Number(score) });
+  };
+  if (zones) {
+    for (const zone of zones.filter(positive)) {
+      const x = Number(zone.eastKm), y = Number(zone.northKm), radius = Number(zone.radiusKm);
+      if (![x, y, radius].every(Number.isFinite) || radius <= 0) continue;
+      const age = (now - origin) / 60000;
+      if (local && Math.hypot(x + vx * age, y + vy * age) <= radius) add(now, now + 1, zone.score);
+      if (speed2 <= 0) continue;
+      const middle = -(x * vx + y * vy) / speed2;
+      const closest2 = (x + vx * middle) ** 2 + (y + vy * middle) ** 2;
+      for (const event of passages) {
+        const left = (Math.max(now, event.eventStart) - origin) / 60000;
+        const right = (event.eventEnd - origin) / 60000;
+        const uncertainty = Math.max(uncertaintyAt(left), uncertaintyAt(right), ...points
+          .filter(point => Number(point.minutes) >= left && Number(point.minutes) <= right)
+          .map(point => Math.max(0, Number(point.uncertaintyGrowthKm ?? point.uncertaintyKm) || 0)));
+        const projectedRadius = radius + uncertainty;
+        if (closest2 > projectedRadius * projectedRadius) continue;
+        const half = Math.sqrt((projectedRadius * projectedRadius - closest2) / speed2);
+        const start = origin + (middle - half) * 60000, end = origin + (middle + half) * 60000;
+        add(Math.max(start, event.eventStart), Math.min(end, event.eventEnd), zone.score,
+          event.presenceProbability ?? event.passage ?? cell.risks?.passage ?? 0);
+      }
+    }
+  } else if (positive(polar)) {
+    // Anciennes archives : conserver une alerte possible, sans prétendre
+    // localiser le noyau de grêle à partir du seul score global.
+    if (local) add(now, now + 1, polar.score);
+    for (const event of passages) add(event.eventStart, event.eventEnd, polar.score,
+      event.presenceProbability ?? event.passage ?? cell.risks?.passage ?? 0);
+  }
+  const score = Math.max(0, ...windows.map(window => window.score));
+  return { hailRisk: windows.length ? Math.max(...windows.map(window => window.risk)) : null,
+    hailLevel: score <= 0 ? 0 : score < 20 ? 1 : score < 40 ? 2 : score < 60 ? 3 : score < 80 ? 4 : 5,
+    hailWindows: windows, hailLocalized: zones !== null };
 }
 
 function nowcastLocalStormHazards(cell, radar, lightning, events, now) {
@@ -5526,13 +5592,17 @@ function nowcastLocalStormHazards(cell, radar, lightning, events, now) {
         return Math.hypot(x + east * minutes, y + north * minutes) <= 8;
       });
     }).length : 0;
-  // L'indice de grêle disponible porte sur toute la cellule : aucune
-  // localisation ne permet de l'attribuer au couloir des Tatins.
-  const hailRisk = null, hailLevel = 0;
+  // Un faible risque ne justifie pas un cumul, mais doit rester signalé.
+  const hailPassages = fresh ? (events || []).filter(event => String(event.cell?.id) === String(cell?.id)
+    && Number.isFinite(Number(event.eventStart)) && Number.isFinite(Number(event.eventEnd))
+    && Number(event.eventEnd) > now && Number(event.eventStart) < now + 180 * 60000
+    && Number(event.presenceProbability ?? event.passage ?? cell.risks?.passage) > 0) : [];
+  const hail = nowcastLocalHail(cell, radar, hailPassages, now, local);
+  const { hailRisk, hailLevel } = hail;
   const rainLevel = rainIntensityStep(rain);
   const lightningLevel = flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
-  const level = flashes > 0 || rain >= 30 ? stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) : null;
-  return { rain, rainLevel, flashes, lightningLevel, hailRisk, hailLevel, level };
+  const level = flashes > 0 || rain >= 30 || hailRisk > 0 ? stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) : null;
+  return { rain, rainLevel, flashes, lightningLevel, ...hail, level };
 }
 
 function radarCellShapeRuns(cell) {
@@ -6611,7 +6681,15 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     && nowcastUncertainRainBorder(radar, selectedStormCell, stormEtaSelection, relevantStormEtaMinutes);
   const rainyCellOnUncertainBorder = Boolean(selectedRainyCell)
     && nowcastUncertainRainBorder(radar, selectedRainyCell, rainyCellEtaSelection, rainyCellEtaMinutes);
-  const stormEtaLabel = relevantTemporalStormIntensity
+  const localHailAlerts = stormCandidateCells.flatMap(cell => (localHazardsFor(cell).hailWindows || [])
+    .map(window => ({ ...window, cell, localized: localHazardsFor(cell).hailLocalized })))
+    .sort((a, b) => a.start - b.start || b.risk - a.risk);
+  const firstHailAlert = localHailAlerts[0];
+  const hailAlertLabel = firstHailAlert ? "Grêle possible" + (firstHailAlert.start > now + 60000
+    ? " dans " + compactMinutesLabel((firstHailAlert.start - now) / 60000) : " actuellement")
+    + " · passage cellule " + firstHailAlert.risk + " %"
+    + (firstHailAlert.localized ? "" : " · noyau non localisé") : "";
+  const stormEtaLabel = hailAlertLabel || (relevantTemporalStormIntensity
     ? stormOnUncertainBorder
       ? "Bordure d’orage"
       : shortTermStormLabel(
@@ -6635,7 +6713,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
           )
       : stormForecastSourceCount > 0 || orangeVigilanceActive
         ? "Risque d’orage dans les 3 h"
-        : "pas d’orage";
+        : "pas d’orage");
   const displayedEtaSelection = relevantTemporalStormIntensity ? stormEtaSelection : rainyCellCandidate ? rainyCellEtaSelection : null;
   const displayedEtaMinutes = relevantTemporalStormIntensity ? relevantStormEtaMinutes : rainyCellEtaMinutes;
   const displayedDurationMinutes = relevantTemporalStormIntensity ? relevantStormDurationMinutes : rainyCellEtaSelection?.durationMinutes;
@@ -6798,7 +6876,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.level != null && (candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id))), upcomingWind, now, piafQuarterHourRain(piaf, radar));
+    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.level != null && (candidate.hailWindows?.length || candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id))), upcomingWind, now, piafQuarterHourRain(piaf, radar));
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelector(".horizon-scroll")?.addEventListener("click", event => { if (!event.target.closest("button")) sandboxToggleRainDetails(); });
     sandboxBindRainScroll();
@@ -7176,7 +7254,7 @@ function sandboxNowcastContext(label, detail) {
 function sandboxRainGroups(slots) {
   const groups = [];
   slots.forEach((slot, index) => {
-    const signature = JSON.stringify([slot.label, slot.level, slot.qualifier, Boolean(slot.hail), slot.hail ? slot.storm.hailRisk : null]);
+    const signature = JSON.stringify([slot.label, slot.level, slot.qualifier, Boolean(slot.hail), slot.hail ? slot.hailRisk : null, slot.hailLocalized]);
     const previous = groups.at(-1);
     if (previous?.signature === signature && previous.slot.end === slot.start) {
       previous.endIndex = index + 1;
@@ -7229,12 +7307,19 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
         || (event && Number(event.eventStart) < end && Number(event.eventEnd) > start);
     });
     const storm = storms.sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
-    const hail = storm && Number(storm.hailRisk) >= 20;
+    const hailCandidates = candidates.flatMap(candidate => {
+      if (!Array.isArray(candidate.hailWindows)) return candidate === storm && Number(candidate.hailRisk) > 0
+        ? [{ candidate, risk: candidate.hailRisk }] : [];
+      return candidate.hailWindows.filter(window => window.start < end && window.end > start)
+        .map(window => ({ candidate, risk: window.risk, score: window.score }));
+    }).sort((a, b) => b.risk - a.risk || (b.score || 0) - (a.score || 0));
+    const hailSource = hailCandidates[0];
+    const hail = Boolean(hailSource);
     const windHours = hours.filter(hour => Date.parse(hour.time) < end && Date.parse(hour.time) + 3600000 > start);
     const wind = windHours.length ? shortTermWindIntensityLevel(
       Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
       Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
-    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind,
+    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
 }
@@ -7250,11 +7335,11 @@ function sandboxThreeHourTimeline(steps, events, candidates, hours, now, interva
   const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
   const windIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7h12c6 0 6-6 1-6M2 12h17c5 0 5 7 0 7M2 17h7c5 0 5 6 1 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const block = ({ slot, startIndex, endIndex }) => {
-    const qualifier = slot.hail ? shortTermRiskQualifier(slot.storm.hailRisk).trim() : slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
+    const qualifier = slot.hail ? (slot.hailLocalized == null ? shortTermRiskQualifier(slot.hailRisk).trim() : 'possible · passage cellule ' + Math.round(slot.hailRisk) + ' %') : slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
     const label = [slot.label, qualifier].filter(Boolean).join(" ");
-    const tone = slot.hail ? probabilityStep(slot.storm.hailRisk) : 0;
+    const tone = slot.hail ? probabilityStep(slot.hailRisk) : 0;
     const compact = slot.end - slot.start < 15 * 60000;
-    const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie");
+    const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie") + (slot.hailLocalized === false ? ' · noyau de grêle non localisé dans les données' : '') + (slot.hailScore != null ? ' · indice polarimétrique de la zone ' + Math.round(slot.hailScore) + ' % (indice non probabiliste)' : '');
     return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.label === 'Gouttes' ? ' drizzle' : '') + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span>' + (slot.hail ? '<i aria-hidden="true">' + hailIcon + '</i>' : '') + '</button>';
   };
   const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved

@@ -1256,7 +1256,13 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 
 .three-hour-overview>.section-heading{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px}
 .three-hour-overview>.section-heading h2,#horizon-nowcast-toggle{white-space:nowrap}
-.three-hour-overview{display:block}
+
+.horizon-rain.hail{grid-template-rows:30px auto 40px}
+.horizon-rain.hail>span{font-size:10px;line-height:1.2;text-wrap:balance;align-self:start}
+.horizon-rain.hail.tone-1{background:linear-gradient(120deg,#f8eef3,#efd8e5);color:#64354e}
+.horizon-rain.hail.tone-2{background:linear-gradient(120deg,#f3dce8,#e7bace);color:#64354e}
+.horizon-rain.hail.tone-3{background:linear-gradient(120deg,#e8b3cc,#ce799e);color:#462237}
+.horizon-rain.hail.tone-1 i,.horizon-rain.hail.tone-2 i,.horizon-rain.hail.tone-3 i{color:inherit}.three-hour-overview{display:block}
 .three-hour-overview>.three-hour-summary{width:100%;min-width:0}
 .horizon-detail-scroll{overflow-x:auto;margin:0 28px;padding:0 1px}
 .horizon-detail-track{min-width:780px}
