@@ -36,4 +36,5 @@ body{color:#242424;background:#fff}
 #pictogrammes-meteo ~ .technical-table-scroll table{table-layout:fixed;min-width:840px}
 #pictogrammes-meteo ~ .technical-table-scroll th,#pictogrammes-meteo ~ .technical-table-scroll td{text-align:center;vertical-align:middle}
 .technical-inline-image{display:block;width:96px;height:96px;max-width:none;object-fit:contain;margin:0 auto}
-.technical-inline-image + .technical-inline-image{margin-top:-96px}
+.technical-pictogram-stack{display:grid;width:96px;height:96px;margin:0 auto}
+.technical-pictogram-stack>.technical-inline-image{grid-area:1/1;margin:0}
