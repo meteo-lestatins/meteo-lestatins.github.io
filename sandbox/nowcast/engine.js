@@ -1976,6 +1976,13 @@ function nowcastPresenceRainEligible(event, referenceTime = null) {
     && Number.isFinite(Number(event?.eventEnd));
 }
 
+function hourlyForecastWindow(hours, start, end) {
+  return (hours || []).filter(hour => {
+    const time = Date.parse(hour.time);
+    return Number.isFinite(time) && time < end && time + 3600000 > start;
+  });
+}
+
 function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
   return intervals.filter(interval => Number(interval.intervalEnd) > now).map((interval, index) => {
     // Le quart d’heure courant reste entier jusqu’à sa fin ; seuls les repères visuels sont élargis.
@@ -2024,7 +2031,7 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     }).sort((a, b) => b.risk - a.risk || (b.score || 0) - (a.score || 0));
     const hailSource = hailCandidates[0];
     const hail = Boolean(hailSource);
-    const windHours = hours.filter(hour => Date.parse(hour.time) < end && Date.parse(hour.time) + 3600000 > start);
+    const windHours = hourlyForecastWindow(hours, start, end);
     const wind = windHours.length ? shortTermWindIntensityLevel(
       Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
       Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
@@ -2059,18 +2066,14 @@ function computeRadarNowcast(data) {
   const etaRainAmendment = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.effectiveEtaAmendment, 0) * 10) / 10;
   const nowcastRainAmendment = Math.round((directRadarRainAmendment + etaRainAmendment) * 10) / 10;
   const rainAmount = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.totalPrecipitation, 0) * 10) / 10;
-  const upcomingWind = (arome?.hours || []).filter(item => {
-    const time = new Date(item.time).getTime();
-    return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
-  });
+  const timelineStart = Math.floor(now / 900000) * 900000;
+  const timelineEnd = now + 3 * 3600000;
+  const upcomingWind = hourlyForecastWindow(arome?.hours, timelineStart, timelineEnd);
   const windWindow = upcomingWind.length ? upcomingWind : (arome?.hours || []).slice(0, 3);
   const maximumWind = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windSpeed) || 0)));
   const maximumGust = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windGust) || 0)));
   const openMeteoWindHours = latestForecastData?.openMeteo?.hours || [];
-  const upcomingOpenMeteoWind = openMeteoWindHours.filter(item => {
-    const time = new Date(item.time).getTime();
-    return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
-  });
+  const upcomingOpenMeteoWind = hourlyForecastWindow(openMeteoWindHours, timelineStart, timelineEnd);
   const openMeteoWindWindow = upcomingOpenMeteoWind.length ? upcomingOpenMeteoWind : openMeteoWindHours.slice(0, 3);
   const maximumOpenMeteoWind = openMeteoWindWindow.length
     ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windSpeed) || 0)))
