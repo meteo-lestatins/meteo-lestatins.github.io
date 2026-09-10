@@ -1289,8 +1289,9 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 /* Périodes météo regroupées : une cellule par état, largeur proportionnelle à sa durée. */
 .horizon-scroll{overflow-x:hidden;background:#fff}
 .horizon-timeline{display:flex;flex-wrap:wrap;align-items:stretch;width:100%;min-width:0;overflow:visible;isolation:auto;background:#fff;gap:0}
-.horizon-period{position:relative;display:grid;grid-template-rows:30px minmax(0,1fr) 25px;flex-grow:var(--period-duration);flex-shrink:1;flex-basis:80px;min-width:80px;min-height:236px;padding:12px 7px 10px;overflow:hidden;color:#071d60;background:transparent;box-shadow:inset -1px 0 #c8d7de,inset 0 -1px #c8d7de;text-align:center}
+.horizon-period{position:relative;display:grid;grid-template-rows:30px minmax(0,1fr) 25px;flex-grow:var(--period-duration);flex-shrink:1;flex-basis:80px;min-width:80px;min-height:236px;padding:12px 7px 10px;overflow:hidden;color:#071d60;background:transparent;box-shadow:inset 0 -1px #c8d7de;text-align:center}
 .horizon-period::before{content:"";position:absolute;inset:0 0 auto;height:42px;border-bottom:1px solid #e0e8ec;background:#f4f8fa}
+.horizon-period::after{content:"";position:absolute;z-index:2;inset:0 0 0 auto;width:1px;background:#c8d7de;pointer-events:none}
 .horizon-period.is-detailed{flex-basis:130px;min-width:120px}
 .horizon-period.rain-0.is-night{background:#edf1f4}
 .horizon-period.rain-1{background:linear-gradient(120deg,#e5f5ff,#d1edff)}
