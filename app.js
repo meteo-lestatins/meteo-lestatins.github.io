@@ -5,6 +5,7 @@ const runtimeConfig = window.METEO_RUNTIME_CONFIG && typeof window.METEO_RUNTIME
 const apiBaseUrl = new URL(runtimeConfig.apiBase || "./", document.baseURI);
 const apiUrl = path => new URL(String(path).replace(/^\/+/, ""), apiBaseUrl);
 const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
+const replayEngineUrl = new URL("nowcast/engine.js", document.currentScript?.src || document.baseURI);
 const point = { lat: 44.6538, lon: 5.5995 };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const forecastHourValue = date => Number(hourFormat.format(date).slice(0, 2));
@@ -27,6 +28,7 @@ let lastEnsembleStamp = 0;
 let lastVigilanceStamp = 0;
 let lastOpenMeteoStamp = 0;
 let refreshTimer = 0;
+let nowcastExpiryTimer = 0;
 // Le mécanisme de rotation reste disponible pour une reprise ultérieure, mais
 // l'encadré affiche pour l'instant un seul message stable.
 const threeHourMessageRotationEnabled = false;
@@ -69,13 +71,6 @@ let nowcastMapRequest = 0;
 let leafletAssetsPromise = null;
 let nowcastMapAssetsPromise = null;
 let weekEvolutionState = { signature: "", byDate: new Map() };
-let cellPassageSnapshot = null;
-try {
-  const savedCellPassageSnapshot = JSON.parse(localStorage.getItem("meteo-cell-passage-snapshot") || "null");
-  if (savedCellPassageSnapshot?.observedAt && savedCellPassageSnapshot?.values) cellPassageSnapshot = savedCellPassageSnapshot;
-} catch {
-  cellPassageSnapshot = null;
-}
 const weekDaySourceSelection = new Map();
 let latestOpenMeteoEnsemble = null;
 let openMeteoEnsemblePromise = null;
@@ -661,976 +656,63 @@ function shortEtaLabel(minutes) {
   return compactMinutesLabel(minutes);
 }
 
-function nowcastCellContainsPoint(cell, eastKm, northKm) {
-  const shapeRuns = Array.isArray(cell?.shapeRuns) ? cell.shapeRuns : [];
-  if (shapeRuns.length) {
-    return shapeRuns.some(run => eastKm >= Number(run.westKm)
-      && eastKm <= Number(run.eastKm)
-      && northKm >= Number(run.southKm)
-      && northKm <= Number(run.northKm));
-  }
-  const footprint = Array.isArray(cell?.footprint) ? cell.footprint : [];
-  if (footprint.length >= 3) {
-    let inside = false;
-    for (let index = 0, previous = footprint.length - 1; index < footprint.length; previous = index++) {
-      const currentEast = Number(footprint[index].eastKm);
-      const currentNorth = Number(footprint[index].northKm);
-      const previousEast = Number(footprint[previous].eastKm);
-      const previousNorth = Number(footprint[previous].northKm);
-      if ((currentNorth > northKm) !== (previousNorth > northKm)
-        && eastKm < (previousEast - currentEast) * (northKm - currentNorth) / (previousNorth - currentNorth) + currentEast) inside = !inside;
-    }
-    return inside;
-  }
-  return Math.hypot(eastKm - Number(cell?.eastKm || 0), northKm - Number(cell?.northKm || 0)) <= Math.max(0, Number(cell?.radiusKm || 0));
+// Calcul transféré au moteur : nowcastCellContainsPoint.
+
+// Calcul transféré au moteur : nowcastCellTraversal.
+
+// Calcul transféré au moteur : nowcastCellProjectedPassages.
+
+// Calcul transféré au moteur : nowcastCellRainProfilePassages.
+
+// Calcul transféré au moteur : nowcastCellPostContactDeparture.
+
+// Calcul transféré au moteur : nowcastCellProjectionQuality.
+
+// Calcul transféré au moteur : nowcastPreviousProjection.
+
+// Calcul transféré au moteur : nowcastProjectionFingerprint.
+
+// Calcul transféré au moteur : nowcastProjectionProfileSignature.
+
+// Calcul transféré au moteur : nowcastProjectionFresh.
+
+// Calcul transféré au moteur : nowcastProjectionHistory.
+
+// Calcul transféré au moteur : nowcastArrivalProjectionQuality.
+
+// Calcul transféré au moteur : nowcastMedian.
+
+// Calcul transféré au moteur : nowcastPresenceAssessment.
+
+// Calcul transféré au moteur : nowcastProjectionAssessment.
+
+// Calcul transféré au moteur : nowcastProjectionSnapshot.
+
+// Calcul transféré au moteur : nowcastNextProjectionHistory.
+
+function nowcastEtaRainEvents(radar) {
+  return currentNowcast()?.etaRainEvents || [];
 }
 
-function nowcastCellTraversal(cell) {
-  if (!nowcastCellContainsPoint(cell, 0, 0)) return null;
-  const points = (cell?.track?.points || []).filter(point => Number.isFinite(Number(point?.eastKm)) && Number.isFinite(Number(point?.northKm)));
-  const start = points[0];
-  const next = points.find(point => point !== start && Math.hypot(Number(point.eastKm) - Number(start?.eastKm), Number(point.northKm) - Number(start?.northKm)) >= .1);
-  if (!start || !next) return null;
-  const movementEast = Number(next.eastKm) - Number(start.eastKm);
-  const movementNorth = Number(next.northKm) - Number(start.northKm);
-  const movementDistance = Math.hypot(movementEast, movementNorth);
-  if (movementDistance < .1) return null;
-  const unitEast = movementEast / movementDistance;
-  const unitNorth = movementNorth / movementDistance;
-  const shapeCoordinates = (cell.shapeRuns || []).flatMap(run => [Number(run.westKm), Number(run.eastKm), Number(run.southKm), Number(run.northKm)]).filter(Number.isFinite);
-  const legacyRadius = shapeCoordinates.length ? 0 : Number(cell.radiusKm || 0);
-  const maximumDistance = Math.min(200, Math.max(10, Math.max(0, ...shapeCoordinates.map(Math.abs), legacyRadius) * 2 + 5));
-  const distanceToExit = direction => {
-    const stepKm = .25;
-    for (let distance = stepKm; distance <= maximumDistance; distance += stepKm) {
-      if (!nowcastCellContainsPoint(cell, unitEast * direction * distance, unitNorth * direction * distance)) return Math.max(0, distance - stepKm / 2);
-    }
-    return maximumDistance;
-  };
-  // La cellule se déplace dans le sens +1 ; le point fixe traverse donc la
-  // forme en sens inverse. La sortie future se trouve du côté -1.
-  const remainingDistanceKm = distanceToExit(-1);
-  const traversedDistanceKm = distanceToExit(1);
-  const totalDistanceKm = remainingDistanceKm + traversedDistanceKm;
-  return totalDistanceKm > 0 ? {
-    remainingDistanceKm,
-    totalDistanceKm,
-    remainingFraction: Math.max(0, Math.min(1, remainingDistanceKm / totalDistanceKm))
-  } : null;
-}
+// Calcul transféré au moteur : nowcastEtaRainEligible.
 
-function nowcastCellProjectedPassages(cell, horizonMinutes = 180) {
-  const points = (cell?.track?.points || []).filter(point => Number.isFinite(Number(point?.eastKm))
-    && Number.isFinite(Number(point?.northKm))
-    && Number.isFinite(Number(point?.minutes)));
-  const start = points[0];
-  const next = points.find(point => point !== start
-    && Number(point.minutes) > Number(start?.minutes)
-    && Math.hypot(Number(point.eastKm) - Number(start?.eastKm), Number(point.northKm) - Number(start?.northKm)) >= .1);
-  if (!start || !next) return [];
-  const elapsedMinutes = Number(next.minutes) - Number(start.minutes);
-  const velocityEast = (Number(next.eastKm) - Number(start.eastKm)) / elapsedMinutes;
-  const velocityNorth = (Number(next.northKm) - Number(start.northKm)) / elapsedMinutes;
-  if (!Number.isFinite(velocityEast) || !Number.isFinite(velocityNorth) || Math.hypot(velocityEast, velocityNorth) < .001) return [];
+// Calcul transféré au moteur : nowcastPresenceRainEligible.
 
-  const shapeRuns = Array.isArray(cell?.shapeRuns) ? cell.shapeRuns : [];
-  let intervals = [];
-  if (shapeRuns.length) {
-    const axisInterval = (minimum, maximum, velocity) => {
-      const targetVelocity = -velocity;
-      if (Math.abs(targetVelocity) < 1e-9) return minimum <= 0 && maximum >= 0 ? [-Infinity, Infinity] : null;
-      const first = minimum / targetVelocity;
-      const second = maximum / targetVelocity;
-      return [Math.min(first, second), Math.max(first, second)];
-    };
-    intervals = shapeRuns.flatMap(run => {
-      const east = axisInterval(Number(run.westKm), Number(run.eastKm), velocityEast);
-      const north = axisInterval(Number(run.southKm), Number(run.northKm), velocityNorth);
-      if (!east || !north) return [];
-      const intervalStart = Math.max(0, east[0], north[0]);
-      const projectedEnd = Math.min(east[1], north[1]);
-      const intervalEnd = Math.min(horizonMinutes, projectedEnd);
-      return Number.isFinite(intervalStart) && Number.isFinite(intervalEnd) && intervalEnd > intervalStart
-        ? [{ startMinutes: intervalStart, endMinutes: intervalEnd, continuesBeyondHorizon: !Number.isFinite(projectedEnd) || projectedEnd > horizonMinutes }]
-        : [];
-    });
-  } else {
-    const stepMinutes = .25;
-    let intervalStart = null;
-    for (let minutes = 0; minutes <= horizonMinutes + stepMinutes; minutes += stepMinutes) {
-      const inside = minutes <= horizonMinutes
-        && nowcastCellContainsPoint(cell, -velocityEast * minutes, -velocityNorth * minutes);
-      if (inside && intervalStart == null) intervalStart = minutes;
-      if (!inside && intervalStart != null) {
-        intervals.push({ startMinutes: intervalStart, endMinutes: Math.min(horizonMinutes, minutes), continuesBeyondHorizon: minutes > horizonMinutes });
-        intervalStart = null;
-      }
-    }
-  }
+// Calcul transféré au moteur : nowcastReliablePassageEventForCell.
 
-  return intervals
-    .sort((left, right) => left.startMinutes - right.startMinutes)
-    .reduce((merged, interval) => {
-      const previous = merged.at(-1);
-      if (previous && interval.startMinutes <= previous.endMinutes + .05) {
-        previous.endMinutes = Math.max(previous.endMinutes, interval.endMinutes);
-        previous.continuesBeyondHorizon ||= Boolean(interval.continuesBeyondHorizon);
-      } else {
-        merged.push({ ...interval });
-      }
-      return merged;
-    }, [])
-    .map(interval => ({
-      ...interval,
-      durationMinutes: interval.endMinutes - interval.startMinutes,
-      durationBeyondHorizon: interval.startMinutes <= .05
-        && interval.endMinutes >= horizonMinutes - .05
-        && Boolean(interval.continuesBeyondHorizon)
-    }));
-}
+// Calcul transféré au moteur : nowcastCellLocallyObservedInterior.
 
-function nowcastCellRainProfilePassages(cell, horizonMinutes = 180) {
-  const profile = Array.isArray(cell?.rainProfile) ? cell.rainProfile : [];
-  const intervals = profile.flatMap(segment => {
-    if (segment?.startMinutes == null || segment?.endMinutes == null || segment?.intensity == null) return [];
-    const startMinutes = Math.max(0, Number(segment?.startMinutes));
-    const projectedEnd = Number(segment?.endMinutes);
-    const endMinutes = Math.min(horizonMinutes, projectedEnd);
-    const intensity = Math.max(0, Number(segment?.intensity) || 0);
-    return Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes && intensity > 0
-      ? [{ startMinutes, endMinutes, intensity, continuesBeyondHorizon: projectedEnd >= horizonMinutes }]
-      : [];
-  });
-  if (!intervals.length) return [];
+// Calcul transféré au moteur : nowcastAnnouncedCellPassageRisk.
 
-  const boundaries = [...new Set(intervals.flatMap(interval => [interval.startMinutes, interval.endMinutes]))]
-    .sort((left, right) => left - right);
-  const normalized = [];
-  for (let index = 0; index < boundaries.length - 1; index++) {
-    const startMinutes = boundaries[index];
-    const endMinutes = boundaries[index + 1];
-    const midpoint = (startMinutes + endMinutes) / 2;
-    const active = intervals.filter(interval => interval.startMinutes < midpoint && interval.endMinutes > midpoint);
-    if (!active.length) continue;
-    const intensity = active.reduce((sum, interval) => sum + interval.intensity, 0) / active.length;
-    const continuesBeyondHorizon = active.some(interval => interval.continuesBeyondHorizon);
-    const previous = normalized.at(-1);
-    if (previous && startMinutes - previous.endMinutes <= .01 && Math.abs(previous.intensity - intensity) <= .05) {
-      previous.endMinutes = endMinutes;
-      previous.continuesBeyondHorizon ||= continuesBeyondHorizon;
-    } else {
-      normalized.push({ startMinutes, endMinutes, intensity, continuesBeyondHorizon });
-    }
-  }
+// Calcul transféré au moteur : nowcastCellPassageObserved.
 
-  return normalized.reduce((passages, segment) => {
-    const previous = passages.at(-1);
-    if (previous && segment.startMinutes <= previous.endMinutes + .05) {
-      previous.endMinutes = Math.max(previous.endMinutes, segment.endMinutes);
-      previous.intensityProfile.push(segment);
-      previous.continuesBeyondHorizon ||= Boolean(segment.continuesBeyondHorizon);
-    } else {
-      passages.push({
-        startMinutes: segment.startMinutes,
-        endMinutes: segment.endMinutes,
-        intensityProfile: [segment],
-        continuesBeyondHorizon: Boolean(segment.continuesBeyondHorizon)
-      });
-    }
-    return passages;
-  }, []).map(passage => ({
-    ...passage,
-    durationMinutes: passage.endMinutes - passage.startMinutes,
-    durationBeyondHorizon: passage.startMinutes <= .05
-      && passage.endMinutes >= horizonMinutes - .05
-      && Boolean(passage.continuesBeyondHorizon)
-  }));
-}
+// Calcul transféré au moteur : nowcastDisplayedCellPassageRisk.
 
-function nowcastCellPostContactDeparture(cell, radarObservedAt = null) {
-  if (typeof cell?.postContactDepartureConfirmed === "boolean") return cell.postContactDepartureConfirmed;
-  const contactAt = Date.parse(cell?.lastDirectContactAt || "");
-  const observedAt = Date.parse(radarObservedAt || "");
-  const contactAge = observedAt - contactAt;
-  const edgeDistanceKm = Number(cell?.edgeDistanceKm);
-  const confidence = Number(cell?.track?.confidence);
-  const speedKmh = Number(cell?.track?.speedKmh);
-  const horizonMinutes = Number(cell?.track?.horizonMinutes);
-  const hasEta = [cell?.etaMinutes, cell?.etaCoreMinutes, cell?.etaEnvelopeMinutes]
-    .some(value => value != null && value !== "" && Number.isFinite(Number(value)));
-  const radialChangeKm = Number(cell?.passageTrend?.radialChangeKm);
-  return Number.isFinite(contactAt) && Number.isFinite(observedAt)
-    && contactAge >= 0 && contactAge <= 45 * 60000
-    && Number.isFinite(edgeDistanceKm) && edgeDistanceKm > .25
-    && !hasEta && confidence >= 35 && speedKmh >= 5 && horizonMinutes >= 60
-    && Number.isFinite(radialChangeKm) && radialChangeKm >= 1;
-}
+// Calcul transféré au moteur : nowcastEtaRainRateAt.
 
-function nowcastCellProjectionQuality(cell, radarObservedAt) {
-  if (nowcastCellPostContactDeparture(cell, radarObservedAt)) return { reliable: false, reason: "post-contact-departure" };
-  const speedKmh = Number(cell?.track?.speedKmh);
-  const confidence = Number(cell?.track?.confidence);
-  const horizonMinutes = Number(cell?.track?.horizonMinutes);
-  if (!Number.isFinite(speedKmh) || speedKmh <= 2) return { reliable: false, reason: "motion-unavailable" };
-  if (!Number.isFinite(confidence) || confidence < 35) return { reliable: false, reason: "motion-confidence" };
-  if (!Number.isFinite(horizonMinutes) || horizonMinutes < 45) return { reliable: false, reason: "motion-horizon" };
-  if (cell?.track?.inherited === true) return { reliable: false, reason: "inherited-motion" };
+// Calcul transféré au moteur : nowcastEtaRainAmount.
 
-  const observationTime = Date.parse(radarObservedAt || "");
-  const historyByTime = new Map((Array.isArray(cell?.history) ? cell.history : []).map(point => [Date.parse(point?.observedAt || ""), point]));
-  if (Number.isFinite(observationTime)) historyByTime.set(observationTime, {
-    observedAt: radarObservedAt,
-    eastKm: cell?.eastKm,
-    northKm: cell?.northKm,
-    areaKm2: cell?.areaKm2
-  });
-  const recent = [...historyByTime.entries()]
-    .map(([time, point]) => ({
-      time,
-      eastKm: Number(point?.eastKm),
-      northKm: Number(point?.northKm),
-      areaKm2: Number(point?.areaKm2)
-    }))
-    .filter(point => Number.isFinite(point.time) && Number.isFinite(point.eastKm) && Number.isFinite(point.northKm)
-      && (!Number.isFinite(observationTime) || point.time >= observationTime - 20 * 60000) && point.time <= observationTime)
-    .sort((left, right) => left.time - right.time);
-  const areas = recent.map(point => point.areaKm2).filter(value => Number.isFinite(value) && value > 0);
-  if (areas.length >= 3 && Math.max(...areas) / Math.min(...areas) > 2.5) {
-    return { reliable: false, reason: "footprint-changing" };
-  }
-
-  const trackPoints = (cell?.track?.points || [])
-    .filter(point => Number.isFinite(Number(point?.minutes))
-      && Number.isFinite(Number(point?.eastKm))
-      && Number.isFinite(Number(point?.northKm)))
-    .sort((left, right) => Number(left.minutes) - Number(right.minutes));
-  const trackStart = trackPoints[0];
-  const trackNext = trackPoints.find(point => Number(point.minutes) > Number(trackStart?.minutes));
-  if (!trackStart || !trackNext) return { reliable: false, reason: "motion-points-missing" };
-  if (recent.length >= 2 && trackStart && trackNext) {
-    const previous = recent.at(-2);
-    const current = recent.at(-1);
-    const elapsedMinutes = (current.time - previous.time) / 60000;
-    const observedEast = current.eastKm - previous.eastKm;
-    const observedNorth = current.northKm - previous.northKm;
-    const projectedEast = Number(trackNext.eastKm) - Number(trackStart.eastKm);
-    const projectedNorth = Number(trackNext.northKm) - Number(trackStart.northKm);
-    const observedDistance = Math.hypot(observedEast, observedNorth);
-    const projectedDistance = Math.hypot(projectedEast, projectedNorth);
-    const projectedMinutes = Number(trackNext.minutes) - Number(trackStart.minutes);
-    if (elapsedMinutes > 0 && elapsedMinutes <= 15 && observedDistance >= .5 && projectedDistance >= .5 && projectedMinutes > 0) {
-      const alignment = (observedEast * projectedEast + observedNorth * projectedNorth) / (observedDistance * projectedDistance);
-      const speedRatio = (observedDistance / elapsedMinutes) / (projectedDistance / projectedMinutes);
-      if (alignment < .45 || speedRatio < .35 || speedRatio > 2.85) {
-        return { reliable: false, reason: "track-discontinuity" };
-      }
-    }
-  }
-  if (recent.length >= 3) {
-    const first = recent.at(-3);
-    const middle = recent.at(-2);
-    const last = recent.at(-1);
-    const previousEast = middle.eastKm - first.eastKm;
-    const previousNorth = middle.northKm - first.northKm;
-    const latestEast = last.eastKm - middle.eastKm;
-    const latestNorth = last.northKm - middle.northKm;
-    const previousDistance = Math.hypot(previousEast, previousNorth);
-    const latestDistance = Math.hypot(latestEast, latestNorth);
-    if (previousDistance >= .5 && latestDistance >= .5
-      && (previousEast * latestEast + previousNorth * latestNorth) / (previousDistance * latestDistance) < 0) {
-      return { reliable: false, reason: "track-reversal" };
-    }
-  }
-  return { reliable: true, reason: "consistent-motion" };
-}
-
-function nowcastPreviousProjection(event, projectionSnapshot) {
-  const passageIndex = Number(event?.passageIndex);
-  if (!Number.isInteger(passageIndex) || passageIndex < 0) return null;
-  const candidates = (Array.isArray(projectionSnapshot?.projections) ? projectionSnapshot.projections : [])
-    .filter(projection => String(projection?.cellId) === String(event?.cell?.id)
-      && Number.isInteger(Number(projection?.passageIndex))
-      && Number(projection.passageIndex) === passageIndex
-      && String(projection?.projectionKind || "") === String(event?.projectionKind || "")
-      && Number.isFinite(Number(projection?.eventStart)) && Number.isFinite(Number(projection?.eventEnd)));
-  return candidates.reduce((best, projection) => {
-    const score = Math.abs(Number(projection.eventStart) - Number(event.eventStart))
-      + Math.abs(Number(projection.eventEnd) - Number(event.eventEnd));
-    return !best || score < best.score ? { projection, score } : best;
-  }, null)?.projection || null;
-}
-
-function nowcastProjectionFingerprint(event) {
-  return JSON.stringify([
-    event?.projectionKind || null,
-    Number(event?.passage),
-    Number(event?.eventStart),
-    Number(event?.eventEnd),
-    Number(event?.durationMinutes),
-    Number(event?.projectedAmountMm),
-    Number(event?.conditionalIntensity),
-    (Array.isArray(event?.intensityProfile) ? event.intensityProfile : []).map(segment => [
-      Number(segment?.start),
-      Number(segment?.end),
-      Number(segment?.intensity)
-    ])
-  ]);
-}
-
-function nowcastProjectionProfileSignature(event, bucketCount = 4) {
-  const eventStart = Number(event?.eventStart);
-  const eventEnd = Number(event?.eventEnd);
-  const profile = Array.isArray(event?.intensityProfile) ? event.intensityProfile : [];
-  if (!Number.isFinite(eventStart) || !Number.isFinite(eventEnd) || eventEnd <= eventStart || !profile.length) return null;
-  const bucketDuration = (eventEnd - eventStart) / bucketCount;
-  return Array.from({ length: bucketCount }, (_, index) => {
-    const start = eventStart + index * bucketDuration;
-    const end = index === bucketCount - 1 ? eventEnd : start + bucketDuration;
-    const weightedIntensity = profile.reduce((sum, segment) => {
-      const overlap = Math.max(0, Math.min(end, Number(segment?.end)) - Math.max(start, Number(segment?.start)));
-      return sum + overlap * Math.max(0, Number(segment?.intensity) || 0);
-    }, 0);
-    return Math.round(weightedIntensity / Math.max(1, end - start) * 1000) / 1000;
-  });
-}
-
-function nowcastProjectionFresh(event, referenceTime = null) {
-  const observedAt = Number(event?.radarObservedAt);
-  if (!Number.isFinite(observedAt)) return true;
-  const evaluatedAt = referenceTime == null
-    ? typeof appNow === "function" ? Number(appNow()) : Date.now()
-    : Number(referenceTime);
-  return Number.isFinite(evaluatedAt)
-    && evaluatedAt >= observedAt - 5 * 60000
-    && evaluatedAt - observedAt <= 15 * 60000;
-}
-
-function nowcastProjectionHistory(projectionSnapshot) {
-  const history = Array.isArray(projectionSnapshot?.projectionHistory)
-    ? projectionSnapshot.projectionHistory
-    : [];
-  if (history.length) return history;
-  return projectionSnapshot?.observedAt && Array.isArray(projectionSnapshot?.projections)
-    ? [{ observedAt: projectionSnapshot.observedAt, projections: projectionSnapshot.projections }]
-    : [];
-}
-
-function nowcastArrivalProjectionQuality(cell, radarObservedAt) {
-  if (cell?.track?.inherited !== true) return nowcastCellProjectionQuality(cell, radarObservedAt);
-  // Une vitesse héritée ne suffit jamais à valider une durée ou une lame d'eau,
-  // mais elle ne doit pas invalider une heure d'arrivée répétée par la géométrie.
-  return nowcastCellProjectionQuality({
-    ...cell,
-    track: { ...cell.track, inherited: false }
-  }, radarObservedAt);
-}
-
-function nowcastMedian(values) {
-  const sorted = values.map(Number).filter(Number.isFinite).sort((left, right) => left - right);
-  if (!sorted.length) return null;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function nowcastPresenceAssessment(event, projectionSnapshot, radarObservedAt, trackingEnabled) {
-  const currentObservation = Date.parse(radarObservedAt || "");
-  const currentStart = Number(event?.eventStart);
-  const currentPassage = Number(event?.passage);
-  const exactProjection = ["profile", "shape"].includes(event?.projectionKind)
-    && event?.cell?.etaBasis !== "envelope";
-  const quality = nowcastArrivalProjectionQuality(event?.cell, radarObservedAt);
-  const candidate = Number.isFinite(currentStart)
-    && Number.isFinite(currentPassage)
-    && currentPassage >= 55
-    && event?.cell?.etaBasis !== "envelope"
-    && quality.reliable;
-  const empty = reason => ({
-    presenceReliable: false,
-    arrivalReliable: false,
-    presenceProbability: null,
-    presenceStableScans: 0,
-    arrivalStableScans: 0,
-    presenceReason: reason,
-    arrivalReason: reason,
-    presenceCandidate: candidate,
-    arrivalCandidate: candidate && exactProjection
-  });
-  if (!candidate) return empty(quality.reliable ? "presence-not-eligible" : quality.reason);
-  if (!trackingEnabled) return {
-    ...empty("legacy"),
-    presenceReliable: true,
-    arrivalReliable: exactProjection,
-    presenceProbability: Math.round(currentPassage / 5) * 5,
-    presenceStableScans: null,
-    arrivalStableScans: exactProjection ? null : 0
-  };
-
-  const sameObservation = Date.parse(projectionSnapshot?.observedAt || "") === currentObservation
-    ? (projectionSnapshot?.projections || []).filter(projection =>
-      String(projection?.cellId) === String(event?.cell?.id)
-      && Math.abs(Number(projection?.eventStart) - currentStart) <= 10 * 60000
-    ).sort((left, right) => Math.abs(Number(left.eventStart) - currentStart) - Math.abs(Number(right.eventStart) - currentStart))[0]
-    : null;
-  if (sameObservation) return {
-    presenceReliable: sameObservation.presenceReliable === true,
-    arrivalReliable: sameObservation.arrivalReliable === true,
-    presenceProbability: Number.isFinite(Number(sameObservation.presenceProbability))
-      ? Number(sameObservation.presenceProbability) : null,
-    presenceStableScans: Math.max(0, Number(sameObservation.presenceStableScans) || 0),
-    arrivalStableScans: Math.max(0, Number(sameObservation.arrivalStableScans) || 0),
-    presenceReason: sameObservation.presenceReason || "not-confirmed",
-    arrivalReason: sameObservation.arrivalReason || "not-confirmed",
-    presenceCandidate: sameObservation.presenceCandidate === true,
-    arrivalCandidate: sameObservation.arrivalCandidate === true
-  };
-
-  const recentHistory = nowcastProjectionHistory(projectionSnapshot)
-    .map(snapshot => ({ ...snapshot, time: Date.parse(snapshot?.observedAt || "") }))
-    .filter(snapshot => Number.isFinite(snapshot.time)
-      && snapshot.time < currentObservation
-      && currentObservation - snapshot.time <= 15 * 60000)
-    .sort((left, right) => right.time - left.time)
-    .slice(0, 2);
-  const matches = recentHistory.flatMap(snapshot => (snapshot.projections || [])
-    .filter(projection => String(projection?.cellId) === String(event?.cell?.id)
-      && projection?.presenceCandidate === true
-      && Number.isFinite(Number(projection?.eventStart))
-      && Math.abs(Number(projection.eventStart) - currentStart) <= 10 * 60000)
-    .map(projection => ({ ...projection, observedAt: snapshot.observedAt }))
-  ).sort((left, right) => Math.abs(Number(left.eventStart) - currentStart) - Math.abs(Number(right.eventStart) - currentStart));
-  const compatibleMatches = [...new Map(matches.map(projection => [projection.observedAt, projection])).values()].slice(0, 2);
-  const previous = compatibleMatches[0] || null;
-  if (!previous) return empty("not-confirmed");
-
-  const rawProbability = nowcastMedian([currentPassage, ...compatibleMatches.map(projection => Number(projection.passage))]);
-  let presenceProbability = rawProbability == null ? null : Math.max(0, Math.min(100, Math.round(rawProbability / 5) * 5));
-  const previousProbability = Number(compatibleMatches.find(projection =>
-    Number.isFinite(Number(projection.presenceProbability)))?.presenceProbability);
-  if (Number.isFinite(previousProbability) && Math.abs(presenceProbability - previousProbability) < 10) {
-    presenceProbability = previousProbability;
-  }
-  const previousExact = compatibleMatches.some(projection => projection.arrivalCandidate === true
-    && ["profile", "shape"].includes(projection.projectionKind));
-  return {
-    presenceReliable: true,
-    arrivalReliable: exactProjection && previousExact,
-    presenceProbability,
-    presenceStableScans: Math.max(1, Number(previous.presenceStableScans) || 0) + 1,
-    arrivalStableScans: exactProjection && previousExact
-      ? Math.max(1, Number(previous.arrivalStableScans) || 0) + 1 : 0,
-    presenceReason: "confirmed-arrival-window",
-    arrivalReason: exactProjection && previousExact ? "confirmed-arrival" : "exact-arrival-not-confirmed",
-    presenceCandidate: true,
-    arrivalCandidate: exactProjection
-  };
-}
-
-function nowcastProjectionAssessment(event, projectionSnapshot, radarObservedAt, trackingEnabled) {
-  const currentProfileSignature = nowcastProjectionProfileSignature(event);
-  const currentAnchor = {
-    anchorPassage: event?.passage,
-    anchorEventStart: event?.eventStart,
-    anchorEventEnd: event?.eventEnd,
-    anchorDurationMinutes: event?.durationMinutes,
-    anchorProjectedAmountMm: event?.projectedAmountMm,
-    anchorConditionalIntensity: event?.conditionalIntensity,
-    anchorProfileSignature: currentProfileSignature
-  };
-  const reset = (reason, candidate = false) => ({ reliable: false, stableScans: 0, reason, candidate, ...currentAnchor });
-  if (event?.projectionKind === "fallback") return reset("eta-fallback");
-  if (event?.cell?.etaBasis === "envelope") return reset("eta-envelope");
-  if (event?.durationBeyondHorizon === true || Number(event?.projectionEndMinutes) > 60) {
-    return reset("confidence-horizon");
-  }
-  if (!trackingEnabled) return { reliable: true, stableScans: null, reason: "legacy", candidate: true, ...currentAnchor };
-  const quality = nowcastCellProjectionQuality(event.cell, radarObservedAt);
-  if (!quality.reliable) return reset(quality.reason);
-  const trackHorizonMinutes = Number(event?.cell?.track?.horizonMinutes);
-  if (Number.isFinite(trackHorizonMinutes) && Number(event?.projectionEndMinutes) >= trackHorizonMinutes - .05) {
-    return reset("confidence-horizon");
-  }
-  const currentObservation = Date.parse(radarObservedAt || "");
-  const previousObservation = Date.parse(projectionSnapshot?.observedAt || "");
-  const previous = nowcastPreviousProjection(event, projectionSnapshot);
-  if (currentObservation === previousObservation && previous) {
-    const sameProjection = nowcastProjectionFingerprint(event) === previous.projectionFingerprint;
-    if (!sameProjection) return reset("observation-revised", true);
-    return {
-      reliable: previous.projectionReliable === true,
-      stableScans: Math.max(0, Number(previous.stableScans) || 0),
-      reason: previous.projectionReason || (previous.projectionReliable ? "confirmed" : "not-confirmed"),
-      candidate: previous.projectionCandidate === true,
-      anchorPassage: previous.anchorPassage ?? previous.passage,
-      anchorEventStart: previous.anchorEventStart ?? previous.eventStart,
-      anchorEventEnd: previous.anchorEventEnd ?? previous.eventEnd,
-      anchorDurationMinutes: previous.anchorDurationMinutes ?? previous.durationMinutes,
-      anchorProjectedAmountMm: previous.anchorProjectedAmountMm ?? previous.projectedAmountMm,
-      anchorConditionalIntensity: previous.anchorConditionalIntensity ?? previous.conditionalIntensity,
-      anchorProfileSignature: previous.anchorProfileSignature ?? previous.profileSignature ?? null
-    };
-  }
-  const elapsed = currentObservation - previousObservation;
-  if (!previous || !Number.isFinite(elapsed) || elapsed <= 0 || elapsed > 15 * 60000
-    || previous.projectionCandidate !== true) {
-    return reset("not-confirmed", true);
-  }
-  const tolerance = 8 * 60000;
-  const durationTolerance = 10;
-  const anchorEventStart = Number(previous.anchorEventStart ?? previous.eventStart);
-  const anchorEventEnd = Number(previous.anchorEventEnd ?? previous.eventEnd);
-  const anchorPassage = Number(previous.anchorPassage ?? previous.passage);
-  const anchorDuration = Number(previous.anchorDurationMinutes ?? previous.durationMinutes);
-  const anchorAmount = Number(previous.anchorProjectedAmountMm ?? previous.projectedAmountMm);
-  const anchorIntensity = Number(previous.anchorConditionalIntensity ?? previous.conditionalIntensity);
-  const previousEventStart = Number(previous.eventStart);
-  const previousEventEnd = Number(previous.eventEnd);
-  const previousPassage = Number(previous.passage);
-  const previousDuration = Number(previous.durationMinutes);
-  const previousAmount = Number(previous.projectedAmountMm);
-  const previousIntensity = Number(previous.conditionalIntensity);
-  const anchorProfileSignature = previous.anchorProfileSignature ?? previous.profileSignature ?? null;
-  const previousProfileSignature = previous.profileSignature ?? null;
-  const currentDuration = Number(event.durationMinutes);
-  const currentPassage = Number(event.passage);
-  const currentAmount = Number(event.projectedAmountMm);
-  const currentIntensity = Number(event.conditionalIntensity);
-  const near = (left, right, maximumDifference) => Number.isFinite(left) && Number.isFinite(right)
-    && Math.abs(left - right) <= maximumDifference + 1e-9;
-  const amountTolerance = Math.max(.1, Math.abs(anchorAmount) * .35);
-  const previousAmountTolerance = Math.max(.1, Math.abs(previousAmount) * .35);
-  const amountConsistent = near(currentAmount, anchorAmount, amountTolerance)
-    && near(currentAmount, previousAmount, previousAmountTolerance);
-  const active = Number(event.etaMinutes) <= .5;
-  const activeAmountNear = (referenceAmount, referenceDuration) => {
-    if (!Number.isFinite(currentAmount) || !Number.isFinite(currentDuration) || currentDuration <= 0
-      || !Number.isFinite(referenceAmount) || !Number.isFinite(referenceDuration) || referenceDuration <= 0) return false;
-    const expectedAmount = referenceAmount * currentDuration / referenceDuration;
-    return near(currentAmount, expectedAmount, Math.max(.1, Math.abs(expectedAmount) * .35));
-  };
-  const activeAmountConsistent = activeAmountNear(anchorAmount, anchorDuration)
-    && activeAmountNear(previousAmount, previousDuration);
-  const intensityTolerance = Math.max(.1, Math.abs(anchorIntensity) * .35);
-  const previousIntensityTolerance = Math.max(.1, Math.abs(previousIntensity) * .35);
-  const intensityConsistent = near(currentIntensity, anchorIntensity, intensityTolerance)
-    && near(currentIntensity, previousIntensity, previousIntensityTolerance);
-  const profileNear = (left, right) => {
-    if (left == null && right == null) return true;
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-    return left.every((value, index) => near(Number(value), Number(right[index]), Math.max(.2, Math.abs(Number(right[index])) * .5)));
-  };
-  const profileConsistent = profileNear(currentProfileSignature, anchorProfileSignature)
-    && profileNear(currentProfileSignature, previousProfileSignature);
-  const passageOverlap = (start, end, referenceStart, referenceEnd) => {
-    if (![start, end, referenceStart, referenceEnd].every(Number.isFinite)
-      || end <= start || referenceEnd <= referenceStart) return false;
-    const shorterDuration = Math.min(end - start, referenceEnd - referenceStart);
-    const overlap = Math.max(0, Math.min(end, referenceEnd) - Math.max(start, referenceStart));
-    return overlap >= Math.min(shorterDuration, Math.max(30000, shorterDuration * .5));
-  };
-  const samePassage = passageOverlap(Number(event.eventStart), Number(event.eventEnd), anchorEventStart, anchorEventEnd)
-    && passageOverlap(Number(event.eventStart), Number(event.eventEnd), previousEventStart, previousEventEnd);
-  const passageValuesAvailable = [currentPassage, anchorPassage, previousPassage].every(Number.isFinite);
-  const passageConsistent = passageValuesAvailable
-    && near(currentPassage, anchorPassage, 12) && near(currentPassage, previousPassage, 12);
-  const consistent = near(Number(event.eventEnd), anchorEventEnd, tolerance)
-    && near(Number(event.eventEnd), previousEventEnd, tolerance)
-    && (active || (near(Number(event.eventStart), anchorEventStart, tolerance)
-      && near(Number(event.eventStart), previousEventStart, tolerance)))
-    && (active || (near(currentDuration, anchorDuration, durationTolerance)
-      && near(currentDuration, previousDuration, durationTolerance)))
-    && intensityConsistent
-    && profileConsistent
-    && samePassage
-    && passageConsistent
-    && (active ? activeAmountConsistent : amountConsistent);
-  const stableScans = consistent ? Math.max(0, Number(previous.stableScans) || 0) + 1 : 0;
-  return {
-    reliable: stableScans >= 2,
-    stableScans,
-    reason: consistent ? "confirmed" : "projection-shift",
-    candidate: true,
-    ...(consistent ? {
-      anchorPassage: previous.anchorPassage ?? previous.passage,
-      anchorEventStart,
-      anchorEventEnd,
-      anchorDurationMinutes: previous.anchorDurationMinutes ?? previous.durationMinutes,
-      anchorProjectedAmountMm: previous.anchorProjectedAmountMm ?? previous.projectedAmountMm,
-      anchorConditionalIntensity: previous.anchorConditionalIntensity ?? previous.conditionalIntensity,
-      anchorProfileSignature: previous.anchorProfileSignature ?? previous.profileSignature ?? null
-    } : currentAnchor)
-  };
-}
-
-function nowcastProjectionSnapshot(events) {
-  return (events || []).map(event => ({
-    cellId: event?.cell?.id,
-    etaBasis: event?.cell?.etaBasis || null,
-    passageIndex: event?.passageIndex,
-    passage: Number(event?.passage),
-    eventStart: event?.eventStart,
-    eventEnd: event?.eventEnd,
-    radarObservedAt: event?.radarObservedAt,
-    etaMinutes: event?.etaMinutes,
-    projectionEndMinutes: event?.projectionEndMinutes,
-    durationBeyondHorizon: event?.durationBeyondHorizon === true,
-    durationMinutes: event?.durationMinutes,
-    projectedAmountMm: event?.projectedAmountMm,
-    conditionalIntensity: event?.conditionalIntensity,
-    profileSignature: nowcastProjectionProfileSignature(event),
-    projectionFingerprint: nowcastProjectionFingerprint(event),
-    projectionKind: event?.projectionKind || null,
-    projectionReliable: event?.projectionReliable === true,
-    projectionReason: event?.projectionReason || null,
-    projectionCandidate: event?.projectionCandidate === true,
-    stableScans: Math.max(0, Number(event?.projectionStableScans) || 0),
-    presenceReliable: event?.presenceReliable === true,
-    arrivalReliable: event?.arrivalReliable === true,
-    presenceProbability: Number.isFinite(Number(event?.presenceProbability)) ? Number(event.presenceProbability) : null,
-    presenceStableScans: Math.max(0, Number(event?.presenceStableScans) || 0),
-    arrivalStableScans: Math.max(0, Number(event?.arrivalStableScans) || 0),
-    presenceReason: event?.presenceReason || null,
-    arrivalReason: event?.arrivalReason || null,
-    presenceCandidate: event?.presenceCandidate === true,
-    arrivalCandidate: event?.arrivalCandidate === true,
-    presenceHeld: event?.presenceHeld === true,
-    presenceMisses: Math.max(0, Number(event?.presenceMisses) || 0),
-    anchorPassage: event?.projectionAnchorPassage,
-    anchorEventStart: event?.projectionAnchorEventStart,
-    anchorEventEnd: event?.projectionAnchorEventEnd,
-    anchorDurationMinutes: event?.projectionAnchorDurationMinutes,
-    anchorProjectedAmountMm: event?.projectionAnchorProjectedAmountMm,
-    anchorConditionalIntensity: event?.projectionAnchorConditionalIntensity,
-    anchorProfileSignature: event?.projectionAnchorProfileSignature
-  }));
-}
-
-function nowcastNextProjectionHistory(projectionSnapshot, observedAt, projections) {
-  const currentTime = Date.parse(observedAt || "");
-  const history = nowcastProjectionHistory(projectionSnapshot)
-    .filter(snapshot => snapshot?.observedAt !== observedAt)
-    .filter(snapshot => {
-      const time = Date.parse(snapshot?.observedAt || "");
-      return Number.isFinite(time) && Number.isFinite(currentTime)
-        && time < currentTime && currentTime - time <= 20 * 60000;
-    });
-  history.push({ observedAt, projections });
-  return history.sort((left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt)).slice(-3);
-}
-
-function nowcastEtaRainEvents(radar, projectionSnapshot = typeof cellPassageSnapshot === "undefined" ? undefined : cellPassageSnapshot) {
-  const radarObservedAt = new Date(radar?.observedAt || 0).getTime();
-  if (!Number.isFinite(radarObservedAt)) return [];
-  const projectionTrackingEnabled = projectionSnapshot !== undefined;
-  const clampDuration = minutes => Math.max(15, Math.min(90, minutes));
-  const legacyFootprintAtEta = cell => {
-    const etaMinutes = Number(cell.etaMinutes);
-    const points = cell.track?.points || [];
-    const closestPoint = points.reduce((best, point) => {
-      const distance = Math.abs(Number(point.minutes) - etaMinutes);
-      return !best || distance < best.distance ? { point, distance } : best;
-    }, null)?.point;
-    if (cell.etaBasis === "envelope") return Math.max(Number(cell.radiusKm) || 0, Number(closestPoint?.uncertaintyKm) || 0);
-    return Math.max(0, Number(cell.radiusKm) || 0) + 2;
-  };
-  const events = (radar?.cells || []).flatMap(cell => {
-    if (cell?.etaMinutes == null) return null;
-    const etaMinutes = Number(cell.etaMinutes);
-    const passage = Math.round(Number(cell.risks?.passage) || 0);
-    if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return null;
-    const measuredSpeedKmh = Math.max(0, Number(cell.track?.speedKmh) || 0);
-    const speedKmh = Math.max(1, measuredSpeedKmh);
-    const rainProfilePassages = nowcastCellRainProfilePassages(cell);
-    const shapePassages = nowcastCellProjectedPassages(cell);
-    const projectedPassages = rainProfilePassages.length ? rainProfilePassages : shapePassages;
-    const projectionKind = rainProfilePassages.length ? "profile" : shapePassages.length ? "shape" : "fallback";
-    const traversal = etaMinutes <= .5 ? nowcastCellTraversal(cell) : null;
-    const fullTraversalDurationMinutes = traversal && speedKmh > 2
-      ? 60 * traversal.totalDistanceKm / speedKmh
-      : null;
-    // Une ETA probabiliste peut exister alors que le noyau pixelise ne coupe
-    // pas exactement le point. La lame d'eau conditionnelle doit tout de meme
-    // apparaitre dans la bande Nowcasting orange, avec la probabilite de
-    // passage separee, plutot que de disparaitre completement de la frise.
-    const needsEtaFallback = !projectedPassages.length;
-    const fallbackDurationMinutes = needsEtaFallback
-      ? traversal
-        ? clampDuration(fullTraversalDurationMinutes ?? 45)
-        : clampDuration(speedKmh > 2 ? 60 * (legacyFootprintAtEta(cell) * 2) / speedKmh : 45)
-      : 0;
-    const fallbackRemainingMinutes = traversal ? Math.max(1, fallbackDurationMinutes * traversal.remainingFraction) : fallbackDurationMinutes;
-    const passages = projectedPassages.length
-      ? projectedPassages
-      : needsEtaFallback ? [{ startMinutes: etaMinutes, endMinutes: etaMinutes + fallbackRemainingMinutes, durationMinutes: fallbackRemainingMinutes }] : [];
-    const maximum = Math.max(0, Number(cell.maximum) || 0);
-    const representativeIntensity = Math.min(maximum, Math.max(0, Number(cell.mean) || maximum * .5));
-    return passages.map((projectedPassage, passageIndex) => {
-      const durationMinutes = Math.max(0, Number(projectedPassage.durationMinutes) || 0);
-      const eventStart = radarObservedAt + projectedPassage.startMinutes * 60000;
-      const eventEnd = radarObservedAt + projectedPassage.endMinutes * 60000;
-      const intensityProfile = (projectedPassage.intensityProfile || []).map(segment => ({
-        start: radarObservedAt + segment.startMinutes * 60000,
-        end: radarObservedAt + segment.endMinutes * 60000,
-        intensity: segment.intensity
-      }));
-      const profiledRain = intensityProfile.reduce((sum, segment) => sum + segment.intensity * (segment.end - segment.start), 0);
-      const profiledDuration = intensityProfile.reduce((sum, segment) => sum + segment.end - segment.start, 0);
-      const profiledIntensity = profiledDuration > 0 ? profiledRain / profiledDuration : representativeIntensity;
-      const projectedAmountMm = profiledDuration > 0
-        ? profiledRain / 3600000
-        : representativeIntensity * durationMinutes / 60;
-      const fadeDurationMinutes = intensityProfile.length
-        ? 0
-        : passageIndex === 0 && projectedPassage.startMinutes <= .5 && Number.isFinite(fullTraversalDurationMinutes)
-          ? fullTraversalDurationMinutes * .1
-          : durationMinutes * .1;
-      const fadeStart = intensityProfile.length ? null : eventEnd - fadeDurationMinutes * 60000;
-      return {
-        cell,
-        etaMinutes: projectedPassage.startMinutes,
-        forecastEtaMinutes: etaMinutes,
-        passage,
-        passageIndex,
-        projectionKind,
-        eventStart,
-        eventEnd,
-        radarObservedAt,
-        fadeStart,
-        intensityProfile,
-        durationMinutes: measuredSpeedKmh > 2 ? Math.max(1, Math.round(durationMinutes)) : null,
-        projectionEndMinutes: Number(projectedPassage.endMinutes),
-        projectedAmountMm: Math.round(projectedAmountMm * 1000) / 1000,
-        durationBeyondHorizon: Boolean(projectedPassage.durationBeyondHorizon),
-        remainingFraction: traversal?.remainingFraction ?? 1,
-        maximum,
-        conditionalIntensity: profiledIntensity,
-        etaLabel: cell.etaBasis === "envelope" ? "ETA possible " : "ETA "
-      };
-    });
-  }).filter(Boolean);
-  const assessedEvents = events.map(event => {
-    const assessment = nowcastProjectionAssessment(event, projectionSnapshot, radar?.observedAt, projectionTrackingEnabled);
-    const presence = nowcastPresenceAssessment(event, projectionSnapshot, radar?.observedAt, projectionTrackingEnabled);
-    return {
-      ...event,
-      projectionReliable: assessment.reliable,
-      projectionStableScans: assessment.stableScans,
-      projectionReason: assessment.reason,
-      projectionCandidate: assessment.candidate === true,
-      projectionAnchorPassage: assessment.anchorPassage,
-      projectionAnchorEventStart: assessment.anchorEventStart,
-      projectionAnchorEventEnd: assessment.anchorEventEnd,
-      projectionAnchorDurationMinutes: assessment.anchorDurationMinutes,
-      projectionAnchorProjectedAmountMm: assessment.anchorProjectedAmountMm,
-      projectionAnchorConditionalIntensity: assessment.anchorConditionalIntensity,
-      projectionAnchorProfileSignature: assessment.anchorProfileSignature,
-      ...presence
-    };
-  });
-  if (!projectionTrackingEnabled) return assessedEvents;
-  const currentCellIds = new Set(assessedEvents.map(event => String(event?.cell?.id)));
-  const sameObservation = projectionSnapshot?.observedAt === radar?.observedAt;
-  const heldEvents = (projectionSnapshot?.projections || []).flatMap(projection => {
-    if (projection?.presenceReliable !== true
-      || currentCellIds.has(String(projection?.cellId))
-      || !Number.isFinite(Number(projection?.eventStart))
-      || !Number.isFinite(Number(projection?.eventEnd))
-      || Number(projection.eventEnd) <= radarObservedAt) return [];
-    const previousObservation = Date.parse(projectionSnapshot?.observedAt || "");
-    const canHold = sameObservation
-      ? projection?.presenceHeld === true
-      : Number.isFinite(previousObservation)
-        && radarObservedAt > previousObservation
-        && radarObservedAt - previousObservation <= 10 * 60000
-        && Math.max(0, Number(projection?.presenceMisses) || 0) < 1;
-    if (!canHold) return [];
-    return [{
-      cell: { id: projection.cellId, etaBasis: projection.etaBasis || "core" },
-      passageIndex: projection.passageIndex,
-      passage: Number(projection.passage),
-      presenceProbability: Number(projection.presenceProbability),
-      projectionKind: projection.projectionKind || "fallback",
-      eventStart: Number(projection.eventStart),
-      eventEnd: Number(projection.eventEnd),
-      radarObservedAt,
-      etaMinutes: Math.max(0, (Number(projection.eventStart) - radarObservedAt) / 60000),
-      projectionEndMinutes: (Number(projection.eventEnd) - radarObservedAt) / 60000,
-      durationMinutes: null,
-      projectedAmountMm: 0,
-      conditionalIntensity: 0,
-      intensityProfile: [],
-      durationBeyondHorizon: projection.durationBeyondHorizon === true,
-      projectionReliable: false,
-      projectionReason: "presence-held",
-      projectionCandidate: false,
-      projectionStableScans: 0,
-      presenceReliable: true,
-      arrivalReliable: projection.arrivalReliable === true,
-      presenceStableScans: Math.max(1, Number(projection.presenceStableScans) || 1),
-      arrivalStableScans: Math.max(0, Number(projection.arrivalStableScans) || 0),
-      presenceReason: "one-scan-hold",
-      arrivalReason: projection.arrivalReason || "one-scan-hold",
-      presenceCandidate: false,
-      arrivalCandidate: false,
-      presenceHeld: true,
-      presenceMisses: sameObservation ? 1 : Math.max(0, Number(projection.presenceMisses) || 0) + 1
-    }];
-  });
-  return [...assessedEvents, ...heldEvents];
-}
-
-function nowcastEtaRainEligible(event, referenceTime = null) {
-  return event?.projectionReliable === true
-    && nowcastProjectionFresh(event, referenceTime)
-    && Number(event?.passage) >= 55
-    && event?.cell?.etaBasis !== "envelope"
-    && ["profile", "shape"].includes(event?.projectionKind)
-    && event?.durationBeyondHorizon !== true
-    && event?.projectionEndMinutes != null
-    && Number.isFinite(Number(event?.projectionEndMinutes))
-    && Number(event.projectionEndMinutes) <= 60;
-}
-
-function nowcastPresenceRainEligible(event, referenceTime = null) {
-  return event?.presenceReliable === true
-    && nowcastProjectionFresh(event, referenceTime)
-    && Number(event?.presenceProbability) >= 55
-    && event?.cell?.etaBasis !== "envelope"
-    && Number.isFinite(Number(event?.eventStart))
-    && Number.isFinite(Number(event?.eventEnd));
-}
-
-function nowcastReliablePassageEventForCell(events, cellOrId, referenceTime = null) {
-  const cellId = typeof cellOrId === "object" ? cellOrId?.id : cellOrId;
-  if (cellId == null) return null;
-  const evaluatedAt = referenceTime == null
-    ? typeof appNow === "function" ? Number(appNow()) : Date.now()
-    : Number(referenceTime);
-  if (!Number.isFinite(evaluatedAt)) return null;
-  return (events || [])
-    .filter(event => String(event?.cell?.id) === String(cellId)
-      && (event?.arrivalReliable === true
-        || (event?.arrivalReliable == null && event?.projectionReliable === true))
-      && nowcastProjectionFresh(event, evaluatedAt)
-      && event?.cell?.etaBasis !== "envelope"
-      && ["profile", "shape"].includes(event?.projectionKind)
-      && Number.isFinite(Number(event?.eventStart))
-      && Number.isFinite(Number(event?.eventEnd))
-      && Number(event.eventEnd) > evaluatedAt)
-    .sort((left, right) => Number(left.eventStart) - Number(right.eventStart))[0] || null;
-}
-
-function nowcastCellLocallyObservedInterior(cell, radar) {
-  return Boolean(cell)
-    && radar?.pointOnRainBorder !== true
-    && Number(radar?.currentPrecipitation) >= .05
-    && radarCellEdgeDistance(cell) <= 2.5;
-}
-
-function nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar = null) {
-  if (!reliableEvent || (reliableEvent.arrivalReliable !== true
-    && !(reliableEvent.arrivalReliable == null && reliableEvent.projectionReliable === true))) return null;
-  const passage = Number(reliableEvent.presenceProbability ?? reliableEvent.passage);
-  return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
-}
-
-function nowcastCellPassageObserved(cell, radar) {
-  return (Array.isArray(cell?.shapeRuns) && cell.shapeRuns.length > 0 && nowcastCellContainsPoint(cell, 0, 0))
-    || nowcastCellLocallyObservedInterior(cell, radar);
-}
-
-function nowcastDisplayedCellPassageRisk(cell, reliableEvent, radar = null) {
-  if (nowcastCellPassageObserved(cell, radar)) return 100;
-  if (cell?.passageEnsemble?.status === 'ready' && Number.isFinite(cell.passageEnsemble.pointProbability)) {
-    return Math.round(cell.passageEnsemble.pointProbability * 100);
-  }
-  const announcedPassage = nowcastAnnouncedCellPassageRisk(cell, reliableEvent, radar);
-  const passage = announcedPassage ?? Number(cell?.risks?.passage);
-  return Number.isFinite(passage) ? Math.max(0, Math.min(100, Math.round(passage))) : null;
-}
-
-function nowcastEtaRainRateAt(event, time, referenceTime = null) {
-  if (!nowcastEtaRainEligible(event, referenceTime) || time < Number(event.eventStart) || time >= Number(event.eventEnd)) return 0;
-  const intensityProfile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
-  if (intensityProfile.length) {
-    return Math.max(0, ...intensityProfile
-      .filter(segment => time >= Number(segment.start) && time < Number(segment.end))
-      .map(segment => Number(segment.intensity) || 0));
-  }
-  const intensity = Math.max(0, Number(event.conditionalIntensity ?? event.maximum) || 0);
-  const fadeStart = Number(event.fadeStart);
-  const fadeDuration = Number(event.eventEnd) - fadeStart;
-  if (!Number.isFinite(fadeStart) || fadeDuration <= 0 || time <= fadeStart) return intensity;
-  return intensity * Math.max(0, Math.min(1, (Number(event.eventEnd) - time) / fadeDuration));
-}
-
-function nowcastEtaRainAmount(events, windowStart, windowEnd, referenceTime = null) {
-  if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return 0;
-  const eligibleEvents = (events || []).filter(event => nowcastEtaRainEligible(event, referenceTime));
-  if (!eligibleEvents.length) return 0;
-  const boundaries = new Set([windowStart, windowEnd]);
-  eligibleEvents.forEach(event => {
-    [event.eventStart, event.eventEnd, event.fadeStart]
-      .map(Number)
-      .filter(time => Number.isFinite(time) && time > windowStart && time < windowEnd)
-      .forEach(time => boundaries.add(time));
-    (Array.isArray(event.intensityProfile) ? event.intensityProfile : []).forEach(segment => {
-      [segment.start, segment.end]
-        .map(Number)
-        .filter(time => Number.isFinite(time) && time > windowStart && time < windowEnd)
-        .forEach(time => boundaries.add(time));
-    });
-  });
-  const times = [...boundaries].sort((left, right) => left - right);
-  return times.slice(0, -1).reduce((amount, start, index) => {
-    const end = times[index + 1];
-    const midpoint = start + (end - start) / 2;
-    const maximumRate = Math.max(0, ...eligibleEvents.map(event => nowcastEtaRainRateAt(event, midpoint, referenceTime)));
-    return amount + maximumRate * (end - start) / 3600000;
-  }, 0);
-}
-
-function shortTermRainTrend(values, sourceDetail = "PIAF") {
-  const analysedValues = (values || []).slice(0, 12);
-  const series = analysedValues.map(item => Math.max(0, Number(item.precipitation) || 0));
-  const total = series.reduce((sum, value) => sum + value, 0);
-  const wetIndexes = series.map((value, index) => value >= .01 ? index : -1).filter(index => index >= 0);
-  const stepDetail = series.length + " pas de 5 min sur l’heure à venir";
-  if (!wetIndexes.length || total <= 0) return { label: "stable", change: 0, detail: "Aucune pluie prévue par " + sourceDetail + " · " + stepDetail };
-
-  const middleIndex = (series.length - 1) / 2;
-  const mean = total / series.length;
-  const numerator = series.reduce((sum, value, index) => sum + (index - middleIndex) * (value - mean), 0);
-  const denominator = series.reduce((sum, _, index) => sum + (index - middleIndex) ** 2, 0) || 1;
-  const projectedChange = numerator / denominator * Math.max(0, series.length - 1);
-  const threshold = Math.max(.005, Math.max(...series) * .15);
-  const firstWet = wetIndexes[0];
-  const lastWet = wetIndexes.at(-1);
-  const lead = index => "+" + Math.round(Number(analysedValues[index]?.seconds) / 60) + " min";
-  const timing = "premier signal " + lead(firstWet) + " · dernier signal " + lead(lastWet) + " · " + stepDetail;
-
-  // An imminent peak must describe the transition from the first five-minute
-  // step, not the average slope of the whole hour. Otherwise a strong shower
-  // arriving in ten minutes followed by dry weather is incorrectly marked as
-  // decreasing because the dry tail dominates the regression.
-  const peak = Math.max(...series);
-  const peakIndex = series.indexOf(peak);
-  const immediate = series[0] || 0;
-  const imminentRise = peakIndex > 0 && peak - immediate > threshold;
-  if (firstWet > 0 || imminentRise) {
-    const wording = firstWet > 0 ? "Pluie arrivant" : "Pluie s’intensifiant";
-    return { label: "croissant", change: peak - immediate, detail: wording + " selon " + sourceDetail + " · pic prévu " + lead(peakIndex) + " · " + timing };
-  }
-
-  if (projectedChange > threshold) {
-    return { label: "croissant", change: projectedChange, detail: "Pluie s’intensifiant selon " + sourceDetail + " · " + timing };
-  }
-  if (projectedChange < -threshold) {
-    const wording = lastWet < series.length - 1 ? "Pluie cessant" : "Pluie s’atténuant";
-    return { label: "decroissant", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
-  }
-  const wording = firstWet > 0 && lastWet < series.length - 1 ? "Passage pluvieux temporaire" : "Pluie globalement stable";
-  return { label: "stable", change: projectedChange, detail: wording + " selon " + sourceDetail + " · " + timing };
-}
+// Calcul transféré au moteur : shortTermRainTrend.
 
 function stormRiskIntensityStep(riskLevel, intensityLevel) {
   const risk = Math.max(0, Math.min(5, Math.round(Number(riskLevel) || 0)));
@@ -1641,103 +723,28 @@ function stormRiskIntensityStep(riskLevel, intensityLevel) {
   return risk;
 }
 
-function stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) {
-  const rain = Math.max(0, Math.min(5, Math.round(Number(rainLevel) || 0)));
-  const hail = Math.max(0, Math.min(5, Math.round(Number(hailLevel) || 0)));
-  const lightning = Math.max(0, Math.min(5, Math.round(Number(lightningLevel) || 0)));
-  if (hail >= 5) return 5;
-  if (rain >= 5 && (hail > 0 || lightning > 0)) return 5;
-  if (hail >= 3) return 4;
-  return Math.max(Math.min(4, rain), hail, Math.min(3, lightning));
-}
+// Calcul transféré au moteur : stormHazardIntensityStep.
 
-function rainRateFromAccumulation(amount, durationMilliseconds) {
-  const rain = Math.max(0, Number(amount) || 0);
-  const duration = Number(durationMilliseconds);
-  return Number.isFinite(duration) && duration > 0 ? rain * 3600000 / duration : 0;
-}
+// Calcul transféré au moteur : rainRateFromAccumulation.
 
-function rainIntensityStep(value) {
-  return value <= 0 ? 0 : value < 2 ? 1 : value < 10 ? 2 : value < 30 ? 3 : value < 60 ? 4 : 5;
-}
+// Calcul transféré au moteur : rainIntensityStep.
 
-function onlyDrizzleInThreeHours(steps) {
-  const wetSteps = (steps || [])
-    .map(step => Math.max(0, Number(step?.totalPrecipitation) || 0))
-    .filter(amount => amount >= possibleDrizzleThreshold);
-  return wetSteps.length > 0 && wetSteps.every(amount => amount < .2);
-}
+// Calcul transféré au moteur : onlyDrizzleInThreeHours.
 
 function rainIntensityLabel(intensityLevel = 0) {
   const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
   return level >= 5 ? "Pluie violente" : level >= 4 ? "Pluie forte" : level >= 3 ? "Pluie soutenue" : level >= 2 ? "Pluie" : "Pluie faible";
 }
 
-function rainPhaseForStep(step) {
-  const amount = Math.max(0, Number(step?.totalPrecipitation) || 0);
-  if (amount < possibleDrizzleThreshold) return null;
-  const basePrecipitation = Number(step?.basePrecipitation);
-  const nowcastOnly = Number.isFinite(basePrecipitation) && Math.max(0, basePrecipitation) < possibleDrizzleThreshold;
-  if (amount < .2) return { drizzle: true, level: 0, nowcastOnly };
-  const duration = Number(step?.intervalEnd) - Number(step?.intervalStart);
-  return { drizzle: false, level: rainIntensityStep(rainRateFromAccumulation(amount, duration)), nowcastOnly };
-}
+// Calcul transféré au moteur : rainPhaseForStep.
 
-function rainPhaseLabel(phase) {
-  return phase?.dry ? "Fin de l’épisode de pluie" : phase?.drizzle ? "Pluie faible" : rainIntensityLabel(phase?.level);
-}
+// Calcul transféré au moteur : rainPhaseLabel.
 
-function rainPhaseRank(phase) {
-  if (!phase || phase.dry) return -1;
-  if (phase.drizzle) return 0;
-  const level = Math.max(0, Math.min(5, Math.round(Number(phase.level) || 0)));
-  return level >= 5 ? 4 : level >= 4 ? 3 : level >= 3 ? 2 : 1;
-}
+// Calcul transféré au moteur : rainPhaseRank.
 
-function nextRainPhaseTransition(steps, now, currentPhase) {
-  if (!currentPhase) return null;
-  const currentRank = rainPhaseRank(currentPhase);
-  let dropsUntilDry = Boolean(currentPhase.drizzle);
-  let dropsPossibleUntilDry = Boolean(currentPhase.drizzle && currentPhase.nowcastOnly);
-  const timeline = [...(steps || [])]
-    .filter(step => Number.isFinite(Number(step?.intervalStart)) && Number(step?.intervalStart) > now)
-    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart));
-  for (const step of timeline) {
-    const phase = rainPhaseForStep(step);
-    const etaMinutes = Math.max(1, Math.ceil((Number(step.intervalStart) - now) / 60000));
-    if (!phase) return { currentPhase, nextPhase: { dry: true, drizzle: false, level: 0 }, step, etaMinutes, dropsUntilDry, dropsPossibleUntilDry };
-    if (!currentPhase.drizzle && phase.drizzle) {
-      dropsPossibleUntilDry = dropsUntilDry ? dropsPossibleUntilDry && phase.nowcastOnly : phase.nowcastOnly;
-      dropsUntilDry = true;
-      continue;
-    }
-    if (currentPhase.drizzle && phase.drizzle) dropsPossibleUntilDry &&= phase.nowcastOnly;
-    if (!phase.drizzle) {
-      dropsUntilDry = false;
-      dropsPossibleUntilDry = false;
-    }
-    // Les baisses d’intensité n’ont pas d’intérêt dans le résumé : tant que
-    // l’épisode continue, on attend soit une intensification, soit sa fin.
-    if (!currentPhase.drizzle && rainPhaseRank(phase) <= currentRank) continue;
-    // Pour une pluie faible, la première pluie plus marquée reste l’unique cas où
-    // l’on raconte explicitement les deux étapes avec « puis ».
-    if (currentPhase.drizzle && phase.drizzle) continue;
-    return { currentPhase, nextPhase: phase, step, etaMinutes };
-  }
-  return null;
-}
+// Calcul transféré au moteur : nextRainPhaseTransition.
 
-function shortTermRainTransitionLabel(transition, passageRisk = 100) {
-  if (!transition) return "";
-  const eta = " dans " + compactMinutesLabel(transition.etaMinutes);
-  if (transition.nextPhase?.dry && transition.dropsUntilDry) return "Pluie faible pendant encore " + compactMinutesLabel(transition.etaMinutes);
-  if (transition.nextPhase?.dry) return "Fin de l’épisode de pluie" + eta;
-  const next = rainPhaseLabel(transition.nextPhase);
-  const qualifier = shortTermRiskQualifier(passageRisk);
-  return transition.currentPhase?.drizzle
-    ? "Pluie faible puis " + next.toLowerCase() + qualifier + eta
-    : next + qualifier + eta;
-}
+// Calcul transféré au moteur : shortTermRainTransitionLabel.
 
 function shortTermRiskQualifier(risk) {
   if (risk == null || !Number.isFinite(Number(risk))) return "";
@@ -1745,13 +752,7 @@ function shortTermRiskQualifier(risk) {
   return probability >= 80 ? "" : probability >= 55 ? " probable" : " possible";
 }
 
-function shortTermHailQualifier(risk) {
-  const probability = Math.max(0, Number(risk) || 0);
-  return probability >= 80 ? " avec grêle"
-    : probability >= 55 ? " avec grêle probable"
-    : probability >= 20 ? " avec grêle possible"
-    : "";
-}
+// Calcul transféré au moteur : shortTermHailQualifier.
 
 function threeHourTrendIsSignificant(kind, trend) {
   if (!trend || trend.label === "stable") return false;
@@ -1777,61 +778,13 @@ function shortTermEventLabel(kind, etaMinutes, activeCount = 0) {
   return (rain ? "Pluie" : "Orage") + " dans " + compactMinutesLabel(Math.max(1, eta));
 }
 
-function shortTermRainLabel(etaMinutes, drizzleOnly = false, intensityLevel = 0, passageRisk = 100) {
-  if (!drizzleOnly) {
-    const label = rainIntensityLabel(intensityLevel);
-    const eta = etaMinutes == null ? null : Number(etaMinutes);
-    if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
-    if (eta < 1) return label;
-    return label + shortTermRiskQualifier(passageRisk) + " dans " + compactMinutesLabel(Math.max(1, eta));
-  }
-  const eta = etaMinutes == null ? null : Number(etaMinutes);
-  if (!Number.isFinite(eta) || eta < 0) return "pas de pluie";
-  return eta < 1
-    ? "Pluie faible"
-    : "Pluie faible" + (passageRisk == null ? "" : shortTermRiskQualifier(passageRisk)) + " dans " + compactMinutesLabel(Math.max(1, eta));
-}
+// Calcul transféré au moteur : shortTermRainLabel.
 
-function shortTermRainSequenceLabel(etaMinutes, intensityLevel = 0, passageRisk = 100) {
-  const eta = etaMinutes == null ? null : Number(etaMinutes);
-  if (!Number.isFinite(eta) || eta < 0) return "Pluie faible";
-  const rain = rainIntensityLabel(intensityLevel).toLowerCase() + (eta < 1 ? "" : shortTermRiskQualifier(passageRisk));
-  return "Pluie faible puis " + rain + (eta < 1
-    ? ""
-    : " dans " + compactMinutesLabel(Math.max(1, eta)));
-}
+// Calcul transféré au moteur : shortTermRainSequenceLabel.
 
-function shortTermRainCellLabel(etaMinutes, passageRisk = 100, distanceKm = null, activeCount = 0) {
-  const eta = etaMinutes == null ? null : Number(etaMinutes);
-  const distance = distanceKm == null ? null : Number(distanceKm);
-  if (Number.isFinite(eta) && eta >= 0) {
-    if (eta < 1 || Number(activeCount) > 0) return "Cellule pluvieuse";
-    return "Cellule pluvieuse" + shortTermRiskQualifier(passageRisk) + " dans " + compactMinutesLabel(Math.max(1, eta));
-  }
-  if (Number.isFinite(distance)) {
-    return "Cellule pluvieuse à " + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-  }
-  return "pas de cellule pluvieuse";
-}
+// Calcul transféré au moteur : shortTermRainCellLabel.
 
-function shortTermStormLabel(etaMinutes, activeCount = 0, intensityLevel = 0, passageRisk = 100, hailRisk = 0, distanceKm = null) {
-  const eta = etaMinutes == null ? null : Number(etaMinutes);
-  const distance = distanceKm == null ? null : Number(distanceKm);
-  if ((!Number.isFinite(eta) || eta < 0) && Number.isFinite(distance)) {
-    return "Orage à " + distance.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-  }
-  if (!Number.isFinite(eta) || eta < 0) return "pas d’orage";
-  const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
-  const violent = level >= 4;
-  const subject = violent ? "Orage violent" : "Orage";
-  const hail = shortTermHailQualifier(hailRisk);
-  if (eta < 1 || Number(activeCount) > 0) {
-    const count = Math.max(1, Math.round(Number(activeCount) || 1));
-    if (count > 1) return count + (violent ? " orages violents" : " orages") + hail;
-    return subject + hail;
-  }
-  return subject + shortTermRiskQualifier(passageRisk) + hail + " dans " + compactMinutesLabel(Math.max(1, eta));
-}
+// Calcul transféré au moteur : shortTermStormLabel.
 
 function shortTermGustLabel(intensityLevel) {
   const level = Math.max(0, Math.min(5, Math.round(Number(intensityLevel) || 0)));
@@ -1853,92 +806,11 @@ function shortTermWindLabel(intensityLevel) {
     : "Pas de vent";
 }
 
-function nowcastStormEtaSelection(events, candidateCellIds, now, preferredCellId = null) {
-  const allowedIds = new Set(candidateCellIds || []);
-  const observedCandidates = (events || []).filter(event => {
-    const cellId = event?.cell?.id;
-    return allowedIds.has(cellId)
-      && nowcastProjectionFresh(event, now)
-      && Number.isFinite(Number(event.eventStart))
-      && Number.isFinite(Number(event.eventEnd))
-      && Number(event.eventEnd) > now;
-  });
-  const candidates = observedCandidates.filter(event => (event?.arrivalReliable === true
-      || (event?.arrivalReliable == null && event?.projectionReliable === true))
-    && event?.cell?.etaBasis !== "envelope"
-    && (event?.projectionKind == null || ["profile", "shape"].includes(event.projectionKind)));
-  const activeByCell = new Map();
-  candidates.filter(event => Number(event.eventStart) <= now).forEach(event => {
-    const cellId = event.cell.id;
-    const previous = activeByCell.get(cellId);
-    if (!previous || Number(event.eventEnd) > Number(previous.eventEnd)) activeByCell.set(cellId, event);
-  });
-  const active = [...activeByCell.values()];
-  const activeIds = new Set(active.map(event => event.cell.id));
-  const upcomingByCell = new Map();
-  candidates.filter(event => Number(event.eventStart) > now && !activeIds.has(event.cell.id)).forEach(event => {
-    const cellId = event.cell.id;
-    const previous = upcomingByCell.get(cellId);
-    if (!previous || Number(event.eventStart) < Number(previous.eventStart)) upcomingByCell.set(cellId, event);
-  });
-  const upcoming = [...upcomingByCell.values()];
-  if (active.length) {
-    const event = active.find(item => item.cell.id === preferredCellId)
-      || [...active].sort((left, right) => Number(right.passage) - Number(left.passage))[0];
-    const durationCalculable = Number.isFinite(Number(event?.durationMinutes)) && Number(event.durationMinutes) > 0;
-    const durationReliable = event?.projectionReliable === true;
-    const durationBeyondHorizon = event?.durationBeyondHorizon === true;
-    return {
-      event,
-      etaMinutes: 0,
-      durationMinutes: durationCalculable && durationReliable ? Math.max(1, Math.ceil((Number(event.eventEnd) - now) / 60000)) : null,
-      durationUncertain: !durationCalculable || !durationReliable || durationBeyondHorizon,
-      durationBeyondHorizon,
-      activeCount: active.length,
-      upcomingCount: upcoming.length,
-      activeIds: [...activeIds],
-      upcomingIds: [...upcomingByCell.keys()]
-    };
-  }
-  const event = upcoming.find(item => item.cell.id === preferredCellId)
-    || [...upcoming].sort((left, right) => Number(left.eventStart) - Number(right.eventStart))[0]
-    || null;
-  const durationCalculable = Number.isFinite(Number(event?.durationMinutes)) && Number(event.durationMinutes) > 0;
-  const durationReliable = event?.projectionReliable === true;
-  const durationBeyondHorizon = Boolean(event?.durationBeyondHorizon);
-  return {
-    event,
-    etaMinutes: event ? Math.max(0, (Number(event.eventStart) - now) / 60000) : null,
-    durationMinutes: durationCalculable && durationReliable ? Number(event.durationMinutes) : null,
-    durationUncertain: event
-      ? !durationCalculable || !durationReliable || durationBeyondHorizon
-      : observedCandidates.length > 0,
-    durationBeyondHorizon: event
-      ? durationBeyondHorizon
-      : observedCandidates.some(item => item?.durationBeyondHorizon === true),
-    activeCount: 0,
-    upcomingCount: upcoming.length,
-    activeIds: [],
-    upcomingIds: [...upcomingByCell.keys()]
-  };
-}
+// Calcul transféré au moteur : nowcastStormEtaSelection.
 
-function nowcastUncertainRainBorder(radar, cell, selection, etaMinutes = null) {
-  if (!cell || radar?.pointOnRainBorder !== true || radarCellEdgeDistance(cell) > 2.5) return false;
-  const presenceOrDurationUncertain = !selection?.event
-    || selection.durationUncertain === true
-    || selection.durationBeyondHorizon === true
-    || selection.event.projectionReliable !== true;
-  return presenceOrDurationUncertain;
-}
+// Calcul transféré au moteur : nowcastUncertainRainBorder.
 
-function formatRainAmount(value, decimals = 1) {
-  const rounded = Math.round((Number(value) || 0) * 10 ** decimals) / 10 ** decimals;
-  return rounded.toLocaleString("fr-FR", {
-    minimumFractionDigits: rounded % 1 === 0 ? 0 : decimals,
-    maximumFractionDigits: decimals
-  });
-}
+// Calcul transféré au moteur : formatRainAmount.
 
 function renderApproachingCellsAlert(radar) {
   const banner = $("cell-approach-alert");
@@ -2083,7 +955,8 @@ async function writeCachedJson(target, data) {
 async function json(url) {
   if (window.METEO_REPLAY?.request) return window.METEO_REPLAY.request(String(url));
   const target = typeof url === "string" && /^\/?api\//.test(url) ? apiUrl(url) : url;
-  const response = await fetch(target, { cache: "no-store" });
+  const isPreparedDashboard = /\/api\/dashboard(?:\?|$)/.test(String(target));
+  const response = await fetch(target, { cache: isPreparedDashboard ? "default" : "no-store" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Erreur " + response.status);
   void writeCachedJson(target, data);
@@ -3174,6 +2047,12 @@ function weekStormRisk(dateKey, { includeOpenMeteo = true, includeMeteoFrance = 
   };
 }
 
+function weekWeightedValue(openMeteo, meteoFrance) {
+  const numeric = value => value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  const om = numeric(openMeteo), mf = numeric(meteoFrance);
+  return mf == null ? om : om == null ? mf : .3 * om + .7 * mf;
+}
+
 function renderTestingDailyForecast() {
   const target = $("week-forecast");
   if (!target) return;
@@ -3291,10 +2170,15 @@ function renderTestingDailyForecast() {
       const hour = forecastHourValue(date);
       return forecastDateKey(date) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
     }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
-    const speeds = hours.map(item => Number(item.windSpeed)).filter(Number.isFinite);
-    const gusts = hours.map(item => Number(item.windGust)).filter(Number.isFinite);
-    if (!speeds.length && !gusts.length) return null;
+    const speeds = hours.filter(item => item.windSpeed != null).map(item => Number(item.windSpeed)).filter(Number.isFinite);
+    const gusts = hours.filter(item => item.windGust != null).map(item => Number(item.windGust)).filter(Number.isFinite);
+    const temperatures = hours.filter(item => item.temperature != null).map(item => Number(item.temperature)).filter(Number.isFinite);
+    const clouds = hours.filter(item => item.cloudCover != null).map(item => Number(item.cloudCover)).filter(Number.isFinite);
+    if (!speeds.length && !gusts.length && !temperatures.length && !clouds.length) return null;
     return {
+      temperatureMin: temperatures.length ? Math.min(...temperatures) : null,
+      temperatureMax: temperatures.length ? Math.max(...temperatures) : null,
+      cloudCover: clouds.length ? clouds.reduce((sum, value) => sum + value, 0) / clouds.length : null,
       speed: speeds.length ? Math.max(...speeds) : null,
       gust: gusts.length ? Math.max(...gusts) : null,
       windBackgroundTrend: backgroundTrendArrow(speeds, 5),
@@ -3365,26 +2249,23 @@ function renderTestingDailyForecast() {
     const slotEndTime = new Date(slotDateKey(dateKey, slot) + "T00:00:00").getTime() + slot.endHour * 3600000;
     const pastClass = Number.isFinite(slotEndTime) && slotEndTime <= appNow() ? " daily-period-past" : "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
-    const meteoFranceRainAmount = Number.isFinite(Number(meteoFranceRain?.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
-    const rainValues = [openMeteoRain, meteoFranceRainAmount].filter(Number.isFinite);
-    const rainLow = Math.min(...rainValues);
-    const rain = Math.max(...rainValues);
+    const meteoFranceRainAmount = meteoFranceRain?.amount != null && Number.isFinite(Number(meteoFranceRain.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
+    const rain = weekWeightedValue(openMeteoRain, meteoFranceRainAmount);
     const rainDisagreement = meteoFranceRainAmount != null && Math.abs(openMeteoRain - meteoFranceRainAmount) >= .05;
     const rainAmountText = value => value > 0 && value < .1 ? "< 0,1" : format(value);
-    const rainRangeText = rainDisagreement ? rainAmountText(rainLow) + "–" + rainAmountText(rain) : rainAmountText(rain);
-    const rainProbability = Math.max(
-      Math.max(0, Number(period.precipitationProbabilityMax) || 0),
-      Math.max(0, Number(meteoFranceRain?.probability) || 0)
-    );
-    const probabilitySummary = rainProbabilitySummary([period.precipitationProbabilityMax, meteoFranceRain?.probability]);
-    const cloud = Math.max(0, Math.min(100, Number(period.cloudCover) || 0));
+    const rainRangeText = rainAmountText(rain);
+    const rainProbability = weekWeightedValue(period.precipitationProbabilityMax, meteoFranceRain?.probability);
+    const probabilitySummary = rainProbabilitySummary([rainProbability]);
+    const cloud = Math.max(0, Math.min(100, weekWeightedValue(period.cloudCover, meteoFranceWind?.cloudCover) ?? 0));
+    const temperatureMax = weekWeightedValue(period.temperatureMax, meteoFranceWind?.temperatureMax);
+    const temperatureMin = weekWeightedValue(period.temperatureMin, meteoFranceWind?.temperatureMin);
     const hasOpenMeteoStorm = Boolean(period.storm) || Number(period.weatherCode) >= 95;
     const hasMeteoFranceStorm = meteoFranceStorm && typeof meteoFranceStorm === "object"
       ? Boolean(meteoFranceStorm.active)
       : Boolean(meteoFranceStorm);
     const meteoFranceStormTimes = Array.isArray(meteoFranceStorm?.times) ? meteoFranceStorm.times : [];
     const hasStorm = hasOpenMeteoStorm || hasMeteoFranceStorm;
-    const hideRain = weekRainBelowDisplayThreshold([period.precipitationProbabilityMax, meteoFranceRain?.probability], hasStorm);
+    const hideRain = weekRainBelowDisplayThreshold([rainProbability], hasStorm);
     const icon = displayIcon({
       time: period.time,
       cloudCover: cloud,
@@ -3392,23 +2273,17 @@ function renderTestingDailyForecast() {
       rainLevel: hideRain ? 0 : rainPictogramStep(rain),
       forceDay: label === "Soir"
     });
-    const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin, 0) + '°</b></span></span>';
+    const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(temperatureMin, 0) + '°</b></span></span>';
     const direction = Number.isFinite(Number(period.windDirection))
       ? '<span class="daily-period-wind-arrow" style="transform:rotate(' + Number(period.windDirection) + 'deg)" aria-hidden="true">↑</span>' : "";
     const openMeteoWind = Math.max(0, Number(period.windSpeedMax) || 0);
-    const meteoFranceWindValue = Number.isFinite(Number(meteoFranceWind?.speed)) ? Math.max(0, Number(meteoFranceWind.speed)) : null;
-    const windValues = [openMeteoWind, meteoFranceWindValue].filter(Number.isFinite);
-    const windLow = Math.min(...windValues);
-    const wind = Math.max(...windValues);
-    const windDisagreement = meteoFranceWindValue != null && Math.abs(openMeteoWind - meteoFranceWindValue) >= 1;
-    const windRangeText = windDisagreement ? format(windLow, 0) + "–" + format(wind, 0) : format(wind, 0);
+    const meteoFranceWindValue = meteoFranceWind?.speed != null && Number.isFinite(Number(meteoFranceWind.speed)) ? Math.max(0, Number(meteoFranceWind.speed)) : null;
+    const wind = weekWeightedValue(openMeteoWind, meteoFranceWindValue);
+    const windRangeText = format(wind, 0);
     const openMeteoGust = Math.max(0, Number(period.windGustMax) || 0);
-    const meteoFranceGustValue = Number.isFinite(Number(meteoFranceWind?.gust)) ? Math.max(0, Number(meteoFranceWind.gust)) : null;
-    const gustValues = [openMeteoGust, meteoFranceGustValue].filter(Number.isFinite);
-    const gustLow = Math.min(...gustValues);
-    const gust = Math.max(...gustValues);
-    const gustDisagreement = meteoFranceGustValue != null && Math.abs(openMeteoGust - meteoFranceGustValue) >= 1;
-    const gustRangeText = gustDisagreement ? format(gustLow, 0) + "–" + format(gust, 0) : format(gust, 0);
+    const meteoFranceGustValue = meteoFranceWind?.gust != null && Number.isFinite(Number(meteoFranceWind.gust)) ? Math.max(0, Number(meteoFranceWind.gust)) : null;
+    const gust = weekWeightedValue(openMeteoGust, meteoFranceGustValue);
+    const gustRangeText = format(gust, 0);
     const openMeteoTrends = period.backgroundTrends || {};
     const rainSources = [
       "Open-Meteo : " + rainAmountText(openMeteoRain) + " mm · " + format(period.precipitationProbabilityMax, 0) + " % " + (openMeteoTrends.rain || "→"),
@@ -3443,23 +2318,19 @@ function renderTestingDailyForecast() {
     ].filter(Boolean);
     const stormSourceLabel = activeStormSources.length > 1 ? activeStormSources.slice(0, -1).join(", ") + " et " + activeStormSources.at(-1) : activeStormSources[0] + " seulement";
     const rainVolume = !hideRain && rain >= .1
-      ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(rainDisagreement ? "de " + rainAmountText(rainLow) + " à " + rainAmountText(rain) + " millimètres selon les modèles" : rainAmountText(rain) + " millimètres") + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + escapeText(rainRangeText) + ' mm</strong></span>'
+      ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(rainAmountText(rain) + " millimètres") + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + escapeText(rainRangeText) + ' mm</strong></span>'
       : "";
     // Le rappel chiffré du créneau garde son seuil historique de 50 km/h :
     // il informe sur la valeur sans dépendre du niveau qualitatif recalibré.
     const gustVolume = gust >= 50
-      ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(gustDisagreement ? "de " + format(gustLow, 0) + " à " + format(gust, 0) + " kilomètres par heure selon les modèles" : format(gust, 0) + " kilomètres par heure") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + escapeText(gustRangeText) + ' km/h</strong></span>'
+      ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(format(gust, 0) + " kilomètres par heure") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + escapeText(gustRangeText) + ' km/h</strong></span>'
       : "";
     const notable = weatherDescription({ ...period, precipitationSum: hideRain ? 0 : rain, precipitationProbabilityMax: hideRain ? 0 : rainProbability, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     const showers = (Number(period.weatherCode) >= 80 && Number(period.weatherCode) <= 82) || hasStorm;
     const skyDescription = conciseSkySummary(cloud);
     const quantityBand = value => value < 1 ? "très faible" : value < 5 ? "faible" : value < 15 ? "modérée" : value < 30 ? "forte" : "très forte";
-    const lowQuantity = quantityBand(rainLow);
-    const highQuantity = quantityBand(rain);
-    const quantitySummary = rainLow <= 0
-      ? "en quantité " + highQuantity + " au maximum"
-      : "en quantité " + lowQuantity + (lowQuantity === highQuantity ? "" : " à " + highQuantity);
+    const quantitySummary = "en quantité " + quantityBand(rain);
     const periodNoun = slot.key === "morning" ? "matinée" : slot.key === "afternoon" ? "après-midi" : slot.key === "evening" ? "soirée" : "nuit";
     const timingSummary = period.rainTiming === "start" ? "en début de " + periodNoun
       : period.rainTiming === "middle" ? "au milieu de " + periodNoun
@@ -3493,8 +2364,8 @@ function renderTestingDailyForecast() {
     const rainDescription = hideRain ? "" : rainDisagreement
       ? disagreementSummary
       : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
-    const windDescription = conciseWindSummary(windValues, gustValues, [], [], [period.windDirection]);
-    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", ["Open-Meteo : " + format(cloud, 0) + " % " + (openMeteoTrends.cloud || "→")]), format(cloud, 0) + " %", skyDescription);
+    const windDescription = conciseWindSummary([wind], [gust], [], [], [period.windDirection]);
+    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", ["Open-Meteo : " + format(period.cloudCover, 0) + " % " + (openMeteoTrends.cloud || "→"), meteoFranceWind?.cloudCover != null ? "Météo-France : " + format(meteoFranceWind.cloudCover, 0) + " %" : ""]), format(cloud, 0) + " %", skyDescription);
     const rainKind = showers ? "showers" : "rain";
     const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
     const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, "Pluie " + rainRangeText + " mm · probabilité " + format(rainProbability, 0) + " %", rainSources) + showerPlus + '</span>';
@@ -3517,22 +2388,15 @@ function renderTestingDailyForecast() {
     );
     const alertTone = forecastSlotAlertTone([
       {
-        wind: openMeteoWind,
-        gust: openMeteoGust,
-        probability: Math.max(0, Number(period.precipitationProbabilityMax) || 0),
-        rain: openMeteoRain,
-        rain3h: Math.max(0, Number(period.peakRain3h) || 0),
-        stormRainOverlap: hasOpenMeteoStorm && Boolean(period.stormRainOverlap),
-        stormRainWindOverlap: hasOpenMeteoStorm && Boolean(period.stormRainWindOverlap)
-      },
-      {
-        wind: meteoFranceWindValue ?? 0,
-        gust: meteoFranceGustValue ?? 0,
-        probability: Math.max(0, Number(meteoFranceRain?.probability) || 0),
-        rain: meteoFranceRainAmount ?? 0,
-        rain3h: Math.max(0, Number(meteoFranceRain?.peak3h) || 0),
-        stormRainOverlap: hasMeteoFranceStorm && meteoFranceStormRainOverlap,
-        stormRainWindOverlap: hasMeteoFranceStorm && meteoFranceStormRainWindOverlap
+        wind,
+        gust,
+        probability: rainProbability,
+        rain,
+        rain3h: weekWeightedValue(period.peakRain3h, meteoFranceRain?.peak3h),
+        stormRainOverlap: (hasOpenMeteoStorm && Boolean(period.stormRainOverlap))
+          || (hasMeteoFranceStorm && meteoFranceStormRainOverlap),
+        stormRainWindOverlap: (hasOpenMeteoStorm && Boolean(period.stormRainWindOverlap))
+          || (hasMeteoFranceStorm && meteoFranceStormRainWindOverlap)
       }
     ]);
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
@@ -4138,251 +3002,21 @@ function piafRunTime(piaf) {
   return runText ? Date.parse(runText.replace(/\./g, ":")) : NaN;
 }
 
-function piafItemEndTime(piaf, item) {
-  const validTime = Date.parse(item?.validTime || "");
-  if (Number.isFinite(validTime)) return validTime;
-  const runTime = piafRunTime(piaf);
-  const seconds = Number(item?.seconds);
-  return Number.isFinite(runTime) && Number.isFinite(seconds) ? runTime + seconds * 1000 : NaN;
-}
+// Calcul transféré au moteur : piafItemEndTime.
 
-function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null) {
-  const values = sourceValues || piaf?.values || [];
-  const events = etaEvents || nowcastEtaRainEvents(radar);
-  return values.map(item => {
-    const intervalEnd = piafItemEndTime(piaf, item);
-    const explicitStart = Number(item.intervalStart ?? item.rainIntervalStart);
-    const intervalStart = Number.isFinite(explicitStart) && explicitStart < intervalEnd
-      ? explicitStart
-      : intervalEnd - 5 * 60000;
-    const basePrecipitation = Math.max(0, Number(item.precipitation) || 0);
-    const radarAdjustedPrecipitation = Math.max(basePrecipitation, Number(item.nowcastPrecipitation ?? item.precipitation) || 0);
-    const etaPrecipitation = Number.isFinite(intervalStart) && Number.isFinite(intervalEnd)
-      ? nowcastEtaRainAmount(events, intervalStart, intervalEnd)
-      : 0;
-    // L'extrapolation radar au point et le profil de la cellule décrivent la
-    // même pluie. On conserve la plus forte estimation au lieu de les sommer.
-    const totalPrecipitation = Math.max(basePrecipitation, radarAdjustedPrecipitation, etaPrecipitation);
-    const baseRain = basePrecipitation >= possibleDrizzleThreshold;
-    const baseForecastAvailable = piaf?.source !== "radar-archive";
-    // Une ancienne réponse API sans qualification ne constitue pas une
-    // confirmation de l'extrapolation radar.
-    const nowcastReliable = item.nowcastReliable === true;
-    return {
-      ...item,
-      intervalStart,
-      intervalEnd,
-      basePrecipitation,
-      baseRainSource: piaf?.source || "piaf",
-      radarAdjustedPrecipitation,
-      etaPrecipitation,
-      totalPrecipitation,
-      rainOccurrenceReliable: baseRain || nowcastReliable,
-      dryStateReliable: baseForecastAvailable || nowcastReliable,
-      effectiveRadarAmendment: Math.max(0, radarAdjustedPrecipitation - basePrecipitation),
-      effectiveEtaAmendment: Math.max(0, totalPrecipitation - radarAdjustedPrecipitation)
-    };
-  });
-}
+// Calcul transféré au moteur : piafRainSteps.
 
-function rainPassageForStep(step, events, threshold = possibleDrizzleThreshold) {
-  if (!step) return null;
-  const minimum = Math.max(0, Number(threshold) || 0);
-  // PIAF et le déplacement de la mosaïque sont des estimations de cumul,
-  // pas des probabilités. Le champ probability joint à PIAF est PEAROME.
-  if (Number(step.radarAdjustedPrecipitation) >= minimum) return null;
-  const intervalStart = Number(step.intervalStart);
-  const intervalEnd = Number(step.intervalEnd);
-  if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd) || intervalEnd <= intervalStart) return null;
-  const contributors = (events || []).filter(event =>
-    Number(event?.eventEnd) > intervalStart
-    && Number(event?.eventStart) < intervalEnd
-    && nowcastEtaRainAmount([event], intervalStart, intervalEnd) > 0
-  );
-  return contributors.length
-    ? Math.max(0, ...contributors.map(event => Number(event.passage) || 0))
-    : null;
-}
+// Calcul transféré au moteur : rainPassageForStep.
 
-function rainPassageFragmentsOutside(passage, protectedPassages) {
-  return (protectedPassages || []).reduce((fragments, protectedPassage) => fragments.flatMap(fragment => {
-    const overlapStart = Math.max(Number(fragment.start), Number(protectedPassage.start));
-    const overlapEnd = Math.min(Number(fragment.end), Number(protectedPassage.end));
-    if (!Number.isFinite(overlapStart) || !Number.isFinite(overlapEnd) || overlapEnd <= overlapStart) return [fragment];
-    const result = [];
-    if (Number(fragment.start) < overlapStart) {
-      result.push({ ...fragment, end: overlapStart, endKnown: false });
-    }
-    if (overlapEnd < Number(fragment.end)) {
-      result.push({ ...fragment, start: overlapEnd, firstStep: null });
-    }
-    return result;
-  }), [{ ...passage }]);
-}
+// Calcul transféré au moteur : rainPassageFragmentsOutside.
 
-function mergeThreeHourRainPassages(passages) {
-  const merged = [];
-  for (const item of [...(passages || [])]
-    .filter(passage => Number.isFinite(Number(passage?.start))
-      && Number.isFinite(Number(passage?.end))
-      && Number(passage.end) > Number(passage.start))
-    .sort((left, right) => Number(left.start) - Number(right.start))) {
-    const previous = merged.at(-1);
-    const sameReliability = previous
-      && (previous.occurrenceReliable !== false) === (item.occurrenceReliable !== false);
-    if (previous && sameReliability && Number(item.start) <= Number(previous.end) + 60000) {
-      const previousEnd = Number(previous.end);
-      const itemEnd = Number(item.end);
-      if (itemEnd > previousEnd) {
-        previous.end = itemEnd;
-        previous.endKnown = item.endKnown === true;
-      } else if (itemEnd === previousEnd) {
-        previous.endKnown = previous.endKnown === true && item.endKnown === true;
-      }
-      previous.drizzleOnly &&= Boolean(item.drizzleOnly);
-      previous.occurrenceReliable = previous.occurrenceReliable !== false && item.occurrenceReliable !== false;
-      previous.peakIntensity = Math.max(Number(previous.peakIntensity) || 0, Number(item.peakIntensity) || 0);
-      previous.passageRisk = Math.max(Number(previous.passageRisk) || 0, Number(item.passageRisk) || 0);
-      previous.firstStep ||= item.firstStep;
-    } else merged.push({ ...item });
-  }
-  return merged;
-}
+// Calcul transféré au moteur : mergeThreeHourRainPassages.
 
-function threeHourRainSignalIgnored(amount) {
-  return amount > 0 && amount <= .01 + 1e-9;
-}
+// Calcul transféré au moteur : threeHourRainSignalIgnored.
 
-function threeHourRainPassageAmount(passage, steps, events, referenceTime) {
-  const start = Number(passage.start);
-  const end = Math.min(Number(passage.end), referenceTime + 3 * 3600000);
-  const boundaries = new Set([start, end]);
-  for (const step of steps) {
-    for (const time of [Number(step.intervalStart), Number(step.intervalEnd)]) {
-      if (time > start && time < end) boundaries.add(time);
-    }
-  }
-  const times = [...boundaries].sort((a, b) => a - b);
-  return times.slice(0, -1).reduce((total, left, index) => {
-    const right = times[index + 1];
-    const base = Math.max(0, ...steps.filter(step => step.intervalStart <= left && step.intervalEnd >= right)
-      .map(step => Math.max(0, Number(step.radarAdjustedPrecipitation ?? step.totalPrecipitation) || 0)
-        * (right - left) / (step.intervalEnd - step.intervalStart)));
-    // Les projections et PIAF décrivent la même pluie : ne pas les additionner.
-    return total + Math.max(base, nowcastEtaRainAmount(events, left, right, referenceTime));
-  }, 0);
-}
+// Calcul transféré au moteur : threeHourRainPassageAmount.
 
-function threeHourRainMessageSequence(steps, now, events = []) {
-  const referenceTime = Number(now);
-  if (!Number.isFinite(referenceTime)) return [];
-  const horizonEnd = referenceTime + 3 * 3600000;
-  const timeline = [...(steps || [])]
-    .filter(step => Number.isFinite(Number(step?.intervalStart))
-      && Number.isFinite(Number(step?.intervalEnd))
-      && Number(step.intervalEnd) > Number(step.intervalStart))
-    .sort((left, right) => Number(left.intervalStart) - Number(right.intervalStart))
-    .map(step => threeHourRainSignalIgnored(Number(step.totalPrecipitation))
-      ? { ...step, radarAdjustedPrecipitation: 0, totalPrecipitation: 0, etaPrecipitation: 0, dryStateReliable: false }
-      : step);
-  const passages = [];
-  let passage = null;
-  for (const step of timeline) {
-    const nonEtaAmount = Number(step.radarAdjustedPrecipitation);
-    const amount = Number.isFinite(nonEtaAmount)
-      ? Math.max(0, nonEtaAmount)
-      : Math.max(0, Number(step.totalPrecipitation) || 0);
-    if (amount < possibleDrizzleThreshold) {
-      const dryStart = Number(step.intervalStart);
-      if (passage && passage.occurrenceReliable !== false && step.dryStateReliable !== false
-        && Number.isFinite(dryStart) && dryStart <= passage.end + 60000) passage.endKnown = true;
-      passage = null;
-      continue;
-    }
-    const start = Number(step.intervalStart);
-    const end = Number(step.intervalEnd);
-    const occurrenceReliable = step.rainOccurrenceReliable !== false;
-    if (!passage || start > passage.end + 60000
-      || passage.occurrenceReliable !== occurrenceReliable) {
-      passage = {
-        start,
-        end,
-        firstStep: step,
-        drizzleOnly: amount < .2,
-        peakIntensity: rainRateFromAccumulation(amount, end - start),
-        occurrenceReliable,
-        endKnown: false
-      };
-      passages.push(passage);
-      continue;
-    }
-    passage.end = Math.max(passage.end, end);
-    passage.drizzleOnly &&= amount < .2;
-    passage.peakIntensity = Math.max(passage.peakIntensity, rainRateFromAccumulation(amount, end - start));
-  }
-  const recentEtaPassages = (events || []).filter(event =>
-    nowcastEtaRainEligible(event, referenceTime)
-    && Number(event.eventEnd) > referenceTime
-    && Number(event.eventStart) < horizonEnd
-    && !threeHourRainSignalIgnored(
-      nowcastEtaRainAmount([event], Math.max(referenceTime, Number(event.eventStart)), Math.min(horizonEnd, Number(event.eventEnd)), referenceTime))
-  ).map(event => {
-    const profilePeak = Math.max(0, ...(event.intensityProfile || []).map(segment => Number(segment.intensity) || 0));
-    const peakIntensity = Math.max(profilePeak, Number(event.conditionalIntensity) || 0);
-    return {
-      start: Number(event.eventStart),
-      end: Number(event.eventEnd),
-      firstStep: null,
-      drizzleOnly: peakIntensity < 2.4,
-      peakIntensity,
-      passageRisk: Number(event.passage) || 0,
-      occurrenceReliable: true,
-      endKnown: true
-    };
-  });
-  const timelinePassages = passages.flatMap(item => item.occurrenceReliable === false
-    ? rainPassageFragmentsOutside(item, recentEtaPassages)
-    : [item]);
-  const currentPassages = mergeThreeHourRainPassages([...timelinePassages, ...recentEtaPassages])
-    .filter(item => item.end > referenceTime && item.start < horizonEnd)
-    .map(item => ({ ...item, amount: threeHourRainPassageAmount(item, timeline, events, referenceTime) }))
-    .filter(item => item.amount > 0);
-  return currentPassages.map(item => {
-    const observedAtPoint = item.firstStep?.radarCellOverPoint === true;
-    const state = item.start <= referenceTime && (item.occurrenceReliable !== false || observedAtPoint) ? "active" : "future";
-    const rawDurationMinutes = Math.max(1, (item.end - item.start) / 60000);
-    const durationMinutes = Math.max(5, Math.round(rawDurationMinutes / 5) * 5);
-    const subject = item.drizzleOnly ? "Pluie faible" : rainIntensityLabel(rainIntensityStep(item.peakIntensity));
-    const passageRisk = Number.isFinite(Number(item.passageRisk)) && Number(item.passageRisk) > 0
-      ? Number(item.passageRisk)
-      : rainPassageForStep(item.firstStep, events, possibleDrizzleThreshold);
-    let label;
-    let detail = "";
-    if (state === "active") {
-      const remainingMinutes = Math.max(5, Math.round((item.end - referenceTime) / 300000) * 5);
-      label = subject;
-      if (item.endKnown === true) detail = "Encore " + compactMinutesLabel(remainingMinutes);
-    } else {
-      const etaMinutes = Math.max(1, Math.ceil((item.start - referenceTime) / 60000));
-      label = item.occurrenceReliable === false
-        ? subject + shortTermRiskQualifier(passageRisk)
-        : subject
-          + (passageRisk == null ? "" : shortTermRiskQualifier(passageRisk))
-          + " dans " + compactMinutesLabel(etaMinutes);
-      if (item.occurrenceReliable !== false && item.endKnown === true) detail = "Durée " + compactMinutesLabel(durationMinutes);
-    }
-    return {
-      key: [item.start, item.end, Math.round(item.peakIntensity * 10), state].join(":"),
-      state,
-      occurrenceReliable: item.occurrenceReliable !== false,
-      observedAtPoint,
-      amount: item.amount,
-      passageRisk,
-      label,
-      detail
-    };
-  });
-}
+// Calcul transféré au moteur : threeHourRainMessageSequence.
 
 function threeHourMessageSequenceInitialIndex(messages) {
   const sequence = messages || [];
@@ -4466,89 +3100,16 @@ function initializeThreeHourMessageSequence(root) {
 }
 
 function piafQuarterHourRain(piaf, radar = null) {
-  const runTime = piafRunTime(piaf);
-  const fiveMinutes = 5 * 60000;
-  const quarterHour = 15 * 60000;
-  const buckets = new Map();
-  for (const item of piafRainSteps(piaf, radar)) {
-    const endTime = piafItemEndTime(piaf, item);
-    if (!Number.isFinite(endTime) || !Number.isFinite(Number(item.precipitation))) continue;
-    const bucketEnd = (Math.floor((endTime - 1) / quarterHour) + 1) * quarterHour;
-    if (!buckets.has(bucketEnd)) buckets.set(bucketEnd, []);
-    buckets.get(bucketEnd).push({ ...item, endTime });
-  }
-  return [...buckets.entries()].sort(([left], [right]) => left - right).map(([bucketEnd, items]) => {
-    items.sort((left, right) => left.endTime - right.endTime);
-    const expectedEnds = [bucketEnd - 2 * fiveMinutes, bucketEnd - fiveMinutes, bucketEnd];
-    const complete = expectedEnds.every(expected => items.some(item => item.endTime === expected));
-    const sum = field => items.reduce((total, item) => total + (Number(item[field]) || 0), 0);
-    const has = field => items.some(item => Number.isFinite(Number(item[field])));
-    const intervalStart = items[0].endTime - fiveMinutes;
-    const intervalEnd = items.at(-1).endTime;
-    return {
-      slotTime: new Date(complete ? bucketEnd : intervalEnd),
-      endTime: bucketEnd,
-      seconds: Number.isFinite(runTime) ? (intervalEnd - runTime) / 1000 : Number(items.at(-1).seconds),
-      baseRainSource: piaf?.source || "piaf",
-      precipitation: sum("precipitation"),
-      nowcastPrecipitation: sum("totalPrecipitation"),
-      radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
-      radarAdjustedPrecipitation: sum("radarAdjustedPrecipitation"),
-      etaPrecipitation: sum("etaPrecipitation"),
-      effectiveRadarAmendment: sum("effectiveRadarAmendment"),
-      effectiveEtaAmendment: sum("effectiveEtaAmendment"),
-      totalPrecipitation: sum("totalPrecipitation"),
-      radarCellOverPoint: items.some(item => item.radarCellOverPoint),
-      probability: has("probability") ? Math.max(...items.filter(item => Number.isFinite(Number(item.probability))).map(item => Number(item.probability))) : null,
-      intervalStart,
-      intervalEnd,
-      complete
-    };
-  });
+  return (currentNowcast()?.quarterHourRain || []).map(item => ({ ...item, slotTime: new Date(item.slotTime) }));
 }
 
 function piafHourlyRain(piaf, radar = null) {
-  const fiveMinutes = 5 * 60000;
-  const hour = 60 * 60000;
-  const etaEvents = nowcastEtaRainEvents(radar);
-  const buckets = new Map();
-  for (const item of piafRainSteps(piaf, radar, piaf?.values || [], etaEvents)) {
-    const endTime = item.intervalEnd;
-    if (!Number.isFinite(endTime)) continue;
-    // Un pas terminé exactement à H:00 appartient à l'heure précédente.
-    const hourStart = Math.floor((endTime - 1) / hour) * hour;
-    if (!buckets.has(hourStart)) buckets.set(hourStart, []);
-    buckets.get(hourStart).push({ ...item, endTime });
-  }
-  return new Map([...buckets.entries()].sort(([left], [right]) => left - right).map(([hourStart, items]) => {
-    items.sort((left, right) => left.endTime - right.endTime);
-    const intervalStart = items[0].endTime - fiveMinutes;
-    const intervalEnd = items.at(-1).endTime;
-    const basePiaf = Math.round(items.reduce((total, item) => total + item.basePrecipitation, 0) * 100) / 100;
-    const directRadarAmendment = Math.round(items.reduce((total, item) => total + item.effectiveRadarAmendment, 0) * 100) / 100;
-    const etaAmendment = Math.round(items.reduce((total, item) => total + item.effectiveEtaAmendment, 0) * 100) / 100;
-    const totalRain = Math.round(items.reduce((total, item) => total + item.totalPrecipitation, 0) * 100) / 100;
-    const hourEvents = etaEvents.filter(event => nowcastEtaRainEligible(event, appNow())
-      && event.eventEnd > hourStart && event.eventStart < hourStart + hour);
-    const nowcastAmendment = Math.round((directRadarAmendment + etaAmendment) * 100) / 100;
-    const etaPassage = hourEvents.length ? Math.max(...hourEvents.map(event => Number(event.passage) || 0)) : null;
-    const radarCellOverPoint = items.some(item => item.radarCellOverPoint);
-    return [hourStart, {
-      rain: totalRain,
-      rainBasePiaf: basePiaf,
-      rainNowcastAmendment: nowcastAmendment,
-      rainDirectRadarAmendment: directRadarAmendment,
-      rainEtaAmendment: etaAmendment,
-      rainEtaCellIds: hourEvents.map(event => event.cell.id),
-      rainEtaPassage: etaPassage,
-      rainShortTerm: true,
-      rainSource: nowcastAmendment > 0 ? "Météo-France + Nowcasting" : "Météo-France",
-      rainIntervalStart: intervalStart,
-      rainIntervalEnd: intervalEnd,
-      rainDurationMinutes: Math.round((intervalEnd - intervalStart) / 60000),
-      rainRadarCellOverPoint: radarCellOverPoint
-    }];
-  }));
+  return new Map(currentNowcast()?.hourlyRain || []);
+}
+
+function currentNowcast() {
+  const forecast = latestForecastData?.nowcast;
+  return forecast?.schemaVersion === 1 && appNow() <= forecast.validUntil ? forecast : null;
 }
 
 function openMeteoHourlyRain(openMeteo) {
@@ -4632,6 +3193,12 @@ function renderActiveForecast() {
 function renderActiveRain() {
   const data = latestForecastData;
   if (!data) return;
+  if (!window.METEO_REPLAY && !currentNowcast()) {
+    $("rain-bars").innerHTML = '<p>Prévision en attente d’actualisation</p>';
+    $("rain-axis").innerHTML = '';
+    renderRadarNowcast(data.radar, data.piaf, data.arome, data.lightning, data.vigilance);
+    return;
+  }
   const useOpenMeteo = Boolean(window.METEO_REPLAY && !data.piaf);
   if (useOpenMeteo) {
     if ($("rain-api-links")) $("rain-api-links").innerHTML = shortRainLinks();
@@ -5410,208 +3977,27 @@ function radarCellPointDistance(cell, eastKm, northKm) {
   return Math.max(0, Math.hypot(eastKm - Number(cell?.eastKm || 0), northKm - Number(cell?.northKm || 0)) - Math.max(0, Number(cell?.radiusKm || 0)));
 }
 
-function polarimetricHailRisk(cell) {
-  const value = cell?.risks?.hail;
-  if (cell?.polarimetry?.classification === "insufficient"
-    || cell?.polarimetry?.scoreBasis !== "fraction-of-compatible-strong-pixels"
-    || value == null || value === "" || !Number.isFinite(Number(value))) return null;
-  return Math.max(0, Math.min(100, Math.round(Number(value))));
-}
+// Calcul transféré au moteur : polarimetricHailRisk.
 
-function polarimetricHailLabel(cell, reliableEvent = null) {
-  const score = polarimetricHailRisk(cell);
-  if (score != null) {
-    const passage = reliableEvent?.projectionReliable === true ? Math.round(Number(reliableEvent.passage) || 0) : 0;
-    const etaMinutes = reliableEvent?.etaMinutes == null ? null : Number(reliableEvent.etaMinutes);
-    const arrival = cell?.polarimetry?.classification === "hail"
-      && passage > 0
-      && Number.isFinite(etaMinutes)
-      && etaMinutes >= 0
-      && etaMinutes <= 180
-      ? etaMinutes < 1
-        ? " · passage grêle possible en cours · passage " + passage + " %"
-        : " · grêle possible dans " + compactMinutesLabel(Math.max(1, etaMinutes)) + " · passage " + passage + " %"
-      : "";
-    return "indice polarimétrique " + score + " %" + arrival;
-  }
-  return "non évaluée";
-}
+// Calcul transféré au moteur : polarimetricHailLabel.
 
-function nowcastCellRepresentativeRain(cell, currentPrecipitation = null) {
-  const maximum = Math.max(0, Number(cell?.maximum) || 0);
-  const mean = Math.max(0, Number(cell?.mean) || 0);
-  const representative = mean > 0 ? Math.min(maximum || mean, mean) : maximum;
-  const local = Number(currentPrecipitation);
-  if (radarCellEdgeDistance(cell) <= .5 && Number.isFinite(local)) {
-    const localRepresentative = Math.max(representative, local);
-    return maximum > 0 ? Math.min(maximum, localRepresentative) : localRepresentative;
-  }
-  return representative;
-}
+// Calcul transféré au moteur : nowcastCellRepresentativeRain.
 
-function nowcastEvidenceIsFresh(evidenceObservedAt, radarObservedAt, referenceTime = Date.now()) {
-  const evidenceTime = Date.parse(evidenceObservedAt || "");
-  const radarTime = Date.parse(radarObservedAt || "");
-  const currentTime = Number(referenceTime);
-  return Number.isFinite(evidenceTime)
-    && Number.isFinite(radarTime)
-    && Number.isFinite(currentTime)
-    && Math.abs(evidenceTime - radarTime) <= 12 * 60000
-    && Math.abs(currentTime - radarTime) <= 15 * 60000
-    && Math.abs(currentTime - evidenceTime) <= 20 * 60000;
-}
+// Calcul transféré au moteur : nowcastEvidenceIsFresh.
 
-function nowcastFlashesNearCell(cell, lightning, radarObservedAt = null, referenceTime = Date.now()) {
-  const radarTime = Date.parse(radarObservedAt || "");
-  if (!Number.isFinite(radarTime)
-    || !nowcastEvidenceIsFresh(lightning?.observedAt, radarObservedAt, referenceTime)) return 0;
-  return (lightning?.flashes || []).filter(flash => {
-    const temporallyRelevant = nowcastEvidenceIsFresh(flash?.time, radarObservedAt, referenceTime);
-    return temporallyRelevant
-      && radarCellPointDistance(cell, Number(flash.eastKm || 0), Number(flash.northKm || 0)) <= 8;
-  }).length;
-}
+// Calcul transféré au moteur : nowcastFlashesNearCell.
 
-function nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime = Date.now()) {
-  const signal = cell?.signals?.convective;
-  return signal?.detected === true
-    && String(signal.source || "").trim().length > 0
-    && nowcastEvidenceIsFresh(signal.observedAt, radarObservedAt, referenceTime);
-}
+// Calcul transféré au moteur : nowcastCellHasConvectiveSignal.
 
-function nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime = Date.now()) {
-  const polar = cell?.polarimetry;
-  return nowcastEvidenceIsFresh(polar?.observedAt, radarObservedAt, referenceTime)
-    && ((["hail", "mixed"].includes(cell?.polarimetry?.classification) && polarimetricHailRisk(cell) > 0)
-      || (polar?.zones || []).some(zone => ["hail", "mixed"].includes(zone.classification)
-        && zone.scoreBasis === "fraction-of-compatible-strong-pixels" && Number(zone.score) > 0));
-}
+// Calcul transféré au moteur : nowcastCellHasHailSignal.
 
-function nowcastCellHasIntenseRainSignal(cell, radarObservedAt, referenceTime = Date.now()) {
-  return rainIntensityStep(Math.max(0, Number(cell?.maximum) || 0)) >= 4
-    && Number(cell?.intenseRainClusterAreaKm2) >= 1
-    && nowcastEvidenceIsFresh(radarObservedAt, radarObservedAt, referenceTime);
-}
+// Calcul transféré au moteur : nowcastCellHasIntenseRainSignal.
 
-function nowcastCellHasStormEvidence(cell, lightning, radarObservedAt, referenceTime = Date.now()) {
-  return nowcastCellHasConvectiveSignal(cell, radarObservedAt, referenceTime)
-    || nowcastFlashesNearCell(cell, lightning, radarObservedAt, referenceTime) > 0
-    || nowcastCellHasHailSignal(cell, radarObservedAt, referenceTime)
-    || nowcastCellHasIntenseRainSignal(cell, radarObservedAt, referenceTime);
-}
+// Calcul transféré au moteur : nowcastCellHasStormEvidence.
 
-function nowcastLocalHail(cell, radar, passages, now, local) {
-  const polar = cell?.polarimetry;
-  const windows = [];
-  const unavailable = { hailRisk: null, hailLevel: 0, hailWindows: windows, hailLocalized: false };
-  if (!nowcastEvidenceIsFresh(polar?.observedAt, radar?.observedAt, now)) return unavailable;
-  const points = (cell.track?.points || []).filter(point => [point.minutes, point.eastKm, point.northKm].every(value => value != null && Number.isFinite(Number(value))));
-  const first = points[0], next = points.find(point => Number(point.minutes) > Number(first?.minutes));
-  const dt = next ? Number(next.minutes) - Number(first.minutes) : 0;
-  const vx = dt ? (Number(next.eastKm) - Number(first.eastKm)) / dt : 0;
-  const vy = dt ? (Number(next.northKm) - Number(first.northKm)) / dt : 0;
-  const speed2 = vx * vx + vy * vy;
-  const origin = Date.parse(polar.observedAt);
-  const uncertaintyAt = minutes => {
-    const before = [...points].reverse().find(point => Number(point.minutes) <= minutes) || points[0];
-    const after = points.find(point => Number(point.minutes) >= minutes) || points.at(-1);
-    const width = Number(after?.minutes) - Number(before?.minutes);
-    const left = Math.max(0, Number(before?.uncertaintyGrowthKm ?? before?.uncertaintyKm) || 0), right = Math.max(0, Number(after?.uncertaintyGrowthKm ?? after?.uncertaintyKm) || 0);
-    return width > 0 ? left + (right - left) * Math.max(0, Math.min(1, (minutes - Number(before.minutes)) / width)) : left;
-  };
-  const zones = Array.isArray(polar.zones) ? polar.zones : null;
-  const positive = zone => ["hail", "mixed"].includes(zone?.classification)
-    && zone?.scoreBasis === "fraction-of-compatible-strong-pixels" && Number(zone.score) > 0;
-  const add = (start, end, score, passage = 100) => {
-    if (end <= now || start >= now + 180 * 60000 || end <= start) return;
-    // Un indice radar n'est pas une observation de grêle au sol.
-    const risk = Math.max(0, Math.min(100, Number(passage)));
-    if (risk > 0) windows.push({ start: Math.max(now, start), end: Math.min(now + 180 * 60000, end), risk, score: Number(score) });
-  };
-  if (zones) {
-    for (const zone of zones.filter(positive)) {
-      const x = Number(zone.eastKm), y = Number(zone.northKm), radius = Number(zone.radiusKm);
-      if (![x, y, radius].every(Number.isFinite) || radius <= 0) continue;
-      const age = (now - origin) / 60000;
-      if (local && Math.hypot(x + vx * age, y + vy * age) <= radius) add(now, now + 1, zone.score);
-      if (speed2 <= 0) continue;
-      const middle = -(x * vx + y * vy) / speed2;
-      const closest2 = (x + vx * middle) ** 2 + (y + vy * middle) ** 2;
-      for (const event of passages) {
-        const left = (Math.max(now, event.eventStart) - origin) / 60000;
-        const right = (event.eventEnd - origin) / 60000;
-        const uncertainty = Math.max(uncertaintyAt(left), uncertaintyAt(right), ...points
-          .filter(point => Number(point.minutes) >= left && Number(point.minutes) <= right)
-          .map(point => Math.max(0, Number(point.uncertaintyGrowthKm ?? point.uncertaintyKm) || 0)));
-        const projectedRadius = radius + uncertainty;
-        if (closest2 > projectedRadius * projectedRadius) continue;
-        const half = Math.sqrt((projectedRadius * projectedRadius - closest2) / speed2);
-        const start = origin + (middle - half) * 60000, end = origin + (middle + half) * 60000;
-        add(Math.max(start, event.eventStart), Math.min(end, event.eventEnd), zone.score,
-          event.presenceProbability ?? event.passage ?? cell.risks?.passage ?? 0);
-      }
-    }
-  } else if (positive(polar)) {
-    // Anciennes archives : conserver une alerte possible, sans prétendre
-    // localiser le noyau de grêle à partir du seul score global.
-    if (local) add(now, now + 1, polar.score);
-    for (const event of passages) add(event.eventStart, event.eventEnd, polar.score,
-      event.presenceProbability ?? event.passage ?? cell.risks?.passage ?? 0);
-  }
-  const score = Math.max(0, ...windows.map(window => window.score));
-  return { hailRisk: windows.length ? Math.max(...windows.map(window => window.risk)) : null,
-    hailLevel: score <= 0 ? 0 : score < 20 ? 1 : score < 40 ? 2 : score < 60 ? 3 : score < 80 ? 4 : 5,
-    hailWindows: windows, hailLocalized: zones !== null };
-}
+// Calcul transféré au moteur : nowcastLocalHail.
 
-function nowcastLocalStormHazards(cell, radar, lightning, events, now) {
-  const observedAt = Date.parse(radar?.observedAt || "");
-  const fresh = nowcastEvidenceIsFresh(radar?.observedAt, radar?.observedAt, now);
-  const local = fresh && nowcastCellLocallyObservedInterior(cell, radar);
-  const passages = (events || []).filter(event => String(event.cell?.id) === String(cell?.id)
-    && nowcastStormEtaSelection([event], [cell.id], now, cell.id).event);
-  const profiles = passages.filter(event => nowcastEtaRainEligible(event, now) && event.projectionKind === "profile")
-    .flatMap(event => (event.intensityProfile || []).filter(segment => segment.end > now && segment.start < now + 180 * 60000));
-  const rain = Math.max(0, local ? Number(radar.currentPrecipitation) || 0 : 0,
-    ...profiles.map(segment => Number(segment.intensity) || 0));
-  const points = (cell?.track?.points || []).filter(point => Number.isFinite(Number(point.minutes))
-    && Number.isFinite(Number(point.eastKm)) && Number.isFinite(Number(point.northKm)));
-  const first = points[0];
-  const next = points.find(point => Number(point.minutes) > Number(first?.minutes));
-  const elapsed = next ? Number(next.minutes) - Number(first.minutes) : 0;
-  const east = elapsed ? (Number(next.eastKm) - Number(first.eastKm)) / elapsed : 0;
-  const north = elapsed ? (Number(next.northKm) - Number(first.northKm)) / elapsed : 0;
-  // Conserver seulement les éclairs proches du point, ou dont la zone advectée
-  // traverse le voisinage de 8 km des Tatins pendant un passage confirmé.
-  const flashes = fresh && nowcastEvidenceIsFresh(lightning?.observedAt, radar.observedAt, now)
-    ? (lightning.flashes || []).filter(flash => {
-      if (!nowcastEvidenceIsFresh(flash.time, radar.observedAt, now)
-        || !Number.isFinite(Number(flash.eastKm)) || !Number.isFinite(Number(flash.northKm))
-        || radarCellPointDistance(cell, Number(flash.eastKm), Number(flash.northKm)) > 8) return false;
-      const x = Number(flash.eastKm), y = Number(flash.northKm);
-      if (local && Math.hypot(x, y) <= 8) return true;
-      const speed2 = east * east + north * north;
-      if (!speed2) return false;
-      return passages.some(event => {
-        const start = Math.max(0, (Math.max(now, event.eventStart) - observedAt) / 60000);
-        const end = Math.min(180, (event.eventEnd - observedAt) / 60000);
-        if (end <= start) return false;
-        const minutes = Math.max(start, Math.min(end, -(x * east + y * north) / speed2));
-        return Math.hypot(x + east * minutes, y + north * minutes) <= 8;
-      });
-    }).length : 0;
-  // Un faible risque ne justifie pas un cumul, mais doit rester signalé.
-  const hailPassages = fresh ? (events || []).filter(event => String(event.cell?.id) === String(cell?.id)
-    && Number.isFinite(Number(event.eventStart)) && Number.isFinite(Number(event.eventEnd))
-    && Number(event.eventEnd) > now && Number(event.eventStart) < now + 180 * 60000
-    && Number(event.presenceProbability ?? event.passage ?? cell.risks?.passage) > 0) : [];
-  const hail = nowcastLocalHail(cell, radar, hailPassages, now, local);
-  const { hailRisk, hailLevel } = hail;
-  const rainLevel = rainIntensityStep(rain);
-  const lightningLevel = flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
-  const level = flashes > 0 || rain >= 30 || hailRisk > 0 ? stormHazardIntensityStep(rainLevel, hailLevel, lightningLevel) : null;
-  return { rain, rainLevel, flashes, lightningLevel, ...hail, level };
-}
+// Calcul transféré au moteur : nowcastLocalStormHazards.
 
 function radarCellShapeRuns(cell) {
   return (Array.isArray(cell?.shapeRuns) ? cell.shapeRuns : []).filter(run => {
@@ -5624,45 +4010,11 @@ function radarCellShapeRuns(cell) {
   });
 }
 
-function nowcastMapCoverage(cells, radiusKm = 20) {
-  const minimum = -radiusKm;
-  const maximum = radiusKm;
-  const visibleAreaKm2 = radiusKm * radiusKm * 4;
-  const areaKm2 = (cells || []).reduce((total, cell) => {
-    if (radarCellEdgeDistance(cell) >= radiusKm) return total;
-    const shapeRuns = radarCellShapeRuns(cell);
-    if (!shapeRuns.length) return total + Math.min(visibleAreaKm2, Math.max(0, Number(cell.areaKm2) || 0));
-    return total + shapeRuns.reduce((cellTotal, run) => {
-      const west = Math.max(minimum, Number(run.westKm));
-      const east = Math.min(maximum, Number(run.eastKm));
-      const south = Math.max(minimum, Number(run.southKm));
-      const north = Math.min(maximum, Number(run.northKm));
-      return cellTotal + Math.max(0, east - west) * Math.max(0, north - south);
-    }, 0);
-  }, 0);
-  return Math.max(0, Math.min(1, areaKm2 / visibleAreaKm2));
-}
+// Calcul transféré au moteur : nowcastMapCoverage.
 
-function nowcastMapIsSaturated(cells) {
-  const visibleCells = (cells || []).filter(cell => radarCellEdgeDistance(cell) < 20);
-  const coverage = nowcastMapCoverage(visibleCells, 20);
-  const coverageThreshold = nowcastMapAutoExpanded ? .2 : .32;
-  const crowdedCoverageThreshold = nowcastMapAutoExpanded ? .12 : .18;
-  return coverage >= coverageThreshold
-    || visibleCells.length >= 4 && coverage >= crowdedCoverageThreshold
-    || visibleCells.length >= 6;
-}
+// Calcul transféré au moteur : nowcastMapIsSaturated.
 
-function nowcastEtaCellOutsideMap(cell, radiusKm = 20) {
-  if (cell?.etaMinutes == null) return false;
-  const etaMinutes = Number(cell?.etaMinutes);
-  const passage = Number(cell?.risks?.passage);
-  return Number.isFinite(etaMinutes)
-    && etaMinutes >= 0
-    && etaMinutes <= 180
-    && passage > 0
-    && radarCellEdgeDistance(cell) >= radiusKm;
-}
+// Calcul transféré au moteur : nowcastEtaCellOutsideMap.
 
 function nowcastCellHasEtaProjection(cell) {
   if (cell?.etaMinutes == null) return false;
@@ -5680,90 +4032,11 @@ function nowcastEtaProjectionCells(cells) {
       && cell.track?.points?.length > 1));
 }
 
-function nowcastSweptShapePolygons(cell, track, uncertainty = false, bounds = null) {
-  const runs = radarCellShapeRuns(cell);
-  if (!runs.length || !Array.isArray(track) || track.length < 2) return [];
-  const origin = track[0];
-  const hull = points => {
-    points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    const half = values => {
-      const result = [];
-      for (const point of values) {
-        while (result.length > 1 && cross(result.at(-2), result.at(-1), point) <= 0) result.pop();
-        result.push(point);
-      }
-      return result.slice(0, -1);
-    };
-    return half(points).concat(half([...points].reverse()));
-  };
-  const polygons = [];
-  for (let index = 1; index < track.length; index++) {
-    const endpoints = [track[index - 1], track[index]];
-    for (const run of runs) {
-      const corners = endpoints.flatMap(point => {
-        const dx = Number(point.eastKm) - Number(origin.eastKm);
-        const dy = Number(point.northKm) - Number(origin.northKm);
-        const radius = uncertainty ? Math.max(0, Number(point.uncertaintyGrowthKm) || 0) : 0;
-        // Octogone circonscrit : conserver toute l'enveloppe d'incertitude.
-        const offsets = radius > 0 ? Array.from({ length: 8 }, (_, i) => [
-          Math.cos((i + .5) * Math.PI / 4) * radius / Math.cos(Math.PI / 8),
-          Math.sin((i + .5) * Math.PI / 4) * radius / Math.cos(Math.PI / 8)
-        ]) : [[0, 0]];
-        return [[run.westKm, run.southKm], [run.eastKm, run.southKm],
-          [run.eastKm, run.northKm], [run.westKm, run.northKm]]
-          .flatMap(([east, north]) => offsets.map(([ox, oy]) => [Number(east) + dx + ox, Number(north) + dy + oy]));
-      });
-      if (bounds && (corners.every(p => p[0] < bounds.westKm) || corners.every(p => p[0] > bounds.eastKm)
-        || corners.every(p => p[1] < bounds.southKm) || corners.every(p => p[1] > bounds.northKm))) continue;
-      polygons.push(hull(corners));
-    }
-  }
-  return polygons;
-}
+// Calcul transféré au moteur : nowcastSweptShapePolygons.
 
 const nowcastPassageGridCache = new Map();
 
-function nowcastPassageFrequencyGrid(cell, bounds, stepKm = .5) {
-  const cacheKey = JSON.stringify([cell.eastKm, cell.northKm, cell.shapeRuns, cell.passageEnsemble, bounds, stepKm]);
-  if (nowcastPassageGridCache.has(cacheKey)) return nowcastPassageGridCache.get(cacheKey);
-  const ensemble = cell?.passageEnsemble;
-  const scenarios = ensemble?.status === 'ready' ? ensemble.scenarios || [] : [];
-  const columns = Math.ceil((bounds.eastKm - bounds.westKm) / stepKm);
-  const rows = Math.ceil((bounds.northKm - bounds.southKm) / stepKm);
-  const counts = new Float64Array(columns * rows);
-  const samples = scenarios.length;
-  const origin = { eastKm: Number(cell.eastKm) || 0, northKm: Number(cell.northKm) || 0, minutes: 0 };
-  for (const scenario of scenarios) {
-    const perturbed = [origin, { minutes: ensemble.horizonMinutes,
-      eastKm: origin.eastKm + scenario.velocityEast * ensemble.horizonMinutes,
-      northKm: origin.northKm + scenario.velocityNorth * ensemble.horizonMinutes }];
-    const covered = new Uint8Array(counts.length);
-    for (const polygon of nowcastSweptShapePolygons(cell, perturbed, false, bounds)) {
-      const firstRow = Math.max(0, Math.ceil((Math.min(...polygon.map(p => p[1])) - bounds.southKm) / stepKm - .5));
-      const lastRow = Math.min(rows - 1, Math.floor((Math.max(...polygon.map(p => p[1])) - bounds.southKm) / stepKm - .5));
-      for (let row = firstRow; row <= lastRow; row++) {
-        const north = bounds.southKm + (row + .5) * stepKm;
-        const crossings = [];
-        for (let i = 0; i < polygon.length; i++) {
-          const a = polygon[i], b = polygon[(i + 1) % polygon.length];
-          if ((a[1] <= north && b[1] > north) || (b[1] <= north && a[1] > north)) {
-            crossings.push(a[0] + (north - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
-          }
-        }
-        if (crossings.length < 2) continue;
-        const first = Math.max(0, Math.ceil((Math.min(...crossings) - bounds.westKm) / stepKm - .5));
-        const last = Math.min(columns - 1, Math.floor((Math.max(...crossings) - bounds.westKm) / stepKm - .5));
-        for (let column = first; column <= last; column++) covered[row * columns + column] = 1;
-      }
-    }
-    for (let index = 0; index < counts.length; index++) counts[index] += covered[index] * scenario.weight;
-  }
-  const grid = { counts, columns, rows, stepKm, samples, bounds };
-  if (nowcastPassageGridCache.size >= 8) nowcastPassageGridCache.delete(nowcastPassageGridCache.keys().next().value);
-  nowcastPassageGridCache.set(cacheKey, grid);
-  return grid;
-}
+// Calcul transféré au moteur : nowcastPassageFrequencyGrid.
 
 function radarCellExtent(cell, directionEast, directionNorth, absolute = false) {
   const shapeRuns = radarCellShapeRuns(cell);
@@ -5962,23 +4235,17 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       const bounds = { westKm: -width / (2 * scale), eastKm: width / (2 * scale),
         southKm: -height / (2 * scale), northKm: height / (2 * scale) };
       if (cell.passageEnsemble?.status !== 'ready') return '';
-      const grid = nowcastPassageFrequencyGrid(cell, bounds, .25);
+      const groups = latestForecastData?.nowcast?.passageMaps?.find(map => String(map.id) === String(cell.id))?.groups || [];
       const paths = new Map();
-      // Fusionner les mailles adjacentes de même probabilité sans modifier les valeurs.
-      for (let row = 0; row < grid.rows; row++) {
-        for (let column = 0; column < grid.columns;) {
-          const count = Math.round(grid.counts[row * grid.columns + column] * 1e6) / 1e6;
-          let endColumn = column + 1;
-          while (endColumn < grid.columns && Math.round(grid.counts[row * grid.columns + endColumn] * 1e6) / 1e6 === count) endColumn++;
-          if (count > 0) {
-            const west = bounds.westKm + column * grid.stepKm, east = bounds.westKm + endColumn * grid.stepKm;
-            const south = bounds.southKm + row * grid.stepKm;
-            const rectangle = 'M' + x(west).toFixed(1) + ' ' + y(south + grid.stepKm).toFixed(1)
-              + 'H' + x(east).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
-            paths.set(count, (paths.get(count) || '') + rectangle);
-          }
-          column = endColumn;
+      for (const { probability, runs } of groups) {
+        let path = '';
+        for (const [west, south, length] of runs) {
+          const east = west + length;
+          if (east < bounds.westKm || west > bounds.eastKm || south + .25 < bounds.southKm || south > bounds.northKm) continue;
+          path += 'M' + x(west).toFixed(1) + ' ' + y(south + .25).toFixed(1)
+            + 'H' + x(east).toFixed(1) + 'V' + y(south).toFixed(1) + 'H' + x(west).toFixed(1) + 'Z';
         }
+        if (path) paths.set(probability, path);
       }
       const observedPath = radarCellShapeRuns(cell).map(run => 'M' + x(run.westKm).toFixed(1) + ' ' + y(run.northKm).toFixed(1)
         + 'H' + x(run.eastKm).toFixed(1) + 'V' + y(run.southKm).toFixed(1) + 'H' + x(run.westKm).toFixed(1) + 'Z').join('');
@@ -6357,52 +4624,19 @@ function initializeNowcastMapBackground(mapRadiusKm) {
 function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
   const element = $("radar-nowcast");
   const summaryElement = $("three-hour-summary");
-  if (!radar) {
+  const forecast = latestForecastData?.nowcast;
+  const now = appNow();
+  if (!radar || !forecast || forecast.schemaVersion !== 1 || now > forecast.validUntil) {
     clearThreeHourMessageSequence(true);
-    if (summaryElement) summaryElement.innerHTML = "";
-    element.innerHTML = '<strong>Radar</strong><span>Acquisition de la première trame en cours…</span>';
+    if (summaryElement) summaryElement.innerHTML = '<p class="horizon-empty">Prévision en attente d’actualisation</p>';
+    if (element) element.innerHTML = '<strong>Radar</strong><span>Prévision serveur indisponible ou périmée.</span>';
     return;
   }
-  const cardinal = bearing => {
-    const labels = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest"];
-    return labels[Math.round(Number(bearing || 0) / 45) % 8];
-  };
-  const directionLabel = bearing => {
-    const direction = cardinal(bearing).toUpperCase();
-    return (direction === "EST" || direction === "OUEST" ? "L’" : "LE ") + direction;
-  };
-  const threeHours = (piaf?.values || []).filter(item => item.seconds <= 3 * 3600);
-  const now = appNow();
-  const etaRainEvents = nowcastEtaRainEvents(radar);
-  const threeHourRainSteps = piafRainSteps(piaf, radar, threeHours, etaRainEvents);
-  const piafRainAmount = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.basePrecipitation, 0) * 10) / 10;
-  const directRadarRainAmendment = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.effectiveRadarAmendment, 0) * 10) / 10;
-  const etaRainAmendment = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.effectiveEtaAmendment, 0) * 10) / 10;
-  const nowcastRainAmendment = Math.round((directRadarRainAmendment + etaRainAmendment) * 10) / 10;
-  const rainAmount = Math.round(threeHourRainSteps.reduce((sum, item) => sum + item.totalPrecipitation, 0) * 10) / 10;
-  const upcomingWind = (arome?.hours || []).filter(item => {
-    const time = new Date(item.time).getTime();
-    return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
-  });
-  const windWindow = upcomingWind.length ? upcomingWind : (arome?.hours || []).slice(0, 3);
-  const maximumWind = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windSpeed) || 0)));
-  const maximumGust = Math.round(Math.max(0, ...windWindow.map(item => Number(item.windGust) || 0)));
-  const openMeteoWindHours = latestForecastData?.openMeteo?.hours || [];
-  const upcomingOpenMeteoWind = openMeteoWindHours.filter(item => {
-    const time = new Date(item.time).getTime();
-    return Number.isFinite(time) && time >= now - 30 * 60000 && time <= now + 3 * 3600000;
-  });
-  const openMeteoWindWindow = upcomingOpenMeteoWind.length ? upcomingOpenMeteoWind : openMeteoWindHours.slice(0, 3);
-  const maximumOpenMeteoWind = openMeteoWindWindow.length
-    ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windSpeed) || 0)))
-    : null;
-  const maximumOpenMeteoGust = openMeteoWindWindow.length
-    ? Math.round(Math.max(0, ...openMeteoWindWindow.map(item => Number(item.windGust) || 0)))
-    : null;
-  const openMeteoWindBackgroundTrend = backgroundTrendArrow(openMeteoWindWindow.map(item => item.windSpeed), 5);
-  const openMeteoGustBackgroundTrend = backgroundTrendArrow(openMeteoWindWindow.map(item => item.windGust), 8);
-  const meteoFranceWindBackgroundTrend = backgroundTrendArrow(windWindow.map(item => item.windSpeed), 5);
-  const meteoFranceGustBackgroundTrend = backgroundTrendArrow(windWindow.map(item => item.windGust), 8);
+  const { rainMessageSequence, rainValue, rainColorLevel, rainDetail, rainTrend, stormCombinedLevel, stormDetail, stormTrend, stormTrendDetail, stormEtaLabel, stormDurationLabel, stormEtaDetail, windValue, windLevel, windDetail, windTrendWithDetail, windColorLevel } = forecast;
+  if (!nowcastMapRadiusManuallySelected) activeNowcastMapRadius = forecast.recommendedMapRadius;
+  nowcastMapAutoExpanded = activeNowcastMapRadius === 60;
+  const metrics = new Map(forecast.cellMetrics.map(metric => [String(metric.id), metric]));
+  const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const nowcastMetricIcons = {
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
     wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
@@ -6417,20 +4651,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const symbol = showSymbol ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + nowcastMetricIcons[kind] + '</svg>' : "";
     return '<span class="week-metric-pictogram ' + kind + '" role="img" aria-label="' + escapeText(label) + '"' + (nativeTitle ? ' title="' + escapeText(label) + '"' : '') + '>' + symbol + scale + '</span>';
   };
-  const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
-  const flashCountStep = value => value <= 0 ? 0 : value === 1 ? 1 : value < 4 ? 2 : value < 7 ? 3 : value < 10 ? 4 : 5;
-  const forecastTrend = (start, end, threshold) => {
-    const change = end - start;
-    return {
-      label: change > threshold ? "croissant" : change < -threshold ? "decroissant" : "stable",
-      change
-    };
-  };
-  const splitForecastWindow = (values, value) => {
-    const count = Math.max(1, Math.floor(values.length / 3));
-    const average = group => group.reduce((sum, item) => sum + (Number(value(item)) || 0), 0) / Math.max(1, group.length);
-    return { start: average(values.slice(0, count)), end: average(values.slice(-count)) };
-  };
   const trendMarkup = (kind, trend, source, nativeTitle = true) => {
     const arrow = trend.label === "croissant"
       ? '<path d="M10 14V6m0 0L7 9m3-3 3 3"/>'
@@ -6441,14 +4661,6 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const detail = trend.detail || "Tendance " + wording + " sur les 3 prochaines heures" + (source ? " (" + source + ")" : "");
     const significance = threeHourTrendIsSignificant(kind, trend) ? " significant" : "";
     return '<span class="three-hour-trend ' + trend.label + significance + '"' + (nativeTitle ? ' title="' + escapeText(detail) + '"' : '') + ' aria-label="' + escapeText(detail) + '"><b aria-hidden="true"><svg viewBox="0 0 20 20">' + arrow + '</svg></b></span>';
-  };
-  // Synthèse pluie : l'intensité fixe le plafond, puis la probabilité module
-  // ce niveau sans jamais transformer une pluie très faible en signal fort.
-  const rainSynthesisStep = (probability, intensity) => {
-    const intensityLevel = rainIntensityStep(intensity);
-    const probabilityValue = Math.max(0, Math.min(100, Number(probability) || 0));
-    if (!intensityLevel || !probabilityValue) return 0;
-    return Math.max(1, Math.min(5, Math.ceil(intensityLevel * (0.5 + probabilityValue / 200))));
   };
   const summaryAction = (kind, value, level, detail, trend, target = null, stormPassageLevel = null, stormDetails = null, colorLevelOverride = null, stableTooltip = false) => {
     const stormLayout = stormPassageLevel != null;
@@ -6480,251 +4692,37 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const accessibleDetail = actionLabel ? actionLabel + " — " + accessibleSummary : accessibleSummary;
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + (stableTooltip ? ' chart-point' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '"' + (stableTooltip ? ' data-tooltip="' + escapeText(detail) + '"' : ' title="' + escapeText(accessibleDetail) + '"') + '><span class="three-hour-action-body">' + metric + '</span></button>';
   };
-  const latestDataTime = radar.observedAt ? hourFormat.format(new Date(radar.observedAt)) : "—";
-  const threat = radar.threat;
-  const cells = (radar.cells || []).map((cell, index) => ({ ...cell, id: cell.id || String.fromCharCode(65 + index) }));
-  // La distance utile est celle du bord le plus proche, pas celle du centre.
-  const cellDistance = radarCellEdgeDistance;
-  const nearbyCells = cells.filter(cell => cellDistance(cell) < 60 || nowcastCellHasEtaProjection(cell));
-  const nearbyCellIds = new Set(nearbyCells.map(cell => cell.id));
-  const stormCandidateCells = nearbyCells.filter(cell =>
-    nowcastCellHasStormEvidence(cell, lightning, radar.observedAt, now)
-  );
-  const reliablePassageEventForCell = cell => nowcastReliablePassageEventForCell(etaRainEvents, cell, now);
-  const announcedPassageRiskForCell = cell => nowcastAnnouncedCellPassageRisk(
-    cell,
-    reliablePassageEventForCell(cell),
-    radar
-  );
-  const announcedStormPassageRisks = stormCandidateCells
-    .map(announcedPassageRiskForCell)
-    .filter(Number.isFinite);
-  const hasAnnouncedStormPassageRisk = announcedStormPassageRisks.length > 0;
-  const maximumPassageRisk = hasAnnouncedStormPassageRisk ? Math.max(...announcedStormPassageRisks) : 0;
-  const vigilanceNow = Date.now();
-  const vigilancePeriodActive = period =>
-    (!period.start || new Date(period.start).getTime() <= vigilanceNow)
-    && (!period.end || vigilanceNow < new Date(period.end).getTime());
-  const orangeVigilanceActive = (vigilance?.alerts || []).some(alert => {
-    if (alert.label !== "Orages") return false;
-    const timeline = Array.isArray(alert.timeline) ? alert.timeline : [];
-    return timeline.length
-      ? timeline.some(period => Number(period.colorId) >= 3 && vigilancePeriodActive(period))
-      : Number(alert.colorId) >= 3 && vigilancePeriodActive(alert);
-  });
-  const stormForecastStart = new Date(vigilanceNow);
-  stormForecastStart.setMinutes(0, 0, 0);
-  const stormForecastEnd = stormForecastStart.getTime() + 3 * 60 * 60 * 1000;
-  const meteoFranceStormForecastActive = (arome?.hours || []).some(hour => {
-    const time = new Date(hour.time).getTime();
-    return Boolean(hour.stormSignal) && time >= stormForecastStart.getTime() && time <= stormForecastEnd;
-  });
-  const openMeteoStormForecastActive = (latestForecastData?.openMeteo?.hours || []).some(hour => {
-    const time = new Date(hour.time).getTime();
-    return Number(hour.weatherCode) >= 95 && time >= stormForecastStart.getTime() && time <= stormForecastEnd;
-  });
-  const stormForecastSourceCount = Number(meteoFranceStormForecastActive) + Number(openMeteoStormForecastActive);
-  // Une valeur de passage n'est affichée et ne pilote les points qu'après
-  // confirmation de la trajectoire sur plusieurs scans.
-  const rawStormPassageLevel = probabilityStep(maximumPassageRisk);
-  const currentObservation = new Date(radar.observedAt || 0).getTime();
-  const previousObservation = new Date(cellPassageSnapshot?.observedAt || 0).getTime();
-  const previousPassageSnapshot = cellPassageSnapshot?.announced === true
-    && radar.observedAt !== cellPassageSnapshot.observedAt
-    && Number.isFinite(currentObservation)
-    && Number.isFinite(previousObservation)
-    && currentObservation > previousObservation
-    && currentObservation - previousObservation <= 45 * 60000
-      ? cellPassageSnapshot
-      : null;
-  const sameObservationSnapshot = cellPassageSnapshot?.announced === true
-    && radar.observedAt === cellPassageSnapshot.observedAt
-      ? cellPassageSnapshot
-      : null;
-  const passageTrendFor = cell => {
-    let trend = null;
-    if (!trend && previousPassageSnapshot && Object.prototype.hasOwnProperty.call(previousPassageSnapshot.values, cell?.id)) {
-      const previous = Number(previousPassageSnapshot.values[cell.id]);
-      const current = announcedPassageRiskForCell(cell);
-      if (Number.isFinite(previous) && Number.isFinite(current)) {
-        const change = Math.round(current - previous);
-        trend = { label: change > 0 ? "croissant" : change < 0 ? "decroissant" : "stable", change };
-      }
-    }
-    return trend && ["croissant", "decroissant", "stable"].includes(trend.label) ? trend : null;
-  };
-  const formatMinutes = minutes => {
-    const rounded = Math.max(0, Math.round(minutes));
-    if (rounded < 60) return rounded + " min";
-    const hours = Math.floor(rounded / 60);
-    const remaining = rounded % 60;
-    return hours + " h" + (remaining ? " " + remaining : "");
-  };
-  const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
-  const flashesNearCell = cell => nowcastFlashesNearCell(cell, lightning, radar.observedAt, now);
-  const lightningIntensityStep = flashes => flashes <= 0 ? 0 : flashes === 1 ? 2 : flashes < 5 ? 3 : flashes < 10 ? 4 : 5;
-  const localStormHazards = new Map();
-  const localHazardsFor = cell => {
-    if (!localStormHazards.has(cell.id)) localStormHazards.set(cell.id, nowcastLocalStormHazards(cell, radar, lightning, etaRainEvents, now));
-    return localStormHazards.get(cell.id);
-  };
-  const localProjectedRainFor = cell => localHazardsFor(cell).rain;
-  const stormIntensityFor = cell => ({ cell, passage: Math.round(Number(cell.risks?.passage) || 0),
-    intenseRainRisk: null, ...localHazardsFor(cell) });
-  // La cellule retenue porte l'indicateur unique risque + intensité. À
-  // probabilité égale, la cellule la plus intense est prioritaire.
-  const passageCandidates = stormCandidateCells
-    .filter(cell => Number(cell.risks?.passage) > 0)
-    .map(cell => stormIntensityFor(cell))
-    .filter(candidate => candidate.level != null)
-    .sort((left, right) => right.passage - left.passage || right.level - left.level || cellDistance(left.cell) - cellDistance(right.cell));
-  const relevantStormIntensity = passageCandidates[0] || null;
-  const relevantStormCell = relevantStormIntensity?.cell || null;
-  const temporalPassageCandidates = passageCandidates.filter(candidate => !nowcastCellPostContactDeparture(candidate.cell, radar.observedAt));
-  const relevantTemporalStormIntensity = temporalPassageCandidates[0] || null;
-  const relevantTemporalStormCell = relevantTemporalStormIntensity?.cell || null;
-  const departingStormIntensity = passageCandidates.find(candidate => nowcastCellPostContactDeparture(candidate.cell, radar.observedAt)) || null;
-  const twentyKmSaturated = nowcastMapIsSaturated(cells);
-  const etaTargetOutsideTwentyKm = temporalPassageCandidates
-    .some(candidate => nowcastEtaCellOutsideMap(candidate.cell, 20));
-  if (!nowcastMapRadiusManuallySelected) {
-    if (twentyKmSaturated || etaTargetOutsideTwentyKm) {
-      activeNowcastMapRadius = 60;
-      nowcastMapAutoExpanded = true;
-    } else {
-      nowcastMapAutoExpanded = false;
-      activeNowcastMapRadius = cells.some(cell => cellDistance(cell) < 20) ? 20 : 60;
-    }
-  } else {
-    nowcastMapAutoExpanded = false;
-  }
-  const nowcastStormPassageLevel = rawStormPassageLevel;
-  const stormPassageLevel = Math.max(nowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
-  const stormIntensityLevel = relevantStormIntensity?.level || 0;
-  const temporalStormIntensityLevel = relevantTemporalStormIntensity?.level || 0;
-  const stormCombinedLevel = stormRiskIntensityStep(stormPassageLevel, stormIntensityLevel);
-  const previousDisplayedLevelSnapshot = cellPassageSnapshot?.announced === true
-    && Number.isFinite(currentObservation)
-    && Number.isFinite(previousObservation)
-    && (currentObservation > previousObservation
-      || (currentObservation === previousObservation
-        && Number(cellPassageSnapshot.displayedLevel) !== stormCombinedLevel))
-    && currentObservation - previousObservation <= 45 * 60000
-      ? cellPassageSnapshot
-      : null;
-  const rainTrendSteps = threeHourRainSteps.map(item => ({
-    seconds: item.seconds,
-    precipitation: item.totalPrecipitation,
-    etaRain: item.effectiveEtaAmendment
-  }));
-  const rainTrendUsesEta = rainTrendSteps.slice(0, 12).some(item => item.etaRain > 0);
-  const rainTrendUsesRadar = threeHours.slice(0, 12).some(item => item.radarCellOverPoint);
-  const rainTrendSource = rainTrendUsesEta
-    ? "PIAF + Nowcasting"
-    : rainTrendUsesRadar ? "PIAF amendé par le radar" : "PIAF";
-  const rainTrend = shortTermRainTrend(rainTrendSteps, rainTrendSource);
-  const windTrendWindow = splitForecastWindow(windWindow, item => shortTermWindIntensityLevel(item.windSpeed, item.windGust));
-  const windTrend = forecastTrend(windTrendWindow.start, windTrendWindow.end, .4);
-  const snapshotPassages = previousPassageSnapshot
-    ? Object.entries(previousPassageSnapshot.values || {})
-        .filter(([id]) => nearbyCellIds.has(id))
-        .map(([, value]) => Number(value))
-        .filter(Number.isFinite)
-    : [];
-  const previousMaximumPassageRisk = snapshotPassages.length ? Math.max(0, ...snapshotPassages) : maximumPassageRisk;
-  const maximumPassageChange = Math.round(maximumPassageRisk - previousMaximumPassageRisk);
-  const previousRawStormPassageLevel = probabilityStep(previousMaximumPassageRisk);
-  const previousNowcastStormPassageLevel = previousRawStormPassageLevel;
-  const savedStormPassageLevel = Number(previousDisplayedLevelSnapshot?.displayedLevel);
-  const previousStormPassageLevel = Number.isFinite(savedStormPassageLevel)
-    ? savedStormPassageLevel
-    : Math.max(previousNowcastStormPassageLevel, stormForecastSourceCount, orangeVigilanceActive ? 1 : 0);
-  const stormPassageLevelChange = stormCombinedLevel - previousStormPassageLevel;
-  const stormTrendUsesDisplayedLevel = stormPassageLevelChange !== 0;
-  const stormTrendChange = stormTrendUsesDisplayedLevel ? stormPassageLevelChange : maximumPassageChange;
-  const passageMotionTrend = relevantStormCell ? passageTrendFor(relevantStormCell) : null;
-  const probabilityStormTrend = {
-    label: stormTrendChange > 0 ? "croissant" : stormTrendChange < 0 ? "decroissant" : "stable",
-    change: stormTrendChange,
-    previous: stormTrendUsesDisplayedLevel ? previousStormPassageLevel : previousMaximumPassageRisk,
-    basis: stormTrendUsesDisplayedLevel ? "displayed-level" : "passage-probability"
-  };
-  const calculatedStormTrend = passageMotionTrend?.label === "decroissant" && probabilityStormTrend.label === "stable"
-      ? { ...passageMotionTrend, basis: "cell-trajectory" }
-      : probabilityStormTrend;
-  const previousPendingDecline = previousPassageSnapshot?.pendingDecline;
-  const declineFromCertainPassage = calculatedStormTrend.label === "decroissant"
-    && calculatedStormTrend.basis === "passage-probability"
-    && previousMaximumPassageRisk >= 100
-    && maximumPassageRisk > 0;
-  const confirmedPendingDecline = previousPendingDecline
-    && maximumPassageRisk > 0
-    && maximumPassageRisk <= Number(previousPendingDecline.currentRisk);
-  let pendingDecline = null;
-  let guardedStormTrend = calculatedStormTrend;
-  if (confirmedPendingDecline) {
-    const fromRisk = Number(previousPendingDecline.fromRisk);
-    guardedStormTrend = {
-      label: "decroissant",
-      change: maximumPassageRisk - fromRisk,
-      previous: fromRisk,
-      basis: "passage-probability",
-      confirmed: true
-    };
-  } else if (declineFromCertainPassage) {
-    pendingDecline = { fromRisk: previousMaximumPassageRisk, currentRisk: maximumPassageRisk };
-    guardedStormTrend = {
-      label: "stable",
-      change: 0,
-      previous: previousMaximumPassageRisk,
-      basis: "passage-probability",
-      pendingConfirmation: true
-    };
-  }
-  // Plusieurs rendus peuvent avoir lieu entre deux images radar. Conserver la
-  // tendance calculée au premier rendu évite qu'une hausse vers 5/5 soit
-  // aussitôt comparée à elle-même et remplacée par une flèche horizontale.
-  const savedStormTrend = sameObservationSnapshot?.displayedLevel === stormCombinedLevel
-    && ["croissant", "decroissant", "stable"].includes(sameObservationSnapshot?.trend?.label)
-    && !(sameObservationSnapshot.trend.label === "croissant" && guardedStormTrend.label !== "croissant")
-      ? sameObservationSnapshot.trend
-      : null;
-  const stormTrend = savedStormTrend || guardedStormTrend;
-  if (savedStormTrend) pendingDecline = sameObservationSnapshot.pendingDecline || null;
+
   const cellPresentation = cell => {
     const risks = cell.risks || {};
-    const reliablePassageEvent = reliablePassageEventForCell(cell);
+    const metric = metrics.get(String(cell.id));
+    if (!metric) return { tone: "none", label: "", markup: "", passageRisk: null };
     // Le cartouche décrit la cellule courante, même si son ETA n'est pas encore
     // confirmée sur plusieurs scans. La synthèse 3 h reste, elle, plus prudente.
-    const passageRisk = nowcastDisplayedCellPassageRisk(cell, reliablePassageEvent, radar);
-    const passageText = cell.passageEnsemble?.status === 'insufficient-observations'
-      && !nowcastCellPassageObserved(cell, radar)
+    const passageRisk = metric.passageRisk;
+    const passageText = metric.uncertain
       ? 'incertain'
       : passageRisk == null ? "incertain" : passageRisk + " %";
-    const hailRisk = polarimetricHailRisk(cell);
+    const hailRisk = metric.hailRisk;
     const rainRisk = Math.round(Number(risks.intenseRain) || 0);
     const rainIntensity = Number(cell.maximum);
     const rainIntensityLabel = Number.isFinite(rainIntensity)
       ? rainIntensity.toLocaleString("fr-FR", { minimumFractionDigits: rainIntensity < 1 ? 2 : 1, maximumFractionDigits: 2 }) + " mm/h"
       : null;
-    const flashes = flashesNearCell(cell);
-    const rainLevel = rainIntensityLabel ? rainSynthesisStep(rainRisk, nowcastCellRepresentativeRain(cell, radar.currentPrecipitation)) : 0;
-    const hailLevel = hailRisk == null ? 0 : probabilityStep(hailRisk);
-    const lightningLevel = flashCountStep(flashes);
+    const flashes = metric.flashes;
+    const rainLevel = metric.rainLevel;
+    const hailLevel = metric.hailLevel;
+    const lightningLevel = metric.lightningLevel;
     const rainPictogram = nowcastMetricPictogram("rain", rainLevel, "Pluie : niveau " + rainLevel + " sur 5 · risque de pluie intense " + rainRisk + " %" + (rainIntensityLabel ? " · intensité radar maximale " + rainIntensityLabel : ""), true, true, false);
-    const hailLabel = "Grêle : " + polarimetricHailLabel(cell, reliablePassageEvent);
+    const hailLabel = "Grêle : " + metric.hailLabel;
     const hailPictogram = nowcastMetricPictogram("hail", hailLevel, hailLabel, true, true, false);
     const lightningLabel = lightning == null
       ? (window.METEO_REPLAY ? "Foudre : donnée non archivée" : "Foudre : donnée indisponible")
       : "Foudre : niveau " + lightningLevel + " sur 5 · " + flashes + (flashes === 1 ? " éclair détecté" : " éclairs détectés") + " près de la cellule";
     const lightningPictogram = nowcastMetricPictogram("lightning", lightningLevel, lightningLabel, true, true, false);
-    const distanceKm = cellDistance(cell);
+    const distanceKm = metric.distanceKm;
     const distance = distanceKm.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
-    const etaMinutes = nowcastCellPassageObserved(cell, radar)
-      ? 0
-      : reliablePassageEvent
-        ? Math.max(0, (Number(reliablePassageEvent.eventStart) - now) / 60000)
-        : null;
+    const etaMinutes = metric.arrivalAt == null ? null : Math.max(0, (metric.arrivalAt - now) / 60000);
     const hasEta = Number.isFinite(etaMinutes) && etaMinutes >= 0 && etaMinutes <= 240;
     const etaText = hasEta
       ? etaMinutes < 1 ? "0min" : compactMinutesLabel(Math.max(1, etaMinutes))
@@ -6745,281 +4743,16 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
       + '<div class="nowcast-cell-map-meta"><span><small>vitesse</small><b>' + escapeText(speedText) + ' km/h</b></span><span><small>suivi depuis</small><b>' + escapeText(trackedSince) + '</b></span><span><small>trajectoire</small><b>' + escapeText(confidenceText) + '</b></span></div>';
     return { tone: riskTone(passageRisk || 0), label, markup, passageRisk };
   };
-  const cellsInRange = nearbyCells
-    .filter(cell => cellDistance(cell) <= activeNowcastMapRadius)
-    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right));
+
+  const cellsInRange = (radar.cells || []).filter(cell => metrics.has(String(cell.id)) && metrics.get(String(cell.id)).distanceKm <= activeNowcastMapRadius);
   const cellPresentations = new Map(cellsInRange.map(cell => [String(cell.id), cellPresentation(cell)]));
-  const nextProjectionSnapshot = nowcastProjectionSnapshot(etaRainEvents);
-  const nextProjectionHistory = radar.observedAt
-    ? nowcastNextProjectionHistory(cellPassageSnapshot, radar.observedAt, nextProjectionSnapshot)
-    : nowcastProjectionHistory(cellPassageSnapshot);
-  const projectionSnapshotChanged = JSON.stringify(nextProjectionSnapshot)
-    !== JSON.stringify(Array.isArray(cellPassageSnapshot?.projections) ? cellPassageSnapshot.projections : []);
-  if (radar.observedAt && (cellPassageSnapshot?.observedAt !== radar.observedAt || projectionSnapshotChanged)) {
-    cellPassageSnapshot = {
-      observedAt: radar.observedAt,
-      announced: true,
-      values: Object.fromEntries(cells
-        .map(cell => [cell.id, announcedPassageRiskForCell(cell)])
-        .filter(([, passage]) => Number.isFinite(passage))),
-      projections: nextProjectionSnapshot,
-      projectionHistory: nextProjectionHistory,
-      displayedLevel: stormCombinedLevel,
-      trend: stormTrend,
-      pendingDecline
-    };
-    try {
-      localStorage.setItem("meteo-cell-passage-snapshot", JSON.stringify(cellPassageSnapshot));
-    } catch {
-      // L'affichage reste fonctionnel si le stockage local est indisponible.
-    }
-  }
-  const rainyCellCandidate = nearbyCells
-    .filter(cell => !passageCandidates.some(candidate => String(candidate.cell.id) === String(cell.id))
-      && Number(cell.risks?.passage) > 0
-      && localProjectedRainFor(cell) >= .1
-      && (cellDistance(cell) <= 10
-        || (cellDistance(cell) < 60 && Boolean(reliablePassageEventForCell(cell)))))
-    .sort((left, right) => Number(right.risks?.passage || 0) - Number(left.risks?.passage || 0) || cellDistance(left) - cellDistance(right))[0] || null;
-  const stormDetail = relevantStormIntensity
-    ? "Orage sur 3 h · passage " + (hasAnnouncedStormPassageRisk ? maximumPassageRisk + " %" : "incertain") + " · intensité " + stormIntensityLevel + "/5"
-      + " · pluie " + relevantStormIntensity.rainLevel + "/5"
-      + (relevantStormIntensity.hailRisk == null ? " · grêle non évaluée" : " · grêle " + relevantStormIntensity.hailLevel + "/5")
-      + " · foudre " + relevantStormIntensity.lightningLevel + "/5"
-    : rainyCellCandidate
-      ? "Cellule " + rainyCellCandidate.id + " pluvieuse · aucun signal orageux détecté"
-      : stormForecastSourceCount > 0 || orangeVigilanceActive
-        ? "Signal orageux prévu dans les 3 prochaines heures"
-        : "pas d’orage";
-  const stormEtaSelection = nowcastStormEtaSelection(
-    etaRainEvents,
-    temporalPassageCandidates.map(candidate => candidate.cell.id),
-    now,
-    relevantTemporalStormCell?.id
-  );
-  const rainyCellEtaSelection = rainyCellCandidate
-    ? nowcastStormEtaSelection(etaRainEvents, [rainyCellCandidate.id], now, rainyCellCandidate.id)
-    : null;
-  const relevantStormEtaEvent = stormEtaSelection.event;
-  const selectedStormCell = relevantStormEtaEvent?.cell || relevantTemporalStormCell;
-  const selectedStormIntensity = temporalPassageCandidates.find(candidate =>
-    String(candidate.cell?.id) === String(selectedStormCell?.id)
-  ) || relevantTemporalStormIntensity;
-  const stormLocallyObservedInterior = nowcastCellLocallyObservedInterior(selectedStormCell, radar);
-  const relevantStormEtaMinutes = stormEtaSelection.etaMinutes == null
-    ? stormLocallyObservedInterior ? 0 : null
-    : Number(stormEtaSelection.etaMinutes);
-  const relevantStormDurationMinutes = stormEtaSelection.durationMinutes;
-  const relevantStormDurationUncertain = stormEtaSelection.durationUncertain === true;
-  const relevantStormDurationBeyondHorizon = stormEtaSelection.durationBeyondHorizon === true;
-  const hasStormEta = Number.isFinite(relevantStormEtaMinutes) && relevantStormEtaMinutes >= 0 && relevantStormEtaMinutes <= 180;
-  const rainyCellEtaEvent = rainyCellEtaSelection?.event || null;
-  const selectedRainyCell = rainyCellEtaEvent?.cell || rainyCellCandidate;
-  const rainyCellLocallyObservedInterior = nowcastCellLocallyObservedInterior(selectedRainyCell, radar);
-  const rainyCellEtaMinutes = rainyCellEtaSelection?.etaMinutes == null
-    ? rainyCellLocallyObservedInterior ? 0 : null
-    : Number(rainyCellEtaSelection.etaMinutes);
-  const hasRainyCellEta = Number.isFinite(rainyCellEtaMinutes) && rainyCellEtaMinutes >= 0 && rainyCellEtaMinutes <= 180;
-  const stormOnUncertainBorder = Boolean(selectedStormCell)
-    && nowcastUncertainRainBorder(radar, selectedStormCell, stormEtaSelection, relevantStormEtaMinutes);
-  const rainyCellOnUncertainBorder = Boolean(selectedRainyCell)
-    && nowcastUncertainRainBorder(radar, selectedRainyCell, rainyCellEtaSelection, rainyCellEtaMinutes);
-  const localHailAlerts = stormCandidateCells.flatMap(cell => (localHazardsFor(cell).hailWindows || [])
-    .map(window => ({ ...window, cell, localized: localHazardsFor(cell).hailLocalized })))
-    .sort((a, b) => a.start - b.start || b.risk - a.risk);
-  const firstHailAlert = localHailAlerts[0];
-  const hailAlertLabel = firstHailAlert ? "Grêle possible" + (firstHailAlert.start > now + 60000
-    ? " dans " + compactMinutesLabel((firstHailAlert.start - now) / 60000) : " actuellement")
-    + " · passage cellule " + firstHailAlert.risk + " %"
-    + (firstHailAlert.localized ? "" : " · noyau non localisé") : "";
-  const stormEtaLabel = hailAlertLabel || (relevantTemporalStormIntensity
-    ? stormOnUncertainBorder
-      ? "Bordure d’orage"
-      : shortTermStormLabel(
-        hasStormEta ? relevantStormEtaMinutes : null,
-        stormEtaSelection.activeCount || Number(stormLocallyObservedInterior),
-        selectedStormIntensity.level,
-        announcedPassageRiskForCell(selectedStormCell),
-        selectedStormIntensity.hailRisk,
-        cellDistance(selectedStormCell)
-      )
-    : departingStormIntensity
-      ? shortTermStormLabel(null, 0, departingStormIntensity.level, departingStormIntensity.passage, departingStormIntensity.hailRisk, cellDistance(departingStormIntensity.cell))
-    : rainyCellCandidate
-      ? rainyCellOnUncertainBorder
-        ? "Bordure de cellule pluvieuse"
-        : shortTermRainCellLabel(
-            hasRainyCellEta ? rainyCellEtaMinutes : null,
-            announcedPassageRiskForCell(rainyCellCandidate),
-            cellDistance(rainyCellCandidate),
-            rainyCellEtaSelection?.activeCount || Number(rainyCellLocallyObservedInterior)
-          )
-      : stormForecastSourceCount > 0 || orangeVigilanceActive
-        ? "Risque d’orage dans les 3 h"
-        : "pas d’orage");
-  const displayedEtaSelection = relevantTemporalStormIntensity ? stormEtaSelection : rainyCellCandidate ? rainyCellEtaSelection : null;
-  const displayedEtaMinutes = relevantTemporalStormIntensity ? relevantStormEtaMinutes : rainyCellEtaMinutes;
-  const displayedDurationMinutes = relevantTemporalStormIntensity ? relevantStormDurationMinutes : rainyCellEtaSelection?.durationMinutes;
-  const displayedDurationUncertain = relevantTemporalStormIntensity ? relevantStormDurationUncertain : rainyCellEtaSelection?.durationUncertain === true;
-  const displayedDurationBeyondHorizon = relevantTemporalStormIntensity ? relevantStormDurationBeyondHorizon : rainyCellEtaSelection?.durationBeyondHorizon === true;
-  const displayedOnUncertainBorder = relevantTemporalStormIntensity ? stormOnUncertainBorder : rainyCellOnUncertainBorder;
-  const displayedHasEta = relevantTemporalStormIntensity ? hasStormEta : hasRainyCellEta;
-  const displayedCell = relevantTemporalStormIntensity ? selectedStormCell : selectedRainyCell;
-  const displayedPassageRisk = relevantTemporalStormIntensity
-    ? announcedPassageRiskForCell(selectedStormCell)
-    : announcedPassageRiskForCell(rainyCellCandidate);
-  const displayedActive = Number(displayedEtaSelection?.activeCount) > 0
-    || (Number.isFinite(Number(displayedEtaMinutes)) && displayedEtaMinutes != null && displayedEtaMinutes < 1)
-    || nowcastCellLocallyObservedInterior(displayedCell, radar);
-  const stormDurationLabel = displayedHasEta
-    && !displayedDurationUncertain
-    && !displayedDurationBeyondHorizon
-    && !displayedOnUncertainBorder
-    && Number.isFinite(displayedDurationMinutes)
-    && displayedDurationMinutes > 0
-    ? (displayedActive ? "Encore " : "Durée ")
-      + compactMinutesLabel(Math.max(5, Math.round(displayedDurationMinutes / 5) * 5))
-    : "";
-  const stormEtaDetail = displayedHasEta && displayedCell
-      ? "Cellule " + displayedCell.id
-      + " · bord à " + cellDistance(displayedCell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
-      + " · passage " + (displayedPassageRisk == null ? "incertain" : Math.round(displayedPassageRisk) + " %")
-      + " · " + (displayedActive ? "au point" : "ETA dans " + compactMinutesLabel(Math.max(1, displayedEtaMinutes)))
-      + (displayedOnUncertainBorder ? " · bordure radar, durée incertaine" : "")
-      + (stormDurationLabel ? " · " + stormDurationLabel.toLowerCase() : "")
-    : !relevantTemporalStormIntensity && departingStormIntensity
-      ? "Cellule " + departingStormIntensity.cell.id + " · bord à " + cellDistance(departingStormIntensity.cell).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km"
-      : "";
-  const stormTrendWording = stormTrend.pendingConfirmation
-    ? "stable, éloignement à confirmer"
-    : stormTrend.label === "croissant" ? "en hausse" : stormTrend.label === "decroissant" ? "en baisse" : "stable";
-  const effectiveStormTrendUsesDisplayedLevel = stormTrend.basis === "displayed-level";
-  const effectiveStormTrendUsesTrajectory = stormTrend.basis === "cell-trajectory";
-  const effectivePreviousStormValue = Number(stormTrend.previous);
-  const effectiveStormTrendChange = Number(stormTrend.change);
-  const stormTrendDetail = !hasAnnouncedStormPassageRisk
-    ? "Passage incertain · trajectoire à confirmer sur plusieurs scans"
-    : effectiveStormTrendUsesDisplayedLevel
-    ? "Risque orageux " + stormTrendWording
-      + " · indicateur " + effectivePreviousStormValue + " sur 5 → " + stormCombinedLevel + " sur 5"
-      + (stormForecastSourceCount > effectivePreviousStormValue && stormCombinedLevel <= 2 ? " · nouveau signal orageux entré dans les 3 prochaines heures" : "")
-    : effectiveStormTrendUsesTrajectory
-      ? "Trajectoire cellule " + (relevantStormCell?.id || "") + " " + stormTrendWording
-        + (Number.isFinite(Number(stormTrend.etaChange)) ? " · ETA " + (Number(stormTrend.etaChange) < 0 ? "rapprochée de " : "repoussée de ") + Math.abs(Math.round(Number(stormTrend.etaChange))) + " min" : "")
-        + (Number.isFinite(Number(stormTrend.radialChangeKm)) ? " · distance à +15 min " + (Number(stormTrend.radialChangeKm) < 0 ? "en baisse" : "en hausse") + " de " + Math.abs(Number(stormTrend.radialChangeKm)).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km" : "")
-        + " · passage " + maximumPassageRisk + " %"
-    : "Probabilité de passage " + stormTrendWording
-      + (Number.isFinite(effectiveStormTrendChange) && effectiveStormTrendChange !== 0 ? " de " + Math.abs(Math.round(effectiveStormTrendChange)) + " point" + (Math.abs(Math.round(effectiveStormTrendChange)) > 1 ? "s" : "") : "")
-      + " · maximum global " + effectivePreviousStormValue + " % → " + maximumPassageRisk + " %"
-      + (relevantStormCell ? " · cellule actuellement retenue " + relevantStormCell.id : "");
-  const upcomingRainSteps = threeHourRainSteps.filter(item =>
-    !Number.isFinite(item.intervalEnd) || item.intervalEnd >= now - 60000
-  );
-  const rainArrival = upcomingRainSteps.find(item => item.totalPrecipitation >= possibleDrizzleThreshold);
-  const measurableRainArrival = upcomingRainSteps.find(item => item.totalPrecipitation >= .2);
-  const rainPassageRisk = rainPassageForStep(rainArrival, etaRainEvents, possibleDrizzleThreshold);
-  const measurableRainPassageRisk = rainPassageForStep(measurableRainArrival, etaRainEvents, .2);
-  const radarObservedAt = Date.parse(radar?.observedAt || "");
-  const currentRadarRainRate = Number(radar?.currentPrecipitation);
-  const freshRadarRainAtTarget = Number.isFinite(radarObservedAt)
-    && now >= radarObservedAt - 5 * 60000
-    && now - radarObservedAt <= sourceFreshness.radar
-    && Number.isFinite(currentRadarRainRate)
-    && currentRadarRainRate >= .1;
-  const activeEtaRainAtTarget = etaRainEvents.some(event => {
-    if (!nowcastEtaRainEligible(event, now)) return false;
-    const profile = Array.isArray(event.intensityProfile) ? event.intensityProfile : [];
-    if (profile.length) return profile.some(segment => segment.start <= now && segment.end > now && Number(segment.intensity) >= .1);
-    return event.eventStart <= now && event.eventEnd > now && Number(event.conditionalIntensity) >= .1;
-  });
-  const rainEtaMinutes = freshRadarRainAtTarget || activeEtaRainAtTarget
-    ? 0
-    : rainArrival
-    ? Math.max(0, Math.ceil((rainArrival.intervalStart - now) / 60000))
-    : null;
-  const measurableRainEtaMinutes = measurableRainArrival
-    ? Math.max(0, Math.ceil((measurableRainArrival.intervalStart - now) / 60000))
-    : null;
-  // L'indicateur et la frise doivent raconter la même chose. Un pixel très
-  // intense qui ne coupe le point que quelques secondes ne doit plus produire
-  // 3/5 tandis que son pas de cinq minutes reste presque nul.
-  const projectedPeakRainIntensity = Math.max(0, ...threeHourRainSteps.map(item =>
-    rainRateFromAccumulation(item.totalPrecipitation, item.intervalEnd - item.intervalStart)
-  ));
-  const peakRainIntensity = Math.max(
-    projectedPeakRainIntensity,
-    freshRadarRainAtTarget ? Math.max(0, currentRadarRainRate) : 0
-  );
-  const drizzleOnly = onlyDrizzleInThreeHours(threeHourRainSteps);
-  const rainArrivalIndex = upcomingRainSteps.indexOf(rainArrival);
-  const measurableRainArrivalIndex = upcomingRainSteps.indexOf(measurableRainArrival);
-  const dropsThenRain = Boolean(rainArrival
-    && rainArrival.totalPrecipitation < .2
-    && measurableRainArrival
-    && measurableRainArrival.intervalStart > rainArrival.intervalStart
-    && rainArrivalIndex >= 0
-    && measurableRainArrivalIndex > rainArrivalIndex
-    && upcomingRainSteps.slice(rainArrivalIndex, measurableRainArrivalIndex)
-      .every(step => Number(step.totalPrecipitation) >= possibleDrizzleThreshold));
-  const rainMessageSequence = threeHourRainMessageSequence(threeHourRainSteps, now, etaRainEvents);
-  const rainColorLevel = !rainMessageSequence.length || drizzleOnly ? 0 : rainIntensityStep(peakRainIntensity);
-  // La couleur signale le pic des 3 h, mais le texte décrit le premier pas
-  // qui arrive réellement. Une pluie soutenue prévue plus tard ne doit pas
-  // être annoncée comme déjà présente pendant que la frise montre une pluie faible.
-  const rainLabelStep = dropsThenRain ? measurableRainArrival : rainArrival;
-  const rainLabelStepIntensity = rainLabelStep
-    ? rainRateFromAccumulation(rainLabelStep.totalPrecipitation, rainLabelStep.intervalEnd - rainLabelStep.intervalStart)
-    : 0;
-  const rainLabelIntensity = freshRadarRainAtTarget && rainEtaMinutes < 1 && !dropsThenRain
-    ? currentRadarRainRate
-    : rainLabelStepIntensity;
-  const rainLabelLevel = drizzleOnly ? 0 : rainIntensityStep(rainLabelIntensity);
-  const currentRainPhase = rainEtaMinutes < 1
-    ? freshRadarRainAtTarget
-      ? { drizzle: false, level: rainIntensityStep(currentRadarRainRate) }
-      : rainPhaseForStep(rainArrival)
-    : null;
-  const rainTransition = nextRainPhaseTransition(upcomingRainSteps, now, currentRainPhase);
-  const rainTransitionPassageRisk = rainPassageForStep(rainTransition?.step, etaRainEvents, possibleDrizzleThreshold);
-  const rainValue = !rainMessageSequence.length
-    ? (threeHourRainSteps.length ? "Pas de pluie" : "Prévision indisponible") : rainTransition
-    ? shortTermRainTransitionLabel(rainTransition, rainTransitionPassageRisk)
-    : dropsThenRain
-    ? shortTermRainSequenceLabel(measurableRainEtaMinutes, rainLabelLevel, measurableRainPassageRisk)
-    : shortTermRainLabel(
-        rainEtaMinutes,
-        drizzleOnly || (rainEtaMinutes >= 1 && Number(rainArrival?.totalPrecipitation) < .2),
-        rainLabelLevel,
-        rainPassageRisk
-      );
-  const preciseAmount = field => formatRainAmount(threeHourRainSteps.reduce((sum, item) => sum + (Number(item[field]) || 0), 0), 2);
-  const rainDetail = "Cumul prévu sur 3 h : " + preciseAmount("totalPrecipitation")
-    + " mm · pic d’intensité : " + peakRainIntensity.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm/h"
-    + "\nTraces de 0,01 mm ou moins ignorées dans la synthèse, quelle que soit leur source."
-    + "\nPIAF : " + preciseAmount("basePrecipitation") + " mm (prévision déterministe, sans probabilité propre)"
-    + "\nAjout extrapolation radar : " + preciseAmount("effectiveRadarAmendment") + " mm (probabilité non disponible)"
-    + "\nAjout cellules suivies : " + preciseAmount("effectiveEtaAmendment") + " mm"
-    + (rainMessageSequence.some(message => Number.isFinite(message.passageRisk)) ? "\nProbabilité de passage des cellules : "
-      + rainMessageSequence.filter(message => Number.isFinite(message.passageRisk)).map(message => message.passageRisk + " %").join(", ") : "");
-  const windDetail = [
-    Number.isFinite(maximumOpenMeteoWind) && Number.isFinite(maximumOpenMeteoGust)
-      ? "Open-Meteo\nVent moyen : " + maximumOpenMeteoWind + " km/h " + openMeteoWindBackgroundTrend
-        + "\nRafales : " + maximumOpenMeteoGust + " km/h " + openMeteoGustBackgroundTrend : "",
-    windWindow.length
-      ? "Météo-France\nVent moyen : " + maximumWind + " km/h " + meteoFranceWindBackgroundTrend
-        + "\nRafales : " + maximumGust + " km/h " + meteoFranceGustBackgroundTrend : ""
-  ].filter(Boolean).join("\n");
-  const windTrendWithDetail = { ...windTrend, detail: windDetail };
-  const windLevel = shortTermWindIntensityLevel(maximumWind, maximumGust);
-  const windColorLevel = windLevel >= 3 ? windLevel : 0;
-  const windValue = shortTermWindLabel(windLevel);
   const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
     + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainMessageSequence.length ? rainTrend : null, 'rain')
     + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
     + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
     + '</div></section>';
   if (summaryElement) {
-    summaryElement.innerHTML = sandboxThreeHourTimeline(threeHourRainSteps, etaRainEvents, stormCandidateCells.map(cell => ({ ...stormIntensityFor(cell), locallyObserved: nowcastCellLocallyObservedInterior(cell, radar) })).filter(candidate => candidate.level != null && (candidate.hailWindows?.length || candidate.locallyObserved || temporalPassageCandidates.some(item => item.cell.id === candidate.cell.id))), upcomingWind, now, piafQuarterHourRain(piaf, radar));
+    summaryElement.innerHTML = sandboxThreeHourTimeline(forecast.timelineSlots, now, forecast.ongoingStorm);
     initializeThreeHourMessageSequence(summaryElement);
     summaryElement.querySelector(".horizon-scroll")?.addEventListener("click", event => { if (!event.target.closest("button")) sandboxToggleRainDetails(); });
     sandboxBindRainScroll();
@@ -7088,29 +4821,7 @@ function renderPiaf(piaf, radar = null) {
     return { start: current - Math.max(5 * 60000, duration), end: current };
   };
   const slotIntervals = values.map(slotIntervalFor);
-  const cellEtaSlots = new Map();
-  const etaRainEvents = nowcastEtaRainEvents(radar);
-  if (etaRainEvents.length) {
-    etaRainEvents.filter(event => nowcastPresenceRainEligible(event, appNow())).forEach(event => {
-      const cell = event.cell;
-      slotIntervals.forEach((interval, slotIndex) => {
-        if (event.eventEnd <= interval.start || event.eventStart >= interval.end) return;
-        const etaRain = nowcastEtaRainAmount([event], interval.start, interval.end);
-        const entry = {
-          id: cell.id,
-          passage: Number(event.presenceProbability),
-          etaMinutes: event.etaMinutes,
-          etaBasis: cell.etaBasis,
-          etaRain,
-          amountReliable: event.projectionReliable === true,
-          eventStart: event.eventStart,
-          eventEnd: event.eventEnd
-        };
-        if (!cellEtaSlots.has(slotIndex)) cellEtaSlots.set(slotIndex, []);
-        cellEtaSlots.get(slotIndex).push(entry);
-      });
-    });
-  }
+  const cellEtaSlots = new Map(values.map((item, index) => [index, item.cellPassages || []]));
   // La correction d'unité radar rend désormais les cumuls réels. Revenir à
   // 4 mm en 15 minutes évite de saturer les épisodes modérés à soutenus.
   const fullScaleRain = 4;
@@ -7127,7 +4838,10 @@ function renderPiaf(piaf, radar = null) {
     // are drawn separately in orange so the source of a high total remains
     // visible instead of making PIAF itself look excessive.
     const precipitation = Math.max(0, Number(item.precipitation) || 0);
-    const wet = precipitation > 0;
+    const nowcastTotal = Math.max(precipitation, Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0);
+    // Seuil d'annonce sur le cumul brut du créneau, toutes sources confondues.
+    const announcedRain = nowcastTotal > .01 + 1e-9;
+    const wet = precipitation > 0 && announcedRain;
     // PIAF est déterministe : aucun pourcentage artificiel n'est affiché.
     // Open-Meteo fournit en revanche une probabilité horaire distincte.
     const probability = isOpenMeteo && Number.isFinite(item.probability) ? Number(item.probability) : null;
@@ -7142,10 +4856,10 @@ function renderPiaf(piaf, radar = null) {
     const slotTime = hourFormat.format(new Date(slotIntervals[index].start)) + "–" + hourFormat.format(new Date(slotIntervals[index].end));
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
-    const nowcastTotal = Math.max(precipitation, Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0);
-    const nowcastDetail = nowcastTotal > precipitation
+    const nowcastDetail = nowcastTotal - precipitation > .01 + 1e-9
       ? "\nAvec nowcasting : " + nowcastTotal.toFixed(2) + " mm (estimation, passage à confirmer)" : "";
-    const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail;
+    const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail
+      + (item.piafUnconfirmed && announcedRain ? "\nPluie possible : PIAF non confirmé par le nowcasting récent aux Tatins." : "");
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1;--rain-height:' + height + '%" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
@@ -7156,8 +4870,8 @@ function renderPiaf(piaf, radar = null) {
     const entries = cellEtaSlots.get(index) || [];
     entries.sort((left, right) => right.passage - left.passage || left.etaMinutes - right.etaMinutes);
     const basePiaf = Math.max(0, Number(item.precipitation) || 0);
-    const radarAmendment = Math.round(Math.max(0, Number(item.effectiveRadarAmendment) || 0) * 100) / 100;
-    const etaRain = Math.round(Math.max(0, ...entries.filter(entry => entry.amountReliable).map(entry => Number(entry.etaRain) || 0)) * 100) / 100;
+    const radarAmendment = Math.max(0, Number(item.effectiveRadarAmendment) || 0);
+    const etaRain = Math.max(0, ...entries.filter(entry => entry.amountReliable).map(entry => Number(entry.etaRain) || 0));
     const interval = slotIntervals[index];
     const radarObservedAt = Date.parse(radar?.observedAt || "");
     const observed = item.radarCellOverPoint === true
@@ -7165,10 +4879,11 @@ function renderPiaf(piaf, radar = null) {
       && radarObservedAt >= interval.start && radarObservedAt < interval.end;
     // Reprendre le cumul agrégé de la frise, y compris le radar extrapolé
     // sur les créneaux futurs. Radar et ETA représentent la même pluie.
-    const totalRain = Math.round(Math.max(basePiaf + radarAmendment,
-      Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0, etaRain, basePiaf) * 100) / 100;
-    const quantitative = Math.max(0, totalRain - basePiaf);
-    if (!entries.length && !observed && quantitative <= 0) return '';
+    const totalRain = Math.max(basePiaf + radarAmendment,
+      Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0, etaRain, basePiaf);
+    const difference = totalRain - basePiaf;
+    const quantitative = difference > .01 + 1e-9 ? difference : 0;
+    if (!entries.length && quantitative <= 0) return '';
     const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
     const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
     const amendmentBottom = Math.min(97, baseHeight);
@@ -7186,7 +4901,7 @@ function renderPiaf(piaf, radar = null) {
       ? " sur 1 h"
       : item.complete === false ? " sur " + Math.max(5, Math.round((Number(item.intervalEnd) - Number(item.intervalStart)) / 60000)) + " min" : " sur 15 min";
     const detail = "PIAF : " + basePiaf.toFixed(2) + " mm" + piafPeriod
-      + (observed && radarAmendment > 0 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
+      + (observed && radarAmendment > .01 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
       + (!observed && quantitative > 0 ? "\nNowcasting prévu si passage : +" + quantitative.toFixed(2) + " mm" : "")
       + (presenceOnly ? "\nPrésence possible, cumul non assez stable" : "\nTotal affiché : " + totalRain.toFixed(2) + " mm")
       + (passage != null ? "\nProbabilité de passage : " + passage + " %" : "")
@@ -7214,11 +4929,15 @@ function applyDashboardPayload(payload) {
     // four-minute cache is being refreshed. Keep the previous complete run
     // during that short gap so both rain views switch atomically to the next
     // run instead of briefly falling back to AROME.
-    const data = receivedData && !receivedData.piaf && latestForecastData?.piaf
+    const data = receivedData && !receivedData.nowcast && !receivedData.piaf && latestForecastData?.piaf
       ? { ...receivedData, piaf: latestForecastData.piaf }
       : receivedData;
     dashboardSync = { status: payload.status, error: payload.error || null };
     latestForecastData = data;
+    clearTimeout(nowcastExpiryTimer);
+    if (!window.METEO_REPLAY && data?.nowcast?.validUntil > appNow()) {
+      nowcastExpiryTimer = setTimeout(() => { renderActiveRain(); renderActiveForecast(); }, data.nowcast.validUntil - appNow() + 1);
+    }
     if (!latestWeekForecast?.days?.length && data?.openMeteo?.days?.length) {
       const detailedDays = normalizeDashboardOpenMeteoDays(data.openMeteo);
       latestWeekForecast = {
@@ -7257,7 +4976,7 @@ function applyDashboardPayload(payload) {
       // deux vues de conserver temporairement des horaires différents.
       renderWeekForecast();
     }
-    if (data && (data.piaf || data.openMeteo)) {
+    if (data && (data.piaf || data.openMeteo || data.radar)) {
       lastPiafStamp = piafStamp;
       lastRadarStamp = radarStamp;
       renderActiveRain();
@@ -7385,7 +5104,25 @@ if (window.location.hash === "#radar-nowcast") {
   }
 }
 renderAppVersion();
-if (window.METEO_REPLAY?.start) window.METEO_REPLAY.start({ applyDashboardPayload });
+if (window.METEO_REPLAY?.start) import(replayEngineUrl.href).then(({ createNowcastEngine }) => {
+  let snapshot = null;
+  let lastTime = -Infinity;
+  let lastData = null;
+  let lastForecast = null;
+  window.METEO_REPLAY.start({ applyDashboardPayload(payload) {
+    if (!payload.data) return applyDashboardPayload(payload);
+    const now = appNow();
+    if (now < lastTime) snapshot = null;
+    const signature = JSON.stringify(payload.data);
+    if (now !== lastTime || signature !== lastData) {
+      lastForecast = createNowcastEngine({ now, snapshot, replay: true }).compute(payload.data);
+      snapshot = lastForecast?.projectionSnapshot || null;
+      lastTime = now;
+      lastData = signature;
+    }
+    applyDashboardPayload({ ...payload, data: { ...payload.data, nowcast: lastForecast } });
+  } });
+}).catch(error => { console.error("Moteur du replay indisponible", error); });
 else refresh();
 
 function sandboxNowcastDimensions() {
@@ -7394,15 +5131,72 @@ function sandboxNowcastDimensions() {
 function sandboxNowcastContext(label, detail) {
   return '<button type="button" class="horizon-nowcast-context" data-open-nowcast-link="true" aria-controls="nowcast-details" title="' + escapeText(detail) + '"><span>Nowcasting</span><strong>' + escapeText(label) + '</strong><small>Carte ↗</small></button>';
 }
-function sandboxRainGroups(slots) {
+function sandboxCloudLevel(value, hasPhenomenon = false) {
+  const cloud = value == null ? NaN : Number(value);
+  const level = !Number.isFinite(cloud) ? (hasPhenomenon ? 5 : 3)
+    : cloud <= 5 ? 0 : cloud <= 25 ? 1 : cloud <= 50 ? 2 : cloud <= 75 ? 3 : cloud <= 90 ? 4 : 5;
+  return hasPhenomenon ? Math.max(1, level) : level;
+}
+function sandboxSkyPresentation(slot) {
+  const hasPhenomenon = slot.level > 0 || Boolean(slot.storm) || Boolean(slot.hail);
+  const level = sandboxCloudLevel(slot.cloudCover, hasPhenomenon);
+  const labels = ["dégagé", "très peu nuageux", "peu nuageux", "nuageux", "très nuageux", "couvert"];
+  const suffixes = ["1", "tres-peu-nuageux", "2", "3", "4", "5"];
+  const period = slot.night ? "nuit" : "jour";
+  return {
+    level,
+    label: (slot.night ? "Nuit, ciel " : "Ciel ") + labels[level],
+    src: "pictogrammes/ciel-" + period + "-" + suffixes[level] + ".svg"
+  };
+}
+function sandboxStormPresentation(slot, now) {
+  if (!slot.storm) return null;
+  const observed = slot.storm.locallyObserved && slot.start <= now && now < slot.end;
+  const qualifier = observed ? "en cours" : shortTermRiskQualifier(slot.storm.passage).trim();
+  const intensity = slot.storm.level >= 4 ? "violent" : slot.storm.level >= 2 ? "modéré" : "faible";
+  return { label: ["Orage", qualifier].filter(Boolean).join(" "), intensity, observed };
+}
+function sandboxSlotPresentation(slot, now) {
+  const sky = sandboxSkyPresentation(slot);
+  const storm = sandboxStormPresentation(slot, now);
+  const rain = slot.level > 0 && slot.label !== "Grêle";
+  const unavailable = slot.label === "Indisponible";
+  const qualifier = slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
+  let title = unavailable ? "Indisponible" : rain ? slot.label : storm ? "Orage" : slot.hail ? "Grêle" : sky.label.replace(/^Nuit, ciel |^Ciel /, "Ciel ");
+  const details = [];
+  if (rain && qualifier) details.push(qualifier);
+  if (storm) details.push(storm.label + (storm.intensity ? " · " + storm.intensity : ""));
+  if (slot.hail) {
+    const hailQualifier = slot.hailLocalized == null ? shortTermRiskQualifier(slot.hailRisk).trim() : "possible";
+    if (title !== "Grêle") details.push(["Grêle", hailQualifier].filter(Boolean).join(" "));
+    else if (hailQualifier) details.push(hailQualifier);
+    if (Number.isFinite(Number(slot.hailRisk))) details.push("passage cellule " + Math.round(slot.hailRisk) + " %");
+  }
+  if (slot.hail && storm && !rain) title = "Orage · grêle";
+  const wind = slot.wind >= 2;
+  return {
+    sky, storm, rain, unavailable, title, details,
+    signature: JSON.stringify([sky.level, slot.night, slot.level, title, details, Boolean(slot.hail), wind ? slot.wind : 0])
+  };
+}
+function sandboxWeatherGroups(slots, now) {
   const groups = [];
   slots.forEach((slot, index) => {
-    const signature = JSON.stringify([slot.label, slot.level, slot.qualifier, Boolean(slot.hail), slot.hail ? slot.hailRisk : null, slot.hailLocalized]);
+    const presentation = sandboxSlotPresentation(slot, now);
     const previous = groups.at(-1);
-    if (previous?.signature === signature && previous.slot.end === slot.start) {
+    if (previous?.presentation.signature === presentation.signature && previous.slot.end === slot.start) {
       previous.endIndex = index + 1;
       previous.slot.end = slot.end;
-    } else groups.push({ signature, startIndex: index, endIndex: index + 1, slot: { ...slot } });
+      previous.slot.total += slot.total;
+      previous.slot.windSpeed = Math.max(previous.slot.windSpeed || 0, slot.windSpeed || 0);
+      previous.slot.windGust = Math.max(previous.slot.windGust || 0, slot.windGust || 0);
+      if (Number.isFinite(previous.slot.hailRisk) || Number.isFinite(slot.hailRisk)) {
+        previous.slot.hailRisk = Math.max(Number(previous.slot.hailRisk) || 0, Number(slot.hailRisk) || 0);
+      }
+      if (Number.isFinite(previous.slot.hailScore) || Number.isFinite(slot.hailScore)) {
+        previous.slot.hailScore = Math.max(Number(previous.slot.hailScore) || 0, Number(slot.hailScore) || 0);
+      }
+    } else groups.push({ presentation, startIndex: index, endIndex: index + 1, slot: { ...slot } });
   });
   return groups;
 }
@@ -7423,123 +5217,50 @@ function sandboxThreeHourAxis(slots, time) {
     '<span class="horizon-minute' + (sandboxQuietBoundary(boundary, start, end) ? '' : ' quiet-minor') + (boundary === start && sandboxStartNearHour(start, end) ? ' near-hour-start' : '') + '" style="left:' + position(boundary) + '%" aria-label="' + time(boundary) + '" title="' + time(boundary) + '">' + time(boundary) + '</span>');
   return '<div class="horizon-axis">' + ticks.join('') + '</div>';
 }
-function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals) {
-  return intervals.filter(interval => Number(interval.intervalEnd) > now).map((interval, index) => {
-    // Le quart d’heure courant reste entier jusqu’à sa fin ; seuls les repères visuels sont élargis.
-    const start = index === 0 ? Math.floor(Number(interval.intervalStart) / 900000) * 900000 : Number(interval.intervalStart);
-    const end = Number(interval.intervalEnd);
-    const samples = steps.filter(item => item.intervalStart < end && item.intervalEnd > start);
-    // Qualifier le même cumul de quart d'heure que le diagramme en barres.
-    // Ne pas supprimer les petits pas de 5 min avant de les additionner.
-    const portion = item => Math.max(0, Math.min(end, item.intervalEnd) - Math.max(start, item.intervalStart)) / (item.intervalEnd - item.intervalStart);
-    const sum = field => samples.reduce((total, item) => total + Math.max(0, Number(item[field]) || 0) * portion(item), 0);
-    const archived = interval.baseRainSource === "radar-archive" || samples.some(item => item.baseRainSource === "radar-archive");
-    const base = archived ? 0 : Math.max(0, Number(interval.precipitation ?? sum("basePrecipitation")) || 0);
-    const active = events.filter(event => nowcastEtaRainEligible(event, now)
-      && event.eventStart < end && event.eventEnd > start
-      && nowcastEtaRainAmount([event], Math.max(start, event.eventStart), Math.min(end, event.eventEnd), now) > 0);
-    const etaAmount = nowcastEtaRainAmount(active, start, end, now);
-    const total = Math.max(Number(interval.totalPrecipitation) || 0, sum("totalPrecipitation"), active.length ? etaAmount : 0, base);
-    const nowcast = archived || Number(interval.effectiveRadarAmendment) > 0 || Number(interval.effectiveEtaAmendment) > 0
-      || sum("effectiveRadarAmendment") > 0 || sum("effectiveEtaAmendment") > 0
-      || Number(interval.radarPrecipitation) > 0 || interval.radarCellOverPoint === true
-      || samples.some(item => Number(item.radarPrecipitation) > 0 || item.radarCellOverPoint === true)
-      || active.length > 0;
-    const corroborated = base > 0 && nowcast;
-    const wet = total > .01 + 1e-9 || (total > 0 && corroborated);
-    const peak = wet ? Math.max(rainRateFromAccumulation(total, end - start),
-      ...samples.map(item => rainRateFromAccumulation(Number(item.totalPrecipitation) || 0, item.intervalEnd - item.intervalStart)),
-      ...active.map(event => Number(event.conditionalIntensity) || 0)) : 0;
-    const level = peak > 0 ? Math.max(1, rainIntensityStep(peak)) : 0;
-    const qualifier = wet && nowcast && !corroborated ? "possible" : "";
-    // Comme sur main, une présence observée au point vaut ETA 0 min.
-    // Sans projection de durée, elle ne couvre que le créneau courant.
-    const storms = candidates.filter(candidate => {
-      const event = nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event;
-      return (candidate.locallyObserved && start <= now && now < end)
-        || (event && Number(event.eventStart) < end && Number(event.eventEnd) > start);
-    });
-    const storm = storms.sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
-    const hailCandidates = candidates.flatMap(candidate => {
-      if (!Array.isArray(candidate.hailWindows)) return candidate === storm && Number(candidate.hailRisk) > 0
-        ? [{ candidate, risk: candidate.hailRisk }] : [];
-      return candidate.hailWindows.filter(window => window.start < end && window.end > start)
-        .map(window => ({ candidate, risk: window.risk, score: window.score }));
-    }).sort((a, b) => b.risk - a.risk || (b.score || 0) - (a.score || 0));
-    const hailSource = hailCandidates[0];
-    const hail = Boolean(hailSource);
-    const windHours = hours.filter(hour => Date.parse(hour.time) < end && Date.parse(hour.time) + 3600000 > start);
-    const wind = windHours.length ? shortTermWindIntensityLevel(
-      Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
-      Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
-    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
-      label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
-  });
-}
-function sandboxThreeHourTimeline(steps, events, candidates, hours, now, intervals) {
+function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
   const probabilityStep = value => value <= 0 ? 0 : value < 20 ? 1 : value < 40 ? 2 : value < 60 ? 3 : value < 80 ? 4 : 5;
-  const slots = sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals);
+  const slots = (preparedSlots || []).filter(slot => slot.end > now).map(slot => ({ ...slot }));
   if (!slots.length) return '<p class="horizon-empty">Prévision indisponible</p>';
-  if (slots.every(slot => slot.label === "")) {
-    slots.forEach(slot => { slot.label = "Pas de pluie"; });
-  }
   const time = value => hourFormat.format(new Date(value));
-  const stormIcon = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 25a7 7 0 0 1 0-14 10 10 0 0 1 19-3 8 8 0 0 1 3 17Z" fill="#e8eff5" stroke="currentColor" stroke-width="2.5"/><path d="m21 18-8 13h7l-3 8 12-16h-8l3-5Z" fill="#e8bb32" stroke="currentColor" stroke-width="1.5"/></svg>';
-  const hailIcon = '<svg viewBox="0 0 60 64" aria-hidden="true"><path d="M12 40a11 11 0 0 1 0-22 17 17 0 0 1 33-1 12 12 0 0 1 1 23Z" fill="none" stroke="currentColor" stroke-width="3"/><text x="30" y="33" text-anchor="middle" fill="currentColor" font-size="24" font-family="system-ui" font-weight="700">G</text><g fill="currentColor"><circle cx="13" cy="53" r="5"/><circle cx="30" cy="53" r="5"/><circle cx="47" cy="53" r="5"/></g></svg>';
   const windIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 7h12c6 0 6-6 1-6M2 12h17c5 0 5 7 0 7M2 17h7c5 0 5 6 1 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-  const block = ({ slot, startIndex, endIndex }) => {
-    const qualifier = slot.hail ? (slot.hailLocalized == null ? shortTermRiskQualifier(slot.hailRisk).trim() : 'possible · passage cellule ' + Math.round(slot.hailRisk) + ' %') : slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
-    const label = [slot.label, qualifier].filter(Boolean).join(" ");
-    const tone = slot.hail ? probabilityStep(slot.hailRisk) : 0;
-    const compact = slot.end - slot.start < 15 * 60000;
-    const description = time(slot.start) + "–" + time(slot.end) + " : " + (label || "Pas de pluie") + (slot.hailLocalized === false ? ' · noyau de grêle non localisé dans les données' : '') + (slot.hailScore != null ? ' · indice polarimétrique de la zone ' + Math.round(slot.hailScore) + ' % (indice non probabiliste)' : '');
-    return '<button type="button" class="horizon-rain rain-' + slot.level + (slot.label === 'Gouttes' ? ' drizzle' : '') + (slot.label === 'Pas de pluie' ? ' dry' : '') + (slot.hail ? ' hail tone-' + tone : '') + (compact ? ' compact' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" data-summary-target="rain" aria-label="' + escapeText(description) + '" title="' + escapeText(description) + '"><strong>' + escapeText(slot.label) + '</strong><span>' + escapeText(qualifier) + '</span>' + (slot.hail ? '<i aria-hidden="true">' + hailIcon + '</i>' : '') + '</button>';
+  const clock = value => {
+    const [hour, minute] = time(value).split(":");
+    return Number(hour) + " h" + (minute === "00" ? "" : " " + minute);
   };
-  const ongoingStorm = candidates.filter(candidate => candidate.locallyObserved
-    && !nowcastStormEtaSelection(events, [candidate.cell.id], now, candidate.cell.id).event)
-    .sort((a, b) => b.level - a.level || b.passage - a.passage)[0];
-  const ongoingLabel = ongoingStorm ? 'Orage ' + (ongoingStorm.level >= 4 ? 'violent' : ongoingStorm.level >= 2 ? 'modéré' : 'faible') + ' en cours' : '';
-  const bands = (kind, target, describe) => {
-    const groups = [];
-    slots.forEach((slot, index) => {
-      const info = describe(slot);
-      if (!info) return;
-      const previous = groups.at(-1);
-      if (previous?.label === info.label && previous.tone === info.tone && previous.end === index) previous.end++;
-      else groups.push({ ...info, start: index, end: index + 1 });
-    });
-    return groups.map(group => {
-      const tag = kind === 'storm' ? 'div' : 'button';
-      const action = kind === 'storm' ? ' role="img"' : ' type="button" data-summary-target="' + target + '"';
-      const detail = time(slots[group.start].start) + '–' + time(slots[group.end - 1].end) + ' : ' + group.label;
-      return '<' + tag + action + ' class="horizon-band horizon-' + kind + ' tone-' + group.tone + '" style="grid-column:' + (group.start + 1) + '/' + (group.end + 1) + '" aria-label="' + escapeText(detail) + '" title="' + escapeText(detail) + '">' + (kind === 'wind' ? windIcon : stormIcon) + '<span>' + escapeText(group.label) + '</span></' + tag + '>';
-    }).join('');
+  const groups = sandboxWeatherGroups(slots, now);
+  const quiet = groups.length === 1 && !groups[0].presentation.rain && !groups[0].presentation.storm && !groups[0].slot.hail && !(groups[0].slot.wind >= 2);
+  const renderIcon = (slot, presentation) => {
+    const layers = [presentation.sky.src];
+    if (slot.level > 0) layers.push("pictogrammes/calque-pluie-" + Math.max(1, Math.min(5, slot.level)) + ".svg");
+    if (slot.wind >= 2) layers.push("pictogrammes/calque-vent.svg");
+    if (slot.storm) layers.push("pictogrammes/calque-orage.svg");
+    if (slot.hail) layers.push("pictogrammes/calque-grele.svg");
+    const alt = [presentation.sky.label, presentation.title, ...presentation.details, slot.wind >= 2 ? shortTermWindLabel(slot.wind) : ""].filter(Boolean).join(" · ");
+    return '<span class="horizon-period-icon" role="img" aria-label="' + escapeText(alt) + '">' + layers.map(src => '<img src="' + src + '" alt="" loading="lazy" decoding="async">').join("") + '</span>';
   };
-  const hasStorm = slots.some(slot => slot.storm && slot.storm !== ongoingStorm);
-  const hasWind = slots.some(slot => slot.wind >= 2);
-  const hasHail = slots.some(slot => slot.hail);
-  const quiet = !hasStorm && !hasWind && !hasHail && !ongoingStorm && slots.every(slot => slot.label === "Pas de pluie");
-  // Fin du premier épisode pluvieux : ne pas prolonger jusqu'à une reprise séparée.
-  let rainEnd = slots[0].start;
-  for (const slot of slots) {
-    if (!slot.level) break;
-    rainEnd = slot.end;
-  }
-  const totalDuration = slots.at(-1).end - slots[0].start;
-  const fadeStart = (rainEnd - slots[0].start) / totalDuration * 100;
-  const fadeEnd = Math.min(100, fadeStart + 30 * 60000 / totalDuration * 100);
-  const guides = [slots[0].start, ...slots.map(slot => slot.end)].map(boundary => '<i class="' + (sandboxQuietBoundary(boundary, slots[0].start, slots.at(-1).end) ? '' : 'quiet-minor') + '" style="left:' + (boundary - slots[0].start) / totalDuration * 100 + '%"></i>').join('');
-
-
-  return '<section class="horizon-scroll' + (quiet ? ' is-quiet' : '') + '" aria-label="Prévisions des trois prochaines heures par quart d’heure PIAF"><div class="horizon-timeline' + (ongoingStorm ? ' has-ongoing-storm' : '') + '" style="--horizon-slots:' + slots.length + ';--rain-height:' + (hasHail ? 132 : 112) + 'px;--ongoing-height:' + (ongoingStorm ? 52 : 0) + 'px;--storm-height:' + (hasStorm ? 52 : 0) + 'px;--wind-height:' + (hasWind ? 52 : 0) + 'px;grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
-    + sandboxRainGroups(slots).map(block).join('')
-    + bands('storm', 'nowcast', slot => slot.storm && slot.storm !== ongoingStorm ? {
-      label: 'Orage ' + (slot.storm.level >= 4 ? 'violent' : slot.storm.level >= 2 ? 'modéré' : 'faible') + (slot.storm.locallyObserved && slot.start <= now && now < slot.end ? '' : shortTermRiskQualifier(slot.storm.passage)),
-      tone: stormRiskIntensityStep(slot.storm.locallyObserved && slot.start <= now && now < slot.end ? 5 : probabilityStep(slot.storm.passage), slot.storm.level) } : null)
-    + (ongoingStorm ? '<div role="img" class="horizon-band horizon-ongoing-storm tone-' + stormRiskIntensityStep(5, ongoingStorm.level) + '" style="--storm-fade-start:' + fadeStart + '%;--storm-fade-end:' + fadeEnd + '%" aria-label="' + escapeText(ongoingLabel) + '">' + stormIcon + '<span>' + escapeText(ongoingLabel) + '</span></div>' : '')
-    + bands('wind', 'wind48', slot => slot.wind >= 2 ? { label: shortTermWindLabel(slot.wind), tone: slot.wind } : null)
-    + '<div class="horizon-grid-lines" aria-hidden="true">' + guides + '</div>'
-    + sandboxThreeHourAxis(slots, time) + '</div></section>';
+  const renderGroup = ({ slot, presentation, startIndex, endIndex }) => {
+    const duration = slot.end - slot.start;
+    const periodLabel = endIndex - startIndex > 1 || duration !== 15 * 60000 ? clock(slot.start) + " – " + clock(slot.end) : clock(slot.start);
+    const stormTone = slot.storm ? stormRiskIntensityStep(presentation.storm?.observed ? 5 : probabilityStep(slot.storm.passage), slot.storm.level) : 0;
+    const hailTone = slot.hail ? probabilityStep(slot.hailRisk) : 0;
+    const tone = Math.max(slot.level || 0, slot.wind || 0, stormTone, hailTone);
+    const possible = /possible/.test(slot.qualifier || "") || /possible/.test(presentation.storm?.label || "") || slot.hail && slot.hailLocalized !== true;
+    const clear = !presentation.rain && !presentation.storm && !slot.hail && !(slot.wind >= 2) && presentation.sky.level === 0;
+    const description = periodLabel + " : " + [presentation.title, ...presentation.details].filter(Boolean).join(" · ")
+      + (slot.hailLocalized === false ? " · noyau de grêle non localisé dans les données" : "")
+      + (slot.hail && slot.hailScore != null ? " · indice polarimétrique de la zone " + Math.round(slot.hailScore) + " % (indice non probabiliste)" : "");
+    const mainTag = presentation.rain ? "button" : "div";
+    const mainAction = presentation.rain ? ' type="button" data-summary-target="rain"' : '';
+    const windMaximum = Math.round(Math.max(slot.windGust || 0, slot.windSpeed || 0));
+    const windLabel = windMaximum > 0 ? "max " + windMaximum + " km/h" : shortTermWindLabel(slot.wind);
+    const windMarkup = slot.wind >= 2 ? '<button type="button" class="horizon-period-wind" data-summary-target="wind48" aria-label="' + escapeText(shortTermWindLabel(slot.wind) + (windMaximum ? " · " + windLabel : "")) + '">' + windIcon + '<span>' + escapeText(windLabel) + '</span></button>' : '<span class="horizon-period-wind-spacer" aria-hidden="true"></span>';
+    return '<article class="horizon-period tone-' + tone + (clear ? ' is-clear' : '') + (possible ? ' is-possible' : '') + (slot.hail ? ' is-hail' : '') + (slot.label === 'Gouttes' ? ' is-drizzle' : '') + (presentation.unavailable ? ' is-unavailable' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" aria-label="' + escapeText(description) + '">' 
+      + '<time datetime="' + new Date(slot.start).toISOString() + '">' + escapeText(periodLabel) + '</time>'
+      + '<' + mainTag + mainAction + ' class="horizon-period-main" title="' + escapeText(description) + '">' + renderIcon(slot, presentation) + '<strong>' + escapeText(presentation.title) + '</strong><span class="horizon-period-details">' + presentation.details.map(detail => '<span>' + escapeText(detail) + '</span>').join('') + '</span></' + mainTag + '>'
+      + windMarkup + '</article>';
+  };
+  return '<section class="horizon-scroll' + (quiet ? ' is-quiet' : '') + '" aria-label="Prévisions météo regroupées des trois prochaines heures"><div class="horizon-timeline" style="grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+    + groups.map(renderGroup).join('') + '</div></section>';
 }
 
 function sandboxToggleRainDetails() {
