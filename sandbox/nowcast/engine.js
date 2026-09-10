@@ -717,7 +717,7 @@ function nowcastEtaRainEvents(radar, projectionSnapshot = typeof cellPassageSnap
   const events = (radar?.cells || []).flatMap(cell => {
     if (cell?.etaMinutes == null) return null;
     const etaMinutes = Number(cell.etaMinutes);
-    const passage = Math.round(Number(cell.risks?.passage) || 0);
+    const passage = Math.max(0, Number(cell.risks?.passage) || 0);
     if (!Number.isFinite(etaMinutes) || etaMinutes < 0 || etaMinutes > 180 || passage <= 0) return null;
     const measuredSpeedKmh = Math.max(0, Number(cell.track?.speedKmh) || 0);
     const speedKmh = Math.max(1, measuredSpeedKmh);
@@ -1328,29 +1328,34 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
     // Une ancienne réponse API sans qualification ne constitue pas une
     // confirmation de l'extrapolation radar.
     const nowcastReliable = item.nowcastReliable === true;
-    // A missing/old radar or a zero beyond its motion-confidence horizon is
-    // not evidence against PIAF. Compare absolute times, not lead indices.
+    // Qualify PIAF only when a recent, usable radar projection explicitly
+    // predicts a dry interval. Missing coverage is not contradictory evidence.
     const referenceTime = appNow();
     const observedAt = Date.parse(radar?.observedAt || "");
+    const freshRadar = observedAt <= referenceTime + 60000 && referenceTime - observedAt <= 10 * 60000;
     const confidence = Number(radar?.motion?.confidence) || 0;
     const radarHorizon = confidence >= 35 ? 60 : confidence >= 18 ? 30 : confidence >= 8 ? 15 : 5;
-    const radarSteps = (radar?.values || []).filter(value => {
-      const end = observedAt + Number(value.seconds) * 1000;
-      return end > intervalStart && end - 300000 < intervalEnd;
-    });
+    const radarSteps = (radar?.values || []).map(value => ({
+      start: observedAt + Number(value.seconds) * 1000 - 300000,
+      end: observedAt + Number(value.seconds) * 1000,
+      precipitation: value.precipitation
+    })).filter(value => value.end > intervalStart && value.start < intervalEnd)
+      .sort((left, right) => left.start - right.start);
     const coversInterval = radarSteps.length > 0
-      && Math.min(...radarSteps.map(value => observedAt + Number(value.seconds) * 1000 - 300000)) <= intervalStart
-      && Math.max(...radarSteps.map(value => observedAt + Number(value.seconds) * 1000)) >= intervalEnd
-      && radarSteps.length * 300000 >= intervalEnd - intervalStart;
-    const cellConfirms = events.some(event => event.eventStart < intervalEnd && event.eventEnd > intervalStart);
-    const piafUnconfirmed = basePrecipitation > 0 && (!piaf?.source || piaf.source === "piaf")
-      && intervalEnd > referenceTime && intervalEnd <= referenceTime + 45 * 60000
-      && observedAt <= referenceTime + 60000 && referenceTime - observedAt <= 10 * 60000
-      && confidence >= 8
+      && radarSteps[0].start <= intervalStart && radarSteps.at(-1).end >= intervalEnd
+      && radarSteps.every((value, index) => index === 0 || value.start <= radarSteps[index - 1].end);
+    const radarPredictsDry = freshRadar && confidence >= 8 && coversInterval
       && intervalEnd <= observedAt + radarHorizon * 60000
-      && Number.isFinite(radar?.currentPrecipitation) && radar.currentPrecipitation === 0
-      && !item.radarCellOverPoint && coversInterval && !cellConfirms && etaPrecipitation <= 0
       && radarSteps.every(value => Number.isFinite(value.precipitation) && value.precipitation === 0);
+    const observedRain = freshRadar && observedAt >= intervalStart && observedAt < intervalEnd
+      && (Number(radar?.currentPrecipitation) > 0 || item.radarCellOverPoint === true);
+    // No display/alert threshold here: even a sub-percent passage prevents
+    // calling the radar contradictory to PIAF. Its rain amount may be unknown.
+    const cellConfirms = freshRadar && events.some(event => event.eventStart < intervalEnd && event.eventEnd > intervalStart
+      && Math.max(Number(event.passage) || 0, Number(event.presenceProbability) || 0,
+        Number(event.cell?.risks?.passage) || 0) > 0);
+    const piafUnconfirmed = basePrecipitation > 0 && (!piaf?.source || piaf.source === "piaf")
+      && intervalEnd > referenceTime && radarPredictsDry && !observedRain && !cellConfirms;
     return {
       ...item,
       intervalStart,
