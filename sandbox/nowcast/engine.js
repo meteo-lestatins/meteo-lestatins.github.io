@@ -1,7 +1,42 @@
 import { preparePassageMap } from './map.js';
 // Moteur 0–180 min : mêmes méthodes que l'ancien client, horloge et historique explicites.
 // Exécuté par le serveur. L'import navigateur est réservé aux replays historiques.
-export const NOWCAST_ENGINE_VERSION = 1;
+export const NOWCAST_ENGINE_VERSION = 2;
+
+export function tatinsSunTimes(date) {
+  // Les résultats sont des instants UTC. Ils restent donc justes quand
+  // Europe/Paris passe de l'heure d'hiver à l'heure d'été, et inversement.
+  const radians = Math.PI / 180;
+  const dayMilliseconds = 86400000;
+  const julian1970 = 2440588;
+  const julian2000 = 2451545;
+  const latitude = 44.6538 * radians;
+  const longitudeWest = -5.5995 * radians;
+  const toJulian = value => value.valueOf() / dayMilliseconds - 0.5 + julian1970;
+  const fromJulian = value => new Date((value + 0.5 - julian1970) * dayMilliseconds);
+  const days = toJulian(date) - julian2000;
+  const cycle = Math.round(days - 0.0009 - longitudeWest / (2 * Math.PI));
+  const transitApproximation = 0.0009 + longitudeWest / (2 * Math.PI) + cycle;
+  const meanAnomaly = radians * (357.5291 + 0.98560028 * transitApproximation);
+  const equationCenter = radians * (1.9148 * Math.sin(meanAnomaly) + 0.02 * Math.sin(2 * meanAnomaly) + 0.0003 * Math.sin(3 * meanAnomaly));
+  const eclipticLongitude = meanAnomaly + equationCenter + radians * 102.9372 + Math.PI;
+  const solarTransit = julian2000 + transitApproximation + 0.0053 * Math.sin(meanAnomaly) - 0.0069 * Math.sin(2 * eclipticLongitude);
+  const declination = Math.asin(Math.sin(eclipticLongitude) * Math.sin(radians * 23.4397));
+  const altitude = -0.833 * radians;
+  const hourAngle = Math.acos((Math.sin(altitude) - Math.sin(latitude) * Math.sin(declination)) / (Math.cos(latitude) * Math.cos(declination)));
+  const setApproximation = 0.0009 + (hourAngle + longitudeWest) / (2 * Math.PI) + cycle;
+  const sunsetJulian = julian2000 + setApproximation + 0.0053 * Math.sin(meanAnomaly) - 0.0069 * Math.sin(2 * eclipticLongitude);
+  return {
+    sunrise: fromJulian(solarTransit - (sunsetJulian - solarTransit)),
+    sunset: fromJulian(sunsetJulian)
+  };
+}
+
+export function isNightAtTatins(date) {
+  const instant = date instanceof Date ? date : new Date(date);
+  const { sunrise, sunset } = tatinsSunTimes(instant);
+  return instant < sunrise || instant >= sunset;
+}
 
 export function createNowcastEngine({ now = Date.now(), snapshot = null, replay = false } = {}) {
 const appNow = () => now;
@@ -2042,7 +2077,7 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     const cloudCover = cloudValues.length ? cloudValues.reduce((sum, value) => sum + value, 0) / cloudValues.length : null;
     const windSpeed = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)) : null;
     const windGust = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windGust) || 0)) : null;
-    const night = typeof isNight === "function" ? isNight(new Date((start + end) / 2)) : false;
+    const night = isNightAtTatins(new Date((start + end) / 2));
     return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, windSpeed, windGust, cloudCover, night, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
