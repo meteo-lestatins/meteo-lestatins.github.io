@@ -1999,7 +1999,7 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
       || samples.some(item => Number(item.radarPrecipitation) > 0 || item.radarCellOverPoint === true)
       || active.length > 0;
     const corroborated = base > 0 && nowcast;
-    const wet = total > .01 + 1e-9 || (total > 0 && corroborated);
+    const wet = total > .01 + 1e-9;
     const peak = wet ? Math.max(rainRateFromAccumulation(total, end - start),
       ...samples.map(item => rainRateFromAccumulation(Number(item.totalPrecipitation) || 0, item.intervalEnd - item.intervalStart)),
       ...active.map(event => Number(event.conditionalIntensity) || 0)) : 0;
@@ -2028,7 +2028,15 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     const wind = windHours.length ? shortTermWindIntensityLevel(
       Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)),
       Math.max(...windHours.map(hour => Number(hour.windGust) || 0))) : null;
-    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
+    const cloudValues = windHours.flatMap(hour => {
+      const value = hour.cloudCover ?? hour.cloudiness;
+      return value == null ? [] : [Number(value)];
+    }).filter(Number.isFinite);
+    const cloudCover = cloudValues.length ? cloudValues.reduce((sum, value) => sum + value, 0) / cloudValues.length : null;
+    const windSpeed = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)) : null;
+    const windGust = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windGust) || 0)) : null;
+    const night = typeof isNight === "function" ? isNight(new Date((start + end) / 2)) : false;
+    return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, windSpeed, windGust, cloudCover, night, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
 }
