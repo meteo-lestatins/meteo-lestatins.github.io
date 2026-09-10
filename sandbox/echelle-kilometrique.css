@@ -33,6 +33,6 @@ body{color:#242424;background:#fff}
 
 /* Individual weather pictograms: headings and captions come from Markdown. */
 #pictogrammes-meteo ~ .technical-table-scroll{max-width:900px}
-#pictogrammes-meteo ~ .technical-table-scroll table{table-layout:fixed;min-width:540px}
+#pictogrammes-meteo ~ .technical-table-scroll table{table-layout:fixed;min-width:720px}
 #pictogrammes-meteo ~ .technical-table-scroll th,#pictogrammes-meteo ~ .technical-table-scroll td{text-align:center;vertical-align:middle}
-.technical-inline-image{display:block;width:96px;height:96px;max-width:100%;object-fit:contain;margin:0 auto}
+.technical-inline-image{display:block;width:96px;height:96px;max-width:none;object-fit:contain;margin:0 auto}

@@ -4863,9 +4863,10 @@ function renderPiaf(piaf, radar = null) {
     const coveredMinutes = Number.isFinite(item.intervalStart) && Number.isFinite(item.intervalEnd) ? Math.round((item.intervalEnd - item.intervalStart) / 60000) : 15;
     const periodDetail = piaf.source === "arome" ? " (cumul sur 1 h)" : item.complete === false ? " (cumul partiel sur " + coveredMinutes + " min)" : " (cumul sur 15 min)";
     const nowcastTotal = Math.max(precipitation, Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0);
-    const nowcastDetail = nowcastTotal > precipitation
+    const nowcastDetail = Math.round((nowcastTotal - precipitation) * 100) > 1
       ? "\nAvec nowcasting : " + nowcastTotal.toFixed(2) + " mm (estimation, passage à confirmer)" : "";
-    const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail;
+    const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail
+      + (item.piafUnconfirmed ? "\nPluie possible : PIAF non confirmé par le nowcasting récent aux Tatins." : "");
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1;--rain-height:' + height + '%" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
@@ -4887,8 +4888,9 @@ function renderPiaf(piaf, radar = null) {
     // sur les créneaux futurs. Radar et ETA représentent la même pluie.
     const totalRain = Math.round(Math.max(basePiaf + radarAmendment,
       Number(item.totalPrecipitation ?? item.nowcastPrecipitation) || 0, etaRain, basePiaf) * 100) / 100;
-    const quantitative = Math.max(0, totalRain - basePiaf);
-    if (!entries.length && !observed && quantitative <= 0) return '';
+    const difference = Math.round((totalRain - basePiaf) * 100) / 100;
+    const quantitative = difference > .01 ? difference : 0;
+    if (!entries.length && quantitative <= 0) return '';
     const passage = entries.length ? Math.max(...entries.map(entry => Number(entry.passage) || 0)) : null;
     const baseHeight = Math.min(100, basePiaf / fullScaleRain * 100);
     const amendmentBottom = Math.min(97, baseHeight);
@@ -4906,7 +4908,7 @@ function renderPiaf(piaf, radar = null) {
       ? " sur 1 h"
       : item.complete === false ? " sur " + Math.max(5, Math.round((Number(item.intervalEnd) - Number(item.intervalStart)) / 60000)) + " min" : " sur 15 min";
     const detail = "PIAF : " + basePiaf.toFixed(2) + " mm" + piafPeriod
-      + (observed && radarAmendment > 0 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
+      + (observed && radarAmendment > .01 ? "\nNowcasting observé : +" + radarAmendment.toFixed(2) + " mm" : "")
       + (!observed && quantitative > 0 ? "\nNowcasting prévu si passage : +" + quantitative.toFixed(2) + " mm" : "")
       + (presenceOnly ? "\nPrésence possible, cumul non assez stable" : "\nTotal affiché : " + totalRain.toFixed(2) + " mm")
       + (passage != null ? "\nProbabilité de passage : " + passage + " %" : "")

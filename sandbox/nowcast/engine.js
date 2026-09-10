@@ -1328,6 +1328,29 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
     // Une ancienne réponse API sans qualification ne constitue pas une
     // confirmation de l'extrapolation radar.
     const nowcastReliable = item.nowcastReliable === true;
+    // A missing/old radar or a zero beyond its motion-confidence horizon is
+    // not evidence against PIAF. Compare absolute times, not lead indices.
+    const referenceTime = appNow();
+    const observedAt = Date.parse(radar?.observedAt || "");
+    const confidence = Number(radar?.motion?.confidence) || 0;
+    const radarHorizon = confidence >= 35 ? 60 : confidence >= 18 ? 30 : confidence >= 8 ? 15 : 5;
+    const radarSteps = (radar?.values || []).filter(value => {
+      const end = observedAt + Number(value.seconds) * 1000;
+      return end > intervalStart && end - 300000 < intervalEnd;
+    });
+    const coversInterval = radarSteps.length > 0
+      && Math.min(...radarSteps.map(value => observedAt + Number(value.seconds) * 1000 - 300000)) <= intervalStart
+      && Math.max(...radarSteps.map(value => observedAt + Number(value.seconds) * 1000)) >= intervalEnd
+      && radarSteps.length * 300000 >= intervalEnd - intervalStart;
+    const cellConfirms = events.some(event => event.eventStart < intervalEnd && event.eventEnd > intervalStart);
+    const piafUnconfirmed = basePrecipitation > 0 && (!piaf?.source || piaf.source === "piaf")
+      && intervalEnd > referenceTime && intervalEnd <= referenceTime + 45 * 60000
+      && observedAt <= referenceTime + 60000 && referenceTime - observedAt <= 10 * 60000
+      && confidence >= 8
+      && intervalEnd <= observedAt + radarHorizon * 60000
+      && Number.isFinite(radar?.currentPrecipitation) && radar.currentPrecipitation === 0
+      && !item.radarCellOverPoint && coversInterval && !cellConfirms && etaPrecipitation <= 0
+      && radarSteps.every(value => Number.isFinite(value.precipitation) && value.precipitation === 0);
     return {
       ...item,
       intervalStart,
@@ -1337,7 +1360,8 @@ function piafRainSteps(piaf, radar = null, sourceValues = null, etaEvents = null
       radarAdjustedPrecipitation,
       etaPrecipitation,
       totalPrecipitation,
-      rainOccurrenceReliable: baseRain || nowcastReliable,
+      piafUnconfirmed,
+      rainOccurrenceReliable: !piafUnconfirmed && (baseRain || nowcastReliable),
       dryStateReliable: baseForecastAvailable || nowcastReliable,
       effectiveRadarAmendment: Math.max(0, radarAdjustedPrecipitation - basePrecipitation),
       effectiveEtaAmendment: Math.max(0, totalPrecipitation - radarAdjustedPrecipitation)
@@ -1525,7 +1549,7 @@ function threeHourRainMessageSequence(steps, now, events = []) {
     } else {
       const etaMinutes = Math.max(1, Math.ceil((item.start - referenceTime) / 60000));
       label = item.occurrenceReliable === false
-        ? subject + shortTermRiskQualifier(passageRisk)
+        ? subject + (item.firstStep?.piafUnconfirmed ? " possible" : shortTermRiskQualifier(passageRisk))
         : subject
           + (passageRisk == null ? "" : shortTermRiskQualifier(passageRisk))
           + " dans " + compactMinutesLabel(etaMinutes);
@@ -1570,6 +1594,8 @@ function piafQuarterHourRain(piaf, radar = null) {
       seconds: Number.isFinite(runTime) ? (intervalEnd - runTime) / 1000 : Number(items.at(-1).seconds),
       baseRainSource: piaf?.source || "piaf",
       precipitation: sum("precipitation"),
+      piafUnconfirmed: items.some(item => item.basePrecipitation > 0)
+        && items.filter(item => item.basePrecipitation > 0).every(item => item.piafUnconfirmed),
       nowcastPrecipitation: sum("totalPrecipitation"),
       radarPrecipitation: has("radarPrecipitation") ? sum("radarPrecipitation") : undefined,
       radarAdjustedPrecipitation: sum("radarAdjustedPrecipitation"),
@@ -1973,7 +1999,10 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
       ...samples.map(item => rainRateFromAccumulation(Number(item.totalPrecipitation) || 0, item.intervalEnd - item.intervalStart)),
       ...active.map(event => Number(event.conditionalIntensity) || 0)) : 0;
     const level = peak > 0 ? Math.max(1, rainIntensityStep(peak)) : 0;
-    const qualifier = wet && nowcast && !corroborated ? "possible" : "";
+    const piafUnconfirmed = interval.piafUnconfirmed === true
+      || (samples.some(item => item.basePrecipitation > 0)
+        && samples.filter(item => item.basePrecipitation > 0).every(item => item.piafUnconfirmed === true));
+    const qualifier = wet && ((nowcast && !corroborated) || piafUnconfirmed) ? "possible" : "";
     // Comme sur main, une présence observée au point vaut ETA 0 min.
     // Sans projection de durée, elle ne couvre que le créneau courant.
     const storms = candidates.filter(candidate => {
