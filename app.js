@@ -1011,7 +1011,7 @@ function moonPhaseMeteoconName(date) {
 
 function displayIcon(item) {
   const date = new Date(item.time);
-  const night = item.forceDay === true ? false : isNight(date);
+  const night = isNight(date);
   const period = night ? "night" : "day";
   const cloud = cloudiness(item);
   const rain = Math.max(0, Number(item.rain) || 0);
@@ -1095,6 +1095,34 @@ function shiftForecastDateKey(dateKey, days) {
   const [year, month, day] = String(dateKey).split("-").map(Number);
   if (![year, month, day].every(Number.isFinite)) return String(dateKey);
   return new Date(Date.UTC(year, month - 1, day + Number(days || 0))).toISOString().slice(0, 10);
+}
+
+function forecastLocalDateTime(dateKey, hour) {
+  const [year, month, day] = String(dateKey).split("-").map(Number);
+  if (![year, month, day, hour].every(Number.isFinite)) return new Date(NaN);
+  const wholeHour = Math.floor(Number(hour));
+  const minute = Math.round((Number(hour) - wholeHour) * 60);
+  const target = Date.UTC(year, month - 1, day, wholeHour, minute);
+  const formatter = forecastLocalDateTime.formatter || (forecastLocalDateTime.formatter = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    hourCycle: "h23", timeZone: "Europe/Paris"
+  }));
+  let instant = target;
+  // Ramener l'heure civile Europe/Paris vers un instant absolu, y compris
+  // les jours où l'offset change entre heure d'hiver et heure d'été.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map(part => [part.type, part.value]));
+    const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+    const correction = target - represented;
+    instant += correction;
+    if (!correction) break;
+  }
+  return new Date(instant);
+}
+
+function forecastSlotMidpointDate(dateKey, slot) {
+  const slotDate = shiftForecastDateKey(dateKey, slot.dayOffset);
+  return forecastLocalDateTime(slotDate, slot.startHour + (slot.endHour - slot.startHour) / 2);
 }
 
 function weekForecastStartKey(now = new Date(appNow())) {
@@ -2246,7 +2274,7 @@ function renderTestingDailyForecast() {
   };
   const periodCard = (period, label, labelTitle, slot, dateKey, periodKey, meteoFranceStorm = false, vigilanceAlerts = [], meteoFranceRain = null, meteoFranceWind = null, hasMeteoFranceDay = false) => {
     if (!period) return "";
-    const slotEndTime = new Date(slotDateKey(dateKey, slot) + "T00:00:00").getTime() + slot.endHour * 3600000;
+    const slotEndTime = forecastLocalDateTime(slotDateKey(dateKey, slot), slot.endHour).getTime();
     const pastClass = Number.isFinite(slotEndTime) && slotEndTime <= appNow() ? " daily-period-past" : "";
     const openMeteoRain = Math.max(0, Number(period.precipitationSum) || 0);
     const meteoFranceRainAmount = meteoFranceRain?.amount != null && Number.isFinite(Number(meteoFranceRain.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
@@ -2267,11 +2295,10 @@ function renderTestingDailyForecast() {
     const hasStorm = hasOpenMeteoStorm || hasMeteoFranceStorm;
     const hideRain = weekRainBelowDisplayThreshold([rainProbability], hasStorm);
     const icon = displayIcon({
-      time: period.time,
+      time: forecastSlotMidpointDate(dateKey, slot),
       cloudCover: cloud,
       rain: hasStorm ? Math.max(.5, rain) : hideRain ? 0 : rain,
-      rainLevel: hideRain ? 0 : rainPictogramStep(rain),
-      forceDay: label === "Soir"
+      rainLevel: hideRain ? 0 : rainPictogramStep(rain)
     });
     const temperature = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(temperatureMax, 0) + '°</strong></span><span><small>Min.</small><b>' + format(temperatureMin, 0) + '°</b></span></span>';
     const direction = Number.isFinite(Number(period.windDirection))
