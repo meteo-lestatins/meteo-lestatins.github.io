@@ -1287,14 +1287,24 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 @media(max-width:700px){.horizon-axis .near-hour-start{display:none}}
 
 /* Périodes météo regroupées : une cellule par état, largeur proportionnelle à sa durée. */
-.horizon-scroll{background:#fff}
-.horizon-timeline{grid-template-rows:none;grid-auto-rows:minmax(236px,auto);width:1200px;min-width:780px;max-width:100%;isolation:auto}
-.horizon-period{grid-row:1;display:grid;grid-template-rows:30px minmax(0,1fr) 25px;min-width:0;padding:12px 7px 10px;overflow:hidden;border-right:1px solid #c7e3f6;color:#071d60;background:#f0f8ff;text-align:center}
-.horizon-period:last-child{border-right:0}
-.horizon-period.is-clear,.horizon-period.is-possible,.horizon-period.is-hail,.horizon-period.is-drizzle{background:#f0f8ff}
+.horizon-scroll{overflow-x:hidden;background:#fff}
+.horizon-timeline{display:flex;flex-wrap:wrap;align-items:stretch;width:100%;min-width:0;overflow:visible;isolation:auto;background:#fff;gap:0}
+.horizon-period{position:relative;display:grid;grid-template-rows:30px minmax(0,1fr) 25px;flex-grow:var(--period-duration);flex-shrink:1;flex-basis:80px;min-width:80px;min-height:236px;padding:12px 7px 10px;overflow:hidden;color:#071d60;background:transparent;box-shadow:inset 0 -1px #c8d7de;text-align:center}
+.horizon-period::before{content:"";position:absolute;inset:0 0 auto;height:42px;border-bottom:1px solid #e0e8ec;background:#f4f8fa}
+.horizon-period::after{content:"";position:absolute;z-index:2;inset:0 0 0 auto;width:1px;background:#c8d7de;pointer-events:none}
+.horizon-period.is-detailed{flex-basis:130px;min-width:120px}
+.horizon-period.rain-0.is-night{background:#edf1f4}
+.horizon-period.rain-1{background:linear-gradient(120deg,#e5f5ff,#d1edff)}
+.horizon-period.rain-2{background:linear-gradient(120deg,#d1edff,#bce3fa)}
+.horizon-period.rain-3{background:linear-gradient(120deg,#a8defb,#88d6fc)}
+.horizon-period.rain-4{background:linear-gradient(120deg,#88d6fc,#67c3f4)}
+.horizon-period.rain-5{background:linear-gradient(120deg,#55baff,#249bf3);color:#fff}
+.horizon-period.tone-3{background:linear-gradient(120deg,#fffbe0,#fff0a6);color:#071d60}
+.horizon-period.tone-4{background:linear-gradient(120deg,#ffefb4,#ffb778);color:#071d60}
+.horizon-period.tone-5{background:linear-gradient(120deg,#ffd3bd,#f28282);color:#071d60}
 .horizon-period.is-unavailable{color:#607784;background:#f3f6f8}
-.horizon-period>time{display:block;overflow:hidden;font-size:16px;font-weight:850;font-variant-numeric:tabular-nums;line-height:22px;text-overflow:ellipsis;white-space:nowrap}
-.horizon-period-main{display:grid;grid-template-rows:104px minmax(34px,auto) minmax(32px,auto);align-content:center;justify-items:center;width:100%;min-width:0;margin:0;padding:0;border:0;color:inherit;background:transparent;font:inherit;text-align:center}
+.horizon-period>time{position:relative;z-index:1;display:block;overflow:hidden;font-size:16px;font-weight:850;font-variant-numeric:tabular-nums;line-height:22px;text-overflow:ellipsis;white-space:nowrap}
+.horizon-period-main{position:relative;z-index:1;display:grid;grid-template-rows:104px minmax(34px,auto) minmax(32px,auto);align-content:center;justify-items:center;width:100%;min-width:0;margin:0;padding:0;border:0;color:inherit;background:transparent;font:inherit;text-align:center}
 button.horizon-period-main{cursor:pointer}
 button.horizon-period-main:hover{filter:brightness(.97)}
 .horizon-period-icon{display:grid;align-self:center;width:min(104px,100%);height:auto;aspect-ratio:1;place-items:center}
@@ -1305,9 +1315,14 @@ button.horizon-period-main:hover{filter:brightness(.97)}
 .horizon-period-wind{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;margin:0;padding:0;border:0;color:#566c96;background:transparent;font:700 12px/18px inherit;white-space:nowrap;cursor:pointer}
 .horizon-period-wind svg{width:17px;height:17px;flex:0 0 17px}
 .horizon-period-wind:hover{color:#7132a2}
-.horizon-scroll.is-quiet .horizon-timeline{min-width:0}
-.horizon-scroll.is-quiet .horizon-period{grid-column:1/-1!important}
-@media(max-width:700px){.horizon-timeline{min-width:780px;grid-auto-rows:minmax(218px,auto)}.horizon-period{padding-inline:4px}.horizon-period>time{font-size:14px}.horizon-period-icon{width:min(92px,100%)}.horizon-period-main{grid-template-rows:92px minmax(34px,auto) minmax(30px,auto)}.horizon-period-main>strong{font-size:13px}.horizon-period-wind{font-size:11px}}
+.horizon-scroll.is-quiet .horizon-period{flex-basis:100%;min-width:0}
+.horizon-scroll.is-compact .horizon-period{grid-template-rows:26px minmax(0,1fr);min-height:180px;padding-block:8px}
+.horizon-scroll.is-compact .horizon-period::before{height:42px}
+.horizon-scroll.is-compact .horizon-period-main{grid-template-rows:86px minmax(28px,auto) 0}
+.horizon-scroll.is-compact .horizon-period-icon{width:min(86px,100%)}
+.horizon-scroll.is-compact .horizon-period-details,.horizon-scroll.is-compact .horizon-period-wind-spacer{display:none}
+@media(max-width:700px){.horizon-period{min-height:218px;padding-inline:4px}.horizon-period.is-detailed{flex-basis:120px;min-width:108px}.horizon-period>time{font-size:14px}.horizon-period-icon{width:min(92px,100%)}.horizon-period-main{grid-template-rows:92px minmax(34px,auto) minmax(30px,auto)}.horizon-period-main>strong{font-size:13px}.horizon-period-wind{font-size:11px}}
+@media(max-width:700px){.horizon-scroll.is-compact .horizon-period{min-height:165px}.horizon-scroll.is-compact .horizon-period-main{grid-template-rows:78px minmax(26px,auto) 0}.horizon-scroll.is-compact .horizon-period-icon{width:min(78px,100%)}}
 .three-hour-overview{display:block}
 .three-hour-overview>.three-hour-summary{width:100%;min-width:0}
 .horizon-detail-scroll{overflow-x:auto;margin:0 28px;padding:0 1px}

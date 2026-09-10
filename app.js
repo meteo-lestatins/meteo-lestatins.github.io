@@ -5229,6 +5229,8 @@ function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
   };
   const groups = sandboxWeatherGroups(slots, now);
   const quiet = groups.length === 1 && !groups[0].presentation.rain && !groups[0].presentation.storm && !groups[0].slot.hail && !(groups[0].slot.wind >= 2);
+  const compact = groups.every(group => !group.presentation.rain && !group.presentation.storm && !group.slot.hail
+    && !(group.slot.wind >= 2) && group.presentation.details.length === 0);
   const renderIcon = (slot, presentation) => {
     const layers = [presentation.sky.src];
     if (slot.level > 0) layers.push("pictogrammes/calque-pluie-" + Math.max(1, Math.min(5, slot.level)) + ".svg");
@@ -5244,8 +5246,10 @@ function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
     const stormTone = slot.storm ? stormRiskIntensityStep(presentation.storm?.observed ? 5 : probabilityStep(slot.storm.passage), slot.storm.level) : 0;
     const hailTone = slot.hail ? probabilityStep(slot.hailRisk) : 0;
     const tone = Math.max(slot.level || 0, slot.wind || 0, stormTone, hailTone);
+    const rainTone = Math.max(0, Math.min(5, slot.level || 0));
     const possible = /possible/.test(slot.qualifier || "") || /possible/.test(presentation.storm?.label || "") || slot.hail && slot.hailLocalized !== true;
     const clear = !presentation.rain && !presentation.storm && !slot.hail && !(slot.wind >= 2) && presentation.sky.level === 0;
+    const detailed = presentation.details.length > 0 || slot.wind >= 2;
     const description = periodLabel + " : " + [presentation.title, ...presentation.details].filter(Boolean).join(" · ")
       + (slot.hailLocalized === false ? " · noyau de grêle non localisé dans les données" : "")
       + (slot.hail && slot.hailScore != null ? " · indice polarimétrique de la zone " + Math.round(slot.hailScore) + " % (indice non probabiliste)" : "");
@@ -5254,12 +5258,12 @@ function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
     const windMaximum = Math.round(Math.max(slot.windGust || 0, slot.windSpeed || 0));
     const windLabel = windMaximum > 0 ? "max " + windMaximum + " km/h" : shortTermWindLabel(slot.wind);
     const windMarkup = slot.wind >= 2 ? '<button type="button" class="horizon-period-wind" data-summary-target="wind48" aria-label="' + escapeText(shortTermWindLabel(slot.wind) + (windMaximum ? " · " + windLabel : "")) + '">' + windIcon + '<span>' + escapeText(windLabel) + '</span></button>' : '<span class="horizon-period-wind-spacer" aria-hidden="true"></span>';
-    return '<article class="horizon-period tone-' + tone + (clear ? ' is-clear' : '') + (possible ? ' is-possible' : '') + (slot.hail ? ' is-hail' : '') + (slot.label === 'Gouttes' ? ' is-drizzle' : '') + (presentation.unavailable ? ' is-unavailable' : '') + '" style="grid-column:' + (startIndex + 1) + '/' + (endIndex + 1) + '" aria-label="' + escapeText(description) + '">' 
+    return '<article class="horizon-period tone-' + tone + ' rain-' + rainTone + (slot.night ? ' is-night' : '') + (clear ? ' is-clear' : '') + (possible ? ' is-possible' : '') + (slot.hail ? ' is-hail' : '') + (slot.label === 'Gouttes' ? ' is-drizzle' : '') + (detailed ? ' is-detailed' : '') + (presentation.unavailable ? ' is-unavailable' : '') + '" style="--period-duration:' + duration + '" aria-label="' + escapeText(description) + '">'
       + '<time datetime="' + new Date(slot.start).toISOString() + '">' + escapeText(periodLabel) + '</time>'
       + '<' + mainTag + mainAction + ' class="horizon-period-main" title="' + escapeText(description) + '">' + renderIcon(slot, presentation) + '<strong>' + escapeText(presentation.title) + '</strong><span class="horizon-period-details">' + presentation.details.map(detail => '<span>' + escapeText(detail) + '</span>').join('') + '</span></' + mainTag + '>'
       + windMarkup + '</article>';
   };
-  return '<section class="horizon-scroll' + (quiet ? ' is-quiet' : '') + '" aria-label="Prévisions météo regroupées des trois prochaines heures"><div class="horizon-timeline" style="grid-template-columns:' + slots.map(slot => (slot.end - slot.start) + 'fr').join(' ') + '">'
+  return '<section class="horizon-scroll' + (quiet ? ' is-quiet' : '') + (compact ? ' is-compact' : '') + '" aria-label="Prévisions météo regroupées des trois prochaines heures"><div class="horizon-timeline">'
     + groups.map(renderGroup).join('') + '</div></section>';
 }
 
