@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
   <link rel="preconnect" href="https://ensemble-api.open-meteo.com" crossorigin>
   <link rel="preconnect" href="https://nicolas.sindelar.fr" crossorigin>
-  <link rel="stylesheet" href="style.css?v=174">
+  <link rel="stylesheet" href="style.css?v=175">
   <title>Sandbox · Météo les Tatins</title>
 </head>
 <body><span class="sandbox-badge" aria-label="Version de test">SANDBOX</span>
@@ -29,7 +29,7 @@
   <section id="cell-approach-alert" class="vigilance-alert cell-approach-alert" aria-live="polite" hidden></section>
   <section class="three-hour-overview" aria-labelledby="three-hour-title">
     <div class="section-heading">
-      <h2 id="three-hour-title">Dans les 3 h</h2><button id="horizon-nowcast-toggle" type="button" aria-controls="nowcast-details" aria-expanded="false">Nowcasting</button>
+      <h2 id="three-hour-title">Dans les 3 h</h2><button id="horizon-nowcast-toggle" type="button" aria-controls="nowcast-details" aria-expanded="false"><img src="pictogrammes/carte-radar.png" width="36" height="36" alt=""><span>Carte radar</span></button>
       <div id="three-hour-api-links" class="section-api-links" aria-label="API de la synthèse sur 3 heures" hidden></div>
     </div>
     <div id="three-hour-summary" class="three-hour-summary" aria-live="polite"></div>
@@ -67,7 +67,7 @@
   </section>
 </main>
 <div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
-<script src="runtime-config.js?v=3.235"></script>
+<script src="runtime-config.js?v=3.236"></script>
 <script src="analytics.js?v=4"></script>
 <script src="app.js?v=238"></script>
 </body>
