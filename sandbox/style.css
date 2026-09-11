@@ -1257,14 +1257,14 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-timeline>.horizon-axis span:first-child{margin-left:10px}
 .horizon-timeline>.horizon-axis span[style="left:100%"]{margin-left:-10px}
 
-#horizon-nowcast-toggle{display:inline-flex;align-items:center;gap:9px;margin-left:auto;border:0;border-radius:0;background:transparent;color:#173f57;font-family:inherit;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.015em;cursor:pointer;padding:5px 0;box-shadow:none}
+#horizon-nowcast-toggle{display:inline-flex;align-items:center;gap:9px;margin-left:auto;border:0;border-radius:0;background:transparent;color:#173f57;cursor:pointer;padding:5px 0;box-shadow:none}
 #horizon-nowcast-toggle>img{display:block;width:36px;height:36px;flex-shrink:0;object-fit:cover;border:1px solid #b4c6d0;border-radius:7px}
 #horizon-nowcast-toggle:hover{color:#286e96}
 #horizon-nowcast-toggle:focus-visible{outline:3px solid #173f57;outline-offset:3px}
-@media(max-width:700px){#horizon-nowcast-toggle{gap:7px;font-size:16px}}
+@media(max-width:700px){#horizon-nowcast-toggle{gap:7px}}
 
 .three-hour-overview>.section-heading{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px}
-.three-hour-overview>.section-heading h2,#horizon-nowcast-toggle{white-space:nowrap}
+.three-hour-overview>.section-heading h2,#horizon-nowcast-toggle{font-family:inherit;font-size:20px;font-weight:700;line-height:normal;letter-spacing:-.015em;white-space:nowrap}
 
 .horizon-rain.hail{grid-template-rows:30px auto 40px}
 .horizon-rain.hail>span{font-size:10px;line-height:1.2;text-wrap:balance;align-self:start}
