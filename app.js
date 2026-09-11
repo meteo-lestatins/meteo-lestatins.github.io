@@ -4972,13 +4972,13 @@ function applyDashboardPayload(payload) {
         model: "Open-Meteo via serveur",
         days: detailedDays.length ? detailedDays : data.openMeteo.days.map(dashboardOpenMeteoWeekDay)
       };
-      renderWeekForecast();
+      if (!window.METEO_REPLAY) renderWeekForecast();
     }
     refreshSourceIndicators();
     const vigilanceStamp = data?.vigilance?.fetchedAt || 0;
     if (vigilanceStamp !== lastVigilanceStamp) {
       lastVigilanceStamp = vigilanceStamp;
-      renderWeekForecast();
+      if (!window.METEO_REPLAY) renderWeekForecast();
     }
     // Désactivé temporairement : ne plus afficher systématiquement le bandeau
     // « Perturbation en approche ». La fonction est
@@ -5001,7 +5001,7 @@ function applyDashboardPayload(payload) {
       // Les cartes quotidiennes reprennent le détail pluie/orages de la
       // frise. Les recalculer sur le même changement de run empêche les
       // deux vues de conserver temporairement des horaires différents.
-      renderWeekForecast();
+      if (!window.METEO_REPLAY) renderWeekForecast();
     }
     if (data && (data.piaf || data.openMeteo || data.radar)) {
       lastPiafStamp = piafStamp;
@@ -5132,23 +5132,26 @@ if (window.location.hash === "#radar-nowcast") {
 }
 renderAppVersion();
 if (window.METEO_REPLAY?.start) import(replayEngineUrl.href).then(({ createNowcastEngine }) => {
-  let snapshot = null;
-  let lastTime = -Infinity;
-  let lastData = null;
-  let lastForecast = null;
-  window.METEO_REPLAY.start({ applyDashboardPayload(payload) {
-    if (!payload.data) return applyDashboardPayload(payload);
-    const now = appNow();
-    if (now < lastTime) snapshot = null;
-    const signature = JSON.stringify(payload.data);
-    if (now !== lastTime || signature !== lastData) {
-      lastForecast = createNowcastEngine({ now, snapshot, replay: true }).compute(payload.data);
-      snapshot = lastForecast?.projectionSnapshot || null;
-      lastTime = now;
-      lastData = signature;
+  const renderState = { snapshot: null, lastTime: -Infinity };
+  const preparationState = { snapshot: null, lastTime: -Infinity };
+  const prepareReplayPayload = (payload, state, { reset = false } = {}) => {
+    if (!payload.data || payload.replayPrepared) return payload;
+    const observedAt = new Date(payload.data.radar?.observedAt || 0).getTime();
+    const now = Number.isFinite(observedAt) && observedAt > 0 ? observedAt : appNow();
+    if (reset || now < state.lastTime) state.snapshot = null;
+    const forecast = createNowcastEngine({ now, snapshot: state.snapshot, replay: true }).compute(payload.data);
+    state.snapshot = forecast?.projectionSnapshot || null;
+    state.lastTime = now;
+    return { ...payload, replayPrepared: true, data: { ...payload.data, nowcast: forecast } };
+  };
+  window.METEO_REPLAY.start({
+    prepareDashboardPayload(payload, options) {
+      return prepareReplayPayload(payload, preparationState, options);
+    },
+    applyDashboardPayload(payload) {
+      applyDashboardPayload(prepareReplayPayload(payload, renderState));
     }
-    applyDashboardPayload({ ...payload, data: { ...payload.data, nowcast: lastForecast } });
-  } });
+  });
 }).catch(error => { console.error("Moteur du replay indisponible", error); });
 else refresh();
 

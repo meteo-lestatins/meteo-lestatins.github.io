@@ -38,7 +38,7 @@ export function isNightAtTatins(date) {
   return instant < sunrise || instant >= sunset;
 }
 
-export function createNowcastEngine({ now = Date.now(), snapshot = null, replay = false } = {}) {
+export function createNowcastEngine({ now = Date.now(), snapshot = null, replay = false, includePassageMaps = true } = {}) {
 const appNow = () => now;
 const window = { METEO_REPLAY: replay };
 let latestForecastData = null;
@@ -2629,7 +2629,9 @@ return { compute(data) {
   latestForecastData = data;
   const result = computeRadarNowcast(data);
   if (!result) return null;
-  result.passageMaps = (data.radar?.cells || []).filter(cell => radarCellEdgeDistance(cell) <= 60).map(cell => ({ id: cell.id, groups: preparePassageMap(cell) }));
+  result.passageMaps = includePassageMaps
+    ? (data.radar?.cells || []).filter(cell => radarCellEdgeDistance(cell) <= 60).map(cell => ({ id: cell.id, groups: preparePassageMap(cell) }))
+    : [];
   result.schemaVersion = 1;
   result.engineVersion = NOWCAST_ENGINE_VERSION;
   result.generatedAt = now;
