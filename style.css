@@ -1257,13 +1257,11 @@ button.horizon-band{cursor:pointer}.horizon-band>span{text-wrap:balance;text-ali
 .horizon-timeline>.horizon-axis span:first-child{margin-left:10px}
 .horizon-timeline>.horizon-axis span[style="left:100%"]{margin-left:-10px}
 
-#horizon-nowcast-toggle{display:inline-flex;align-items:center;gap:9px;margin-left:auto;border:1px solid #9bc7df;border-radius:10px;background:#fff;color:#173f57;font-family:inherit;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.015em;cursor:pointer;padding:5px 12px 5px 5px;box-shadow:0 2px 6px #173f570a}
+#horizon-nowcast-toggle{display:inline-flex;align-items:center;gap:9px;margin-left:auto;border:0;border-radius:0;background:transparent;color:#173f57;font-family:inherit;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.015em;cursor:pointer;padding:5px 0;box-shadow:none}
 #horizon-nowcast-toggle>img{display:block;width:36px;height:36px;flex-shrink:0;object-fit:cover;border:1px solid #b4c6d0;border-radius:7px}
-#horizon-nowcast-toggle::after{content:"";display:block;width:8px;height:8px;margin-left:3px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg)}
-#horizon-nowcast-toggle[aria-expanded="true"]::after{transform:translateY(2px) rotate(225deg)}
-#horizon-nowcast-toggle:hover{background:#edf7fc;border-color:#6ba8cb}
+#horizon-nowcast-toggle:hover{color:#286e96}
 #horizon-nowcast-toggle:focus-visible{outline:3px solid #173f57;outline-offset:3px}
-@media(max-width:700px){#horizon-nowcast-toggle{gap:7px;font-size:16px;padding-right:9px}}
+@media(max-width:700px){#horizon-nowcast-toggle{gap:7px;font-size:16px}}
 
 .three-hour-overview>.section-heading{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px}
 .three-hour-overview>.section-heading h2,#horizon-nowcast-toggle{white-space:nowrap}
