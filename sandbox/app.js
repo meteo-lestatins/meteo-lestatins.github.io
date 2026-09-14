@@ -41,6 +41,7 @@ let latestForecastData = null;
 let latestWeekForecast = null;
 let latestOpenMeteoWeekRaw = null;
 let latestMeteoFranceWeek = null;
+const arpegeWeekClientVersion = window.METEO_REPLAY ? 20 : 23;
 let temperatureNormals = null;
 let temperatureNormalsPromise = null;
 let weekForecastPromise = null;
@@ -1144,6 +1145,53 @@ const forecastDailySlots = Object.freeze([
   { key: "night", label: "Nuit", startHour: 0, endHour: 6, dayOffset: 1 }
 ]);
 
+function forecastSlotTimeRange(dateKey, slot) {
+  const slotDate = shiftForecastDateKey(dateKey, slot.dayOffset);
+  return {
+    start: forecastLocalDateTime(slotDate, slot.startHour).getTime(),
+    end: forecastLocalDateTime(slotDate, slot.endHour).getTime()
+  };
+}
+
+function forecastPointSamplesForSlot(hours, dateKey, slot) {
+  const { start, end } = forecastSlotTimeRange(dateKey, slot);
+  return (hours || []).filter(item => {
+    const time = new Date(item.time).getTime();
+    return Number.isFinite(time) && time >= start && time < end;
+  }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
+}
+
+function forecastPointSamplesCoverSlot(hours, dateKey, slot, stepHours, now = Date.now()) {
+  const { start, end } = forecastSlotTimeRange(dateKey, slot);
+  const samples = forecastPointSamplesForSlot(hours, dateKey, slot);
+  if (!samples.length || !(end > start)) return false;
+  const times = samples.map(item => new Date(item.time).getTime());
+  const step = Math.max(1, Number(stepHours) || 1) * 3600000;
+  const coverageStart = now > start && now < end ? Math.floor(now / 3600000) * 3600000 : start;
+  const tolerance = 5 * 60000;
+  return Math.min(...times) <= coverageStart + step + tolerance && Math.max(...times) >= end - step - tolerance;
+}
+
+function forecastIntervalsCoverSlot(intervals, dateKey, slot, now = Date.now()) {
+  const range = forecastSlotTimeRange(dateKey, slot);
+  if (!(range.end > range.start)) return false;
+  const coverageStart = now > range.start && now < range.end ? now : range.start;
+  const tolerance = 5 * 60000;
+  const ordered = (intervals || []).map(item => ({
+    start: new Date(item.start ?? item.time).getTime(),
+    end: new Date(item.end ?? (new Date(item.time).getTime() + Math.max(1, Number(item.durationHours) || 1) * 3600000)).getTime()
+  })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > coverageStart && item.start < range.end)
+    .sort((left, right) => left.start - right.start);
+  if (!ordered.length) return false;
+  let coveredUntil = coverageStart;
+  for (const interval of ordered) {
+    if (interval.start > coveredUntil + tolerance) return false;
+    coveredUntil = Math.max(coveredUntil, interval.end);
+    if (coveredUntil >= range.end - tolerance) return true;
+  }
+  return false;
+}
+
 function forecastPeriodKey(hour) {
   return hour < 6 ? "night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
 }
@@ -2134,48 +2182,80 @@ function renderTestingDailyForecast() {
   const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
   const slotDateKey = (dateKey, slot) => shiftForecastDateKey(dateKey, slot.dayOffset);
   const meteoFranceRainForPeriod = (dateKey, slot) => {
-    const targetDateKey = slotDateKey(dateKey, slot);
     const periods = (latestForecastData?.pearome?.hours || []).filter(item => {
       const start = new Date(item.time).getTime();
       const duration = Math.max(1, Number(item.durationHours) || 1) * 3600000;
       if (!Number.isFinite(start) || !Number.isFinite(Number(item.ensembleMean))) return false;
       const midpoint = new Date(start + duration / 2);
       const hour = forecastHourValue(midpoint);
-      return forecastDateKey(midpoint) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
+      return forecastDateKey(midpoint) === slotDateKey(dateKey, slot) && hour >= slot.startHour && hour < slot.endHour;
     }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
-    if (!periods.length) return null;
-    const hourlyMeans = periods.flatMap(item => {
-      const durationHours = Math.max(1, Math.round(Number(item.durationHours) || 1));
-      const hourlyMean = Math.max(0, Number(item.ensembleMean) || 0) / durationHours;
-      return Array.from({ length: durationHours }, () => hourlyMean);
-    });
-    const peak3h = hourlyMeans.reduce((peak, _, startIndex) => Math.max(
-      peak,
-      hourlyMeans.slice(startIndex, startIndex + 3).reduce((sum, amount) => sum + amount, 0)
-    ), 0);
-    return {
-      amount: periods.reduce((sum, item) => sum + Math.max(0, Number(item.ensembleMean) || 0), 0),
-      peak3h,
-      probability: Math.max(...periods.map(item => Math.max(0, Number(item.probability) || 0))),
-      intervals: periods.map(item => ({
+    const pearomeIntervals = periods.map(item => ({
         start: new Date(item.time).getTime(),
         end: new Date(item.time).getTime() + Math.max(1, Number(item.durationHours) || 1) * 3600000,
         amount: Math.max(0, Number(item.ensembleMean) || 0)
-      })),
-      backgroundTrend: backgroundTrendArrow(hourlyMeans, .2),
-      source: "Météo-France (PEAROME)"
+      }));
+    if (periods.length && forecastIntervalsCoverSlot(pearomeIntervals, dateKey, slot, appNow())) {
+      const hourlyMeans = periods.flatMap(item => {
+        const durationHours = Math.max(1, Math.round(Number(item.durationHours) || 1));
+        const hourlyMean = Math.max(0, Number(item.ensembleMean) || 0) / durationHours;
+        return Array.from({ length: durationHours }, () => hourlyMean);
+      });
+      const peak3h = hourlyMeans.reduce((peak, _, startIndex) => Math.max(
+        peak,
+        hourlyMeans.slice(startIndex, startIndex + 3).reduce((sum, amount) => sum + amount, 0)
+      ), 0);
+      return {
+        amount: periods.reduce((sum, item) => sum + Math.max(0, Number(item.ensembleMean) || 0), 0),
+        peak3h,
+        probability: Math.max(...periods.map(item => Math.max(0, Number(item.probability) || 0))),
+        intervals: pearomeIntervals,
+        backgroundTrend: backgroundTrendArrow(hourlyMeans, .2),
+        source: "Météo-France (PEAROME)"
+      };
+    }
+    // Une absence ponctuelle de PE-AROME ne doit pas remplacer AROME par le
+    // modèle global. ARPEGE ne prend le relais qu'une fois le créneau sorti
+    // de l'horizon détaillé AROME.
+    if (forecastPointSamplesCoverSlot(latestForecastData?.arome?.hours || [], dateKey, slot, 1, appNow())) return null;
+    const range = forecastSlotTimeRange(dateKey, slot);
+    const arpegeIntervals = (latestMeteoFranceWeek?.hours || []).map(item => {
+      const start = new Date(item.rainIntervalStart).getTime();
+      const end = new Date(item.rainIntervalEnd || item.time).getTime();
+      const overlapStart = Math.max(start, range.start);
+      const overlapEnd = Math.min(end, range.end);
+      const duration = end - start;
+      return {
+        start: overlapStart,
+        end: overlapEnd,
+        amount: duration > 0 && overlapEnd > overlapStart
+          ? Math.max(0, Number(item.rain) || 0) * (overlapEnd - overlapStart) / duration
+          : 0
+      };
+    }).filter(item => item.end > item.start);
+    if (!forecastIntervalsCoverSlot(arpegeIntervals, dateKey, slot, appNow())) return null;
+    const amounts = arpegeIntervals.map(item => item.amount);
+    return {
+      amount: amounts.reduce((sum, amount) => sum + amount, 0),
+      peak3h: amounts.length ? Math.max(...amounts) : 0,
+      probability: null,
+      intervals: arpegeIntervals,
+      backgroundTrend: backgroundTrendArrow(amounts, .2),
+      source: "Météo-France (ARPEGE)"
     };
   };
   const meteoFranceStormForPeriod = (dateKey, slot) => {
-    const targetDateKey = slotDateKey(dateKey, slot);
-    const detailedHours = (latestForecastData?.arome?.hours || []).filter(item => {
-      const date = new Date(item.time);
-      const hour = forecastHourValue(date);
-      return forecastDateKey(date) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
-    });
+    const aromeHours = latestForecastData?.arome?.hours || [];
+    const aromeCoversSlot = forecastPointSamplesCoverSlot(aromeHours, dateKey, slot, 1, appNow());
+    const arpegeHours = latestMeteoFranceWeek?.hours || [];
+    const arpegeStormHours = arpegeHours.map(item => ({ ...item, time: item.stormTime || item.time }));
+    const arpegeCoversSlot = forecastPointSamplesCoverSlot(arpegeStormHours, dateKey, slot, 3, appNow());
+    const detailedHours = aromeCoversSlot
+      ? forecastPointSamplesForSlot(aromeHours, dateKey, slot)
+      : arpegeCoversSlot ? forecastPointSamplesForSlot(arpegeStormHours, dateKey, slot) : [];
     // Dans les premières 48 h, le signal horaire AROME qui alimente la frise
-    // est la référence. Ne jamais étendre son booléen quotidien aux créneaux
-    // secs situés avant ou après le passage orageux.
+    // reste la référence tant qu'il couvre tout le créneau. ARPEGE reprend
+    // ensuite avec ses propres échéances, sans extrapoler un booléen quotidien.
     if (detailedHours.length) {
       const stormHours = detailedHours.filter(item => item.stormSignal).map(item => new Date(item.time).getTime()).filter(Number.isFinite);
       return {
@@ -2192,12 +2272,13 @@ function renderTestingDailyForecast() {
     };
   };
   const meteoFranceWindForPeriod = (dateKey, slot) => {
-    const targetDateKey = slotDateKey(dateKey, slot);
-    const hours = (latestForecastData?.arome?.hours || []).filter(item => {
-      const date = new Date(item.time);
-      const hour = forecastHourValue(date);
-      return forecastDateKey(date) === targetDateKey && hour >= slot.startHour && hour < slot.endHour;
-    }).sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
+    const aromeHours = latestForecastData?.arome?.hours || [];
+    const useArome = forecastPointSamplesCoverSlot(aromeHours, dateKey, slot, 1, appNow());
+    const arpegeHours = latestMeteoFranceWeek?.hours || [];
+    const arpegeCoversSlot = forecastPointSamplesCoverSlot(arpegeHours, dateKey, slot, 3, appNow());
+    const hours = useArome
+      ? forecastPointSamplesForSlot(aromeHours, dateKey, slot)
+      : arpegeCoversSlot ? forecastPointSamplesForSlot(arpegeHours, dateKey, slot) : [];
     const speeds = hours.filter(item => item.windSpeed != null).map(item => Number(item.windSpeed)).filter(Number.isFinite);
     const gusts = hours.filter(item => item.windGust != null).map(item => Number(item.windGust)).filter(Number.isFinite);
     const temperatures = hours.filter(item => item.temperature != null).map(item => Number(item.temperature)).filter(Number.isFinite);
@@ -2213,7 +2294,7 @@ function renderTestingDailyForecast() {
       gustBackgroundTrend: backgroundTrendArrow(gusts, 8),
       stormWindTimes: hours.filter(item => item.stormSignal && (Number(item.windSpeed) >= 30 || Number(item.windGust) >= 50))
         .map(item => new Date(item.time).getTime()).filter(Number.isFinite),
-      source: "Météo-France (AROME)"
+      source: useArome ? "Météo-France (AROME)" : "Météo-France (ARPEGE)"
     };
   };
   const confidenceIndicator = (openMeteo, meteoFrance) => {
@@ -2312,9 +2393,12 @@ function renderTestingDailyForecast() {
     const gust = weekWeightedValue(openMeteoGust, meteoFranceGustValue);
     const gustRangeText = format(gust, 0);
     const openMeteoTrends = period.backgroundTrends || {};
+    const meteoFranceRainProbability = meteoFranceRain?.probability != null && meteoFranceRain.probability !== "" && Number.isFinite(Number(meteoFranceRain.probability))
+      ? " · " + format(meteoFranceRain.probability, 0) + " %"
+      : "";
     const rainSources = [
       "Open-Meteo : " + rainAmountText(openMeteoRain) + " mm · " + format(period.precipitationProbabilityMax, 0) + " % " + (openMeteoTrends.rain || "→"),
-      meteoFranceRainAmount != null ? "Météo-France : " + rainAmountText(meteoFranceRainAmount) + " mm · " + format(meteoFranceRain.probability, 0) + " % " + (meteoFranceRain.backgroundTrend || "→") : ""
+      meteoFranceRainAmount != null ? "Météo-France : " + rainAmountText(meteoFranceRainAmount) + " mm" + meteoFranceRainProbability + " " + (meteoFranceRain.backgroundTrend || "→") : ""
     ];
     const windSources = [
       "Open-Meteo : " + format(openMeteoWind, 0) + " km/h " + (openMeteoTrends.wind || "→"),
@@ -2446,6 +2530,10 @@ function renderTestingDailyForecast() {
     };
     const periods = forecastDailySlots.map(slot => {
       const presentation = slotPresentation(slot);
+      const meteoFranceStorm = meteoFranceStormForPeriod(openMeteo.date, slot);
+      const meteoFranceRain = meteoFranceRainForPeriod(openMeteo.date, slot);
+      const meteoFranceWind = meteoFranceWindForPeriod(openMeteo.date, slot);
+      const hasMeteoFranceSlot = Boolean(meteoFranceRain || meteoFranceWind || meteoFranceByDate.has(slotDateKey(openMeteo.date, slot)));
       return periodCard(
         openMeteo.periods?.[slot.key] || null,
         presentation.label,
@@ -2453,11 +2541,11 @@ function renderTestingDailyForecast() {
         slot,
         openMeteo.date,
         openMeteo.date + ":" + slot.key,
-        meteoFranceStormForPeriod(openMeteo.date, slot),
+        meteoFranceStorm,
         vigilanceAlertsForSlot(vigilance, slotDateKey(openMeteo.date, slot), slot.startHour, slot.endHour),
-        meteoFranceRainForPeriod(openMeteo.date, slot),
-        meteoFranceWindForPeriod(openMeteo.date, slot),
-        meteoFranceByDate.has(slotDateKey(openMeteo.date, slot))
+        meteoFranceRain,
+        meteoFranceWind,
+        hasMeteoFranceSlot
       );
     }).filter(Boolean);
     const dayLabel = relativeDayLabel(openMeteo);
@@ -2847,7 +2935,7 @@ function scheduleMeteoFranceWeekPoll(status) {
     try {
       const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
       latestWeekEvolutionHistory = Array.isArray(payload.history) ? payload.history : [];
-      if (payload.status === "ready" && payload.data?.version >= 20 && payload.data?.days?.length === 4) {
+      if (payload.status === "ready" && payload.data?.version >= arpegeWeekClientVersion && payload.data?.days?.length === 4) {
         const ensembleStatus = payload.data.version >= 7 ? payload.ensemble || null : { status: "pending", stage: payload.stage, progress: 0, error: null };
         latestMeteoFranceWeek = { ...payload.data, ensembleStatus };
         renderWeekForecast();
@@ -2866,7 +2954,7 @@ async function loadMeteoFranceWeek() {
   for (let attempt = 0; attempt < 300; attempt++) {
     const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
     latestWeekEvolutionHistory = Array.isArray(payload.history) ? payload.history : [];
-    if (payload.status === "ready" && payload.data?.version >= 20 && payload.data?.days?.length === 4) {
+    if (payload.status === "ready" && payload.data?.version >= arpegeWeekClientVersion && payload.data?.days?.length === 4) {
       const ensembleStatus = payload.data.version >= 7 ? payload.ensemble || null : { status: "pending", stage: payload.stage, progress: 0, error: null };
       scheduleMeteoFranceWeekPoll(ensembleStatus?.status);
       return { ...payload.data, ensembleStatus };
@@ -2886,7 +2974,7 @@ async function ensureWeekForecast() {
     const cachedPayload = await readCachedJson(apiUrl(weekPath), 6 * 3600000);
     if (cachedPayload) {
       latestWeekEvolutionHistory = Array.isArray(cachedPayload.history) ? cachedPayload.history : [];
-      if (cachedPayload.status === "ready" && cachedPayload.data?.version >= 20 && cachedPayload.data?.days?.length === 4) {
+      if (cachedPayload.status === "ready" && cachedPayload.data?.version >= arpegeWeekClientVersion && cachedPayload.data?.days?.length === 4) {
         latestMeteoFranceWeek = {
           ...cachedPayload.data,
           ensembleStatus: cachedPayload.data.version >= 7 ? cachedPayload.ensemble || null : { status: "pending", stage: cachedPayload.stage, progress: 0, error: null }
