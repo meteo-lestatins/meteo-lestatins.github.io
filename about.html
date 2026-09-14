@@ -15,7 +15,7 @@
       <h1><a href="index.html">Météo les Tatins</a></h1>
       <p class="header-subtitle">Prévisions météo à l’échelle kilométrique via API publiques et <a href="index.html#radar-nowcast">nowcasting</a></p>
     </div>
-    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.243</a>
+    <a class="app-version" href="changelog.html" title="Consulter les changements des versions">v3.247</a>
   </header>
   <main class="resolution-page">
     <section class="map-section" aria-labelledby="map-title">
@@ -39,7 +39,7 @@
 <h3 id="api-pe-arome"><a href="https://portail-api.meteofrance.fr/web/fr/api/AROME-PI">PE-AROME Météo-France</a></h3>
 <ul><li>Ensemble Météo-France comportant jusqu’à 25 membres.</li><li>Chaque membre possède son propre service WCS.</li><li>Les membres permettent d’estimer la probabilité de précipitations et la dispersion des scénarios.</li><li>La probabilité de pluie est échantillonnée toutes les trois heures avec un seuil de 0,1 mm.</li><li>Les intervalles d’incertitude de température, vent, rafales et nuages sont calculés sur des points espacés de six heures.</li></ul>
 <h3 id="api-arpege"><a href="https://portail-api.meteofrance.fr/web/fr/api/ARPEGE">ARPEGE Météo-France</a></h3>
-<ul><li>Service déterministe Météo-France WCS 2.0.1.</li><li>Les échéances disponibles sont déterminées par <code>GetCapabilities</code> et <code>DescribeCoverage</code>.</li><li>Champs utilisés : température, vent U/V, rafales, nuages, précipitations, énergie convective disponible maximale et précipitations convectives.</li><li>Au-delà de la portée d’AROME, le signal orageux est retenu lorsque l’énergie convective et les précipitations convectives prévues sont simultanément significatives.</li><li>Les résultats alimentent les quatre jours suivant la prévision AROME.</li><li>Les mêmes conversions d’unités et contrôles de cohérence qu’AROME sont appliqués</li></ul>
+<ul><li>Service déterministe Météo-France WCS 2.0.1.</li><li>Les échéances disponibles sont déterminées par <code>GetCapabilities</code> et <code>DescribeCoverage</code>.</li><li>Champs utilisés : température, vent U/V, rafales, nuages, précipitations, énergie convective disponible maximale et précipitations convectives.</li><li>Au-delà de la portée d’AROME, le signal orageux est retenu lorsque l’énergie convective et les précipitations convectives prévues sont simultanément significatives.</li><li>Les échéances déjà acquises au pas de trois heures prolongent les détails des créneaux quotidiens lorsque AROME ou PE-AROME ne couvre plus le créneau entier ; ce relais ne déclenche aucun appel API supplémentaire et ne fabrique aucune probabilité de pluie par créneau.</li><li>Les résultats alimentent les quatre jours suivant la prévision AROME.</li><li>Les mêmes conversions d’unités et contrôles de cohérence qu’AROME sont appliqués</li></ul>
 <h3 id="api-pe-arpege"><a href="https://portail-api.meteofrance.fr/web/fr/api/ARPEGE">PE-ARPEGE Météo-France</a></h3>
 <ul><li>Ensemble Météo-France comportant jusqu’à 35 membres.</li><li>Les précipitations sont téléchargées sous forme de GeoTIFF.</li><li>Le serveur repère dans chaque grille le pixel contenant les coordonnées des Tatins.</li><li>Une date n’est retenue que si au moins 20 membres sont disponibles.</li><li>Les membres servent à calculer les probabilités et intervalles de confiance sur quatre jours.</li></ul>
 <h3 id="api-vigilance"><a href="https://vigilance.meteofrance.fr/">Vigilance Météo-France</a></h3>
