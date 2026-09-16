@@ -2228,10 +2228,31 @@ function renderTestingDailyForecast() {
         source: "Météo-France (PEAROME)"
       };
     }
-    // Une absence ponctuelle de PE-AROME ne doit pas remplacer AROME par le
-    // modèle global. ARPEGE ne prend le relais qu'une fois le créneau sorti
-    // de l'horizon détaillé AROME.
-    if (forecastPointSamplesCoverSlot(latestForecastData?.arome?.hours || [], dateKey, slot, 1, appNow())) return null;
+    // Une absence ponctuelle de PE-AROME ne doit pas faire disparaître la
+    // pluie Météo-France ni la remplacer par le modèle global. Le déterministe
+    // AROME prend le relais tant qu'il couvre entièrement le créneau ; ARPEGE
+    // n'intervient qu'une fois le créneau sorti de cet horizon détaillé.
+    const aromeHours = latestForecastData?.arome?.hours || [];
+    if (forecastPointSamplesCoverSlot(aromeHours, dateKey, slot, 1, appNow())) {
+      const detailedHours = forecastPointSamplesForSlot(aromeHours, dateKey, slot);
+      const amounts = detailedHours.map(item => Math.max(0, Number(item.rain) || 0));
+      const intervals = detailedHours.map((item, index) => {
+        const start = new Date(item.time).getTime();
+        return { start, end: start + 3600000, amount: amounts[index] };
+      });
+      const peak3h = amounts.reduce((peak, _, startIndex) => Math.max(
+        peak,
+        amounts.slice(startIndex, startIndex + 3).reduce((sum, amount) => sum + amount, 0)
+      ), 0);
+      return {
+        amount: amounts.reduce((sum, amount) => sum + amount, 0),
+        peak3h,
+        probability: null,
+        intervals,
+        backgroundTrend: backgroundTrendArrow(amounts, .2),
+        source: "Météo-France (AROME)"
+      };
+    }
     const range = forecastSlotTimeRange(dateKey, slot);
     const arpegeIntervals = (latestMeteoFranceWeek?.hours || []).map(item => {
       const start = new Date(item.rainIntervalStart).getTime();
