@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://api.github.com; form-action 'self'">
+<title>Administration météo</title>
+<link rel="stylesheet" href="admin.css">
+<main>
+  <a href="./">← Bulletin météo</a>
+  <h1>Administration</h1>
+  <p id="site-name"></p>
+  <section aria-labelledby="update-title">
+    <h2 id="update-title">Mise à jour du site</h2>
+    <p>Récupérer la dernière version du code commun en conservant la configuration de ce lieu.</p>
+    <p id="versions"></p>
+    <form id="update-form">
+      <label for="github-token">Jeton GitHub du dépôt de ce site</label>
+      <input id="github-token" type="password" autocomplete="off" spellcheck="false" required>
+      <p class="hint">Autorisation Actions en écriture. Le jeton reste uniquement en mémoire pendant cette opération.</p>
+      <button id="update-button" type="submit">Mettre à jour le site</button>
+    </form>
+    <p id="update-status" role="status" aria-live="polite"></p>
+    <a id="run-link" hidden target="_blank" rel="noopener noreferrer">Voir la progression sur GitHub</a>
+  </section>
+</main>
+<script src="runtime-config.js"></script>
+<script type="module" src="admin.js"></script>
+</html>

@@ -1,0 +1,27 @@
+name: Vérifier la base
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Vérifier la consommation du moteur comme action
+        uses: ./
+        with:
+          profile: test/fixtures/site.json
+          state: .cache/weather/example.json
+      - name: Vérifier le bulletin de l'installation
+        run: node -e "const d = require('./dist/data/dashboard.json'); if (d.data.latitude !== 48.8566 || d.data.longitude !== 2.3522) process.exit(1)"

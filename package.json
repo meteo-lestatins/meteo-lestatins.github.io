@@ -1,0 +1,20 @@
+{
+  "name": "bulletin-local-meteo-france",
+  "version": "0.0.3",
+  "private": true,
+  "type": "module",
+  "description": "Bulletin météo local à partir des API de données ouvertes de Météo-France.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "collect": "node scripts/collect-weather.mjs",
+    "preview": "node scripts/preview.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "geotiff": "3.0.5"
+  }
+}

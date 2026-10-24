@@ -1,0 +1,44 @@
+name: Bulletin météo local
+description: Préparer un bulletin météo à partir du profil et des données de l'installation.
+inputs:
+  profile:
+    description: Chemin du profil JSON dans le dépôt de l'installation.
+    required: true
+  state:
+    description: Chemin du cache météo dans le dépôt de l'installation.
+    default: .cache/weather/site.json
+  collect:
+    description: Collecter les sources avec le secret METEO_FRANCE_API_KEY fourni par l'installation.
+    default: 'false'
+  group:
+    description: Groupe de collecte, all, piaf ou forecast.
+    default: all
+  updates:
+    description: Dossiers ou fichiers des acquisitions à fusionner, un chemin par ligne.
+    default: ''
+outputs:
+  site-directory:
+    description: Dossier du site préparé.
+    value: ${{ steps.prepare.outputs.site-directory }}
+  state-file:
+    description: Cache météo utilisé.
+    value: ${{ steps.prepare.outputs.state-file }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Installer le moteur commun
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --ignore-scripts --no-audit --no-fund
+    - name: Préparer le bulletin
+      id: prepare
+      shell: bash
+      env:
+        METEO_PROFILE_PATH: ${{ inputs.profile }}
+        METEO_STATE_PATH: ${{ inputs.state }}
+        METEO_COLLECT: ${{ inputs.collect }}
+        METEO_UPDATES: ${{ inputs.updates }}
+        METEO_GROUP: ${{ inputs.group }}
+      run: node "$GITHUB_ACTION_PATH/scripts/prepare-inherited-site.mjs"

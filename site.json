@@ -1,0 +1,10 @@
+{
+  "id": "tatins",
+  "name": "Météo les Tatins",
+  "place": "Les Tatins",
+  "latitude": 44.6538,
+  "longitude": 5.5995,
+  "department": "26",
+  "timezone": "Europe/Paris",
+  "publicUrl": "https://meteo-lestatins.github.io/"
+}

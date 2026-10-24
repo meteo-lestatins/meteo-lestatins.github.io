@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8fafb">
+  <meta name="description" content="Prévisions météo locales jusqu’à 16 jours : températures, précipitations, nébulosité, vent et risque orageux.">
+  <link rel="stylesheet" href="style.css?v=__ASSET_VERSION__">
+  <title>__SITE_TITLE__</title>
+</head>
+<body class="forecast-rows-layout">
+<main>
+  <header class="bulletin-header">
+    <div>
+      <h1>__SITE_HEADING__</h1>
+      <p class="site-location">__SITE_LOCATION__</p><div id="site-daylight" class="site-daylight"></div>
+    </div>
+    <div class="header-meta"><a href="admin.html">Administration</a>
+
+    </div>
+  </header>
+  <section id="cell-approach-alert" class="vigilance-alert cell-approach-alert" aria-live="polite" hidden></section>
+  <section class="three-hour-overview" aria-labelledby="three-hour-title"><article class="forecast-day-row three-hour-card" aria-labelledby="three-hour-title">
+    <div class="forecast-day-header">
+      <h2 id="three-hour-title">Les 3 prochaines heures</h2>
+      <div id="three-hour-api-links" class="section-api-links" aria-label="API de la synthèse sur 3 heures" hidden></div>
+    </div>
+    <div id="three-hour-summary" class="three-hour-summary" aria-live="polite"></div><div id="piaf-three-hour-chart" aria-live="polite"></div>
+  </article></section>
+  <section id="panel-rain" class="rain-section three-hour-details" aria-label="Détails des prévisions sur 3 heures">
+    <div id="rain-details" class="three-hour-detail" hidden>
+      <div class="rain-section-heading">
+        <div class="rain-section-tools"><div id="rain-api-links" class="section-api-links" aria-label="Sources de la prévision de pluie" hidden></div></div>
+      </div>
+      <div class="horizon-detail-scroll"><div class="horizon-detail-track"><div id="now-chart" class="now-chart"><div id="rain-bars" class="rain-bars"></div></div>
+      <div id="rain-axis" class="rain-axis" aria-label="Heures des précipitations"></div></div></div>
+    </div>
+    <div id="nowcast-details" data-feature="nowcasting" class="three-hour-detail" hidden>
+      <div class="section-heading page-section-heading nowcast-heading"><h2><button id="nowcast-title-toggle" type="button" aria-controls="nowcast-details" aria-expanded="true">Nowcasting <span aria-hidden="true">⌃</span></button></h2><div id="nowcast-api-links" class="section-api-links" aria-label="API du nowcasting" hidden></div></div>
+      <div id="radar-nowcast" class="radar-nowcast" aria-live="polite"></div>
+    </div>
+  </section>
+  <section id="panel-48h" class="forecast-section page-forecast-section" aria-labelledby="forecast-48h-title" hidden>
+    <div class="section-heading page-section-heading forecast-48h-heading">
+      <h2 id="forecast-48h-title"><button id="forecast-48h-title-toggle" type="button" aria-controls="forecast-48h-content" aria-expanded="true"><span id="forecast-48h-title-label">Prévisions</span><span class="forecast-title-chevron" aria-hidden="true">⌃</span></button></h2>
+      <div id="forecast-api-links" class="section-api-links" aria-label="API des prévisions sur 48 heures" hidden></div>
+    </div>
+    <div id="forecast-48h-content">
+      <div id="forecast-controls" class="forecast-controls" aria-label="Courbes affichées"></div>
+      <div class="forecast-horizontal-row"><div id="forecast-horizontal-scroll" class="forecast-horizontal-scroll" aria-label="Défilement commun des prévisions"><div id="forecast-horizontal-track"></div></div></div>
+      <div id="forecast-overview" class="forecast-overview" aria-label="Vue globale des prévisions"></div>
+      <div id="forecast-panels" class="forecast-panels" aria-live="polite"></div>
+    </div>
+  </section>
+  <section id="panel-week" class="week-section daily-cards-section page-forecast-section" aria-label="Prévisions quotidiennes">
+    <div id="week-api-links" class="section-api-links week-tab-sources" aria-label="API des prévisions quotidiennes" hidden></div>
+    <div class="week-scroll daily-cards-scroll" aria-label="Prévisions quotidiennes sur 16 jours">
+      <div id="week-forecast" class="week-forecast daily-cards-forecast" aria-live="polite"><p class="week-loading">Chargement des prévisions quotidiennes…</p></div>
+    </div>
+  </section>
+</main>
+<div id="chart-tooltip" class="chart-tooltip" role="status" hidden></div>
+<script src="runtime-config.js?v=__RELEASE__"></script>
+
+<script src="app.js?v=__ASSET_VERSION__"></script>
+</body>
+</html>
