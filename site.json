@@ -1,0 +1,18 @@
+{
+  "id": "tatins",
+  "name": "Météo les Tatins",
+  "place": "Les Tatins",
+  "latitude": 44.6538,
+  "longitude": 5.5995,
+  "headerCoordinates": { "latitude": 44.65402432793362, "longitude": 5.598844383717663 },
+  "headerAltitude": 1164.33,
+  "department": "26",
+  "timezone": "Europe/Paris",
+  "publicAbout": false,
+  "features": { "nowcasting": false, "radar": false, "openMeteo": true },
+  "publicUrl": "https://meteo-lestatins.github.io/",
+  "githubRepository": "meteo-lestatins/meteo-lestatins.github.io",
+  "apiMode": "external-json",
+  "apiBaseUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/bulletin/",
+  "adminUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/admin/"
+}

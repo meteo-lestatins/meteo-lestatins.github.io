@@ -1,0 +1,75 @@
+name: Bulletin des Tatins depuis nicklausFR
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publier sur GitHub Pages après la construction
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-tatins
+  cancel-in-progress: false
+
+env:
+  BULLETIN_REVISION: '6cc9141e5ec7a67ea44c13f8e71dd0abad1a05ad'
+
+jobs:
+  build:
+    if: github.repository == 'meteo-lestatins/meteo-lestatins.github.io'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Récupérer la version publiée par nicklausFR
+        uses: actions/checkout@v6
+        with:
+          repository: nicklausFR/bulletin-local-meteo-france
+          ref: ${{ env.BULLETIN_REVISION }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Construire le bulletin avec le profil des Tatins
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = "$BULLETIN_REVISION"
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/build.mjs "--profile=$GITHUB_WORKSPACE/site.json"
+          git diff --exit-code HEAD
+      - name: Inclure les espaces historiques de GitHub Pages
+        run: |
+          cp -a -- main rapports replay sandbox testing source/dist/
+          cp -a -- analytics.js architecture.svg echelle-kilometrique.css echelle-kilometrique.js sitemap.xml source/dist/
+      - name: Fournir un aperçu
+        if: '!inputs.publish'
+        uses: actions/upload-artifact@v4
+        with:
+          name: apercu-tatins
+          path: source/dist/
+          if-no-files-found: error
+      - name: Préparer GitHub Pages
+        if: inputs.publish && github.ref_name == github.event.repository.default_branch
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: source/dist/
+
+  deploy:
+    if: inputs.publish && github.ref_name == github.event.repository.default_branch
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: pages
