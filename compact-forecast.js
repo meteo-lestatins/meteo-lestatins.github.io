@@ -1,4 +1,4 @@
-import { cardPeriods } from './card-periods.js';
+import { cardPeriods } from './card-periods.js?v=1.24';
 
 const temperature = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const rainfall = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });

@@ -27,9 +27,9 @@ const apiUrl = path => {
 };
 let basicForecastTools = null;
 let basicForecast = null;
-const basicForecastReady = siteFeatures.nowcasting ? null : import(new URL("forecast-core.js?v=" + encodeURIComponent(runtimeConfig.releaseNumber || "1"), document.currentScript?.src || document.baseURI).href).then(module => { basicForecastTools = module; });
+const basicForecastReady = siteFeatures.nowcasting ? null : import(dailyModuleUrl("forecast-core.js")).then(module => { basicForecastTools = module; });
 const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
-const replayEngineUrl = new URL("nowcast/engine.js", document.currentScript?.src || document.baseURI);
+const replayEngineUrl = dailyModuleUrl("nowcast/engine.js");
 const point = { lat: siteProfile.latitude, lon: siteProfile.longitude };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const forecastHourValue = date => Number(hourFormat.format(date).slice(0, 2));
@@ -2963,7 +2963,7 @@ function renderCompactWeek(target, days, { now, dashboard, week, sourceRows, cha
 function renderWeekForecast() {
   if (dailyRowsLayout) {
     renderSiteHeader();
-    if (!dailyRowsTools) return;
+    if (!dailyRowsTools || (dashboardSync.status === "loading" && !latestForecastData && !latestMeteoFranceWeek)) return;
     const target = $("week-forecast");
     const current = latestForecastData || {};
     const longRange = current.openMeteo?.longRange;
@@ -5595,7 +5595,7 @@ function applyDashboardPayload(payload) {
     // run instead of briefly falling back to AROME.
     const data = receivedData && (!siteFeatures.nowcasting || !receivedData.nowcast) && !receivedData.piaf && latestForecastData?.piaf
       ? { ...receivedData, piaf: latestForecastData.piaf }
-      : receivedData;
+      : receivedData || (payload.status === "loading" ? latestForecastData : null);
     dashboardSync = { status: payload.status, error: payload.error || null };
     latestForecastData = data;
     basicForecast = null;
@@ -5665,6 +5665,7 @@ async function refresh() {
     console.error(error);
     dashboardSync = { status: "error", error: error.message };
     refreshSourceIndicators();
+    if (dailyRowsLayout && !latestForecastData && !latestMeteoFranceWeek) renderWeekForecast();
     scheduleRefresh(10000);
   }
 }
@@ -5773,7 +5774,7 @@ if (window.location.hash === "#radar-nowcast") {
   }
 }
 renderAppVersion();
-if (window.METEO_REPLAY?.start) import(replayEngineUrl.href).then(({ createNowcastEngine }) => {
+if (window.METEO_REPLAY?.start) import(replayEngineUrl).then(({ createNowcastEngine }) => {
   const renderState = { snapshot: null, lastTime: -Infinity };
   const preparationState = { snapshot: null, lastTime: -Infinity };
   const prepareReplayPayload = (payload, state, { reset = false } = {}) => {

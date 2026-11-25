@@ -1,6 +1,6 @@
-import { prepareBasicForecast } from './forecast-core.js';
+import { prepareBasicForecast } from './forecast-core.js?v=1.24';
 import { precipitation24h, precipitation24hScales, precipitation24hHeight, precipitation24hGradient,
-  precipitation24hLegend, precipitation24hBarMarkup, minimumRainBarHeight, rainBarDropsMarkup, rainIntensityGradient } from './precipitation-24h.js';
+  precipitation24hLegend, precipitation24hBarMarkup, minimumRainBarHeight, rainBarDropsMarkup, rainIntensityGradient } from './precipitation-24h.js?v=1.24';
 
 const HOUR = 3600000;
 const CHART_INSET = 30;

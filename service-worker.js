@@ -1,7 +1,9 @@
 const prefix = "meteo-local-";
-const cacheName = prefix + "1.23";
-const shell = ["./","index.html","runtime-config.js?v=1.23","app.js?v=1.23","style.css?v=1.23","compact-forecast.css?v=1.23","forecast-core.js?v=1.23","daily-rows.js?v=1.23","compact-forecast.js?v=1.23","card-periods.js","precipitation-24h.js","pictogrammes/calque-traces-pluie.svg","nowcast/engine.js","nowcast/map.js","manifest.webmanifest"].map(p => new URL(p, self.registration.scope).href);
-self.addEventListener('install', event => event.waitUntil(caches.open(cacheName).then(c => c.addAll(shell)).then(() => self.skipWaiting())));
+const cacheName = prefix + "1.24";
+const shell = ["./","index.html","runtime-config.js?v=1.24","app.js?v=1.24","style.css?v=1.24","compact-forecast.css?v=1.24","forecast-core.js?v=1.24","daily-rows.js?v=1.24","compact-forecast.js?v=1.24","card-periods.js?v=1.24","precipitation-24h.js?v=1.24","pictogrammes/calque-traces-pluie.svg","nowcast/engine.js?v=1.24","nowcast/map.js?v=1.24","manifest.webmanifest"].map(p => new URL(p, self.registration.scope).href);
+self.addEventListener('install', event => event.waitUntil(caches.open(cacheName)
+  .then(c => c.addAll(shell.map(url => new Request(url, { cache: 'reload' }))))
+  .then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith(prefix) && k !== cacheName).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url), scope = new URL(self.registration.scope);
