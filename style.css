@@ -24,9 +24,6 @@ header .header-subtitle a { color: inherit; text-underline-offset: 3px; }
 header .header-subtitle a:hover { color: #b96b00; }
 h1 { margin: 0; font-size: 38px; line-height: 1; letter-spacing: -.03em; }
 .header-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 4px; }
-.header-info-links { min-height: 24px; display: flex; align-items: center; gap: 6px; color: #a0a8ac; font-size: 13px; font-weight: 750; line-height: 1; white-space: nowrap; }
-.header-info-links a { color: #6f7f87; text-decoration: none; }
-.header-info-links a:hover, .header-info-links a:focus-visible { color: #397a9e; text-decoration: underline; }
 .app-version { color: #8a969c; font-size: 10px; font-weight: 700; line-height: 1; text-decoration: none; }
 .app-version:hover { color: #397a9e; text-decoration: underline; }
 .header-events-link { display: none !important; }
@@ -256,6 +253,8 @@ button:hover { background: #eef7fb; }
 .daily-cards-grid { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 18px; }
 .daily-forecast-card { min-width: 0; position: relative; overflow: hidden; border: 1px solid #c8d7de; border-radius: 14px; color: #193a4e; background: #fff; box-shadow: 0 4px 14px rgba(36, 68, 84, .08); content-visibility: auto; contain-intrinsic-size: auto 720px; }
 .daily-forecast-card > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #dbe5e9; border-radius: 13px 13px 0 0; background: #eef4f6; }
+.daily-forecast-card[data-daily-rain-alert="yellow"] > header { background: #fbf4d8; }
+.daily-forecast-card[data-daily-rain-alert="orange"] > header { background: #fae2ce; }
 .daily-day-heading { min-width: 0; display: grid; gap: 2px; }
 .daily-day-heading > strong { color: #173b52; font-size: 18px; letter-spacing: -.02em; }
 .daily-day-heading time { display: block; color: #667b87; font-size: 11px; font-weight: 750; }
@@ -592,6 +591,7 @@ button:hover { background: #eef7fb; }
 .storm-signal-pictogram svg { width: 36px; height: 36px; overflow: visible; }
 .storm-signal-cloud { fill: #dfe8ed; stroke: #b8c8d0; stroke-width: .7; }
 .storm-signal-bolt { fill: #f0a000; stroke: #7a4b00; stroke-width: .7; stroke-linejoin: round; }
+:is(.storm-signal-bolt, .storm-bolt) { transform-box: fill-box; transform-origin: center; transform: scale(.85); }
 .overview-storm-source { width: 29px; height: 36px; position: absolute; top: 7px; right: 0; z-index: 5; }
 .overview-storm-source svg { width: 28px; height: 34px; }
 .comparison-hour-content { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; }
@@ -609,7 +609,7 @@ button:hover { background: #eef7fb; }
 .weather-variant-icon { position: relative; display: block; }
 .overview-hour .weather-variant-icon { width: 46px; height: 46px; }
 .weather-icon .weather-variant-icon > img { width: 100%; height: 100%; position: absolute; inset: 0; display: block; margin: 0; object-fit: contain; }
-.weather-rain-layer { z-index: 2; }
+.weather-rain-layer { z-index: 2; transform: translateY(9%); }
 .overview-hour .weather-icon > img[src*="-night"],
 .overview-hour .weather-icon > img[src*="/moon-"] { width: 50px; height: 50px; filter: saturate(1.22) contrast(1.08); }
 .overview-hour .wind { color: var(--slot-foreground, #333); font-size: 11px; }
@@ -619,7 +619,7 @@ button:hover { background: #eef7fb; }
 .overview-temperature .temperature-line { stroke: #ef5b2a; stroke-width: 3; }
 .overview-temperature .wind-line { stroke: #16805f; }
 .overview-temperature .gust-line { stroke: #8050b5; }
-.overview-temperature .cloud-cover-overlay { fill: #61727d; opacity: .16; pointer-events: none; }
+.overview-temperature .cloud-cover-overlay, .day-combined-svg .cloud-cover-overlay { fill: #61727d; stroke: none; opacity: .16; pointer-events: none; }
 .overview-temperature .overview-rain-bar { fill: #59a9d2; opacity: .78; }
 .overview-temperature .overview-rain-bar.risk { fill: #4c9dc7; opacity: .9; }
 .overview-temperature .overview-rain-nowcast-band { fill: url(#overview-nowcast-rain-stripes); opacity: .95; pointer-events: none; }
@@ -1211,7 +1211,220 @@ button:hover { background: #eef7fb; }
   .three-hour-actions { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
 
-.header-meta{gap:7px;margin-top:0}.header-info-links{display:flex;min-height:32px;align-items:center;gap:6px;color:#a0a8ac;font-size:14px;font-weight:750;line-height:1}.header-info-links a{color:#6f7f87;text-decoration:none}.header-info-links a:hover{color:#397a9e;text-decoration:underline}@media(max-width:760px){.header-info-links{min-height:28px;font-size:12px}}
+.source-update-status { margin: 0 0 .5rem; font-size: .78rem; opacity: .75; }
+
+/* Combined, adjustable timeline for each date. */
+body.forecast-rows-layout { min-width: 0; }
+.forecast-rows-layout .three-hour-overview { padding: 24px 28px 0; border-bottom: 0; background: #f4f7f8; }
+.three-hour-card { max-width: 1700px; margin: auto; }
+.three-hour-card h2 { margin: 0; color: #193d50; font-size: 17px; line-height: 1.2; letter-spacing: 0; }
+.three-hour-card .three-hour-summary:empty { display: none; }
+.three-hour-card:has(.piaf-dry-outlook) > .forecast-day-header { display: none; }
+.piaf-dry-outlook { margin: 0; color: #193d50; font-weight: 700; }
+.forecast-rows-layout .daily-cards-scroll { width: 100%; padding: 16px 28px 24px; overflow: visible; }
+.forecast-rows-layout .daily-cards-forecast { width: 100%; min-width: 0; }
+.forecast-daily-rows { max-width: 1700px; margin: auto; color: #193d50; }
+.daily-rows-list { display: grid; gap: 16px; }
+.forecast-day-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; padding: 12px; gap: 10px; border: 1px solid #dbe5e9; border-radius: 12px; background: #fff; }
+.forecast-day-row.forecast-day-trend { border-style: dashed; }
+.forecast-day-row .forecast-day-header { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px 16px; padding: 2px 0; min-width: 0; border: 0; background: transparent; }
+.day-date-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.forecast-day-header h3 { margin: 0; font-size: 17px; line-height: 1.2; text-transform: capitalize; }
+.forecast-day-header time { color: #708592; font-size: 12px; }
+.day-trend-label { display: inline-block; margin-left: 2px; padding: 2px 6px; border-left: 3px solid #b88025; color: #775615; background: #f8efd9; font-size: 12px; font-weight: 800; line-height: 1.3; }
+.day-summary { display: flex; align-items: end; flex-wrap: wrap; gap: 7px 12px; margin: 0; font-size: 14px; font-weight: 800; }
+.day-summary .daily-period-temperatures { gap: 8px; }
+.day-summary .daily-period-temperatures strong, .day-summary .daily-period-temperatures b { font-size: 16px; }
+.day-snow-volume { display: inline-flex; align-items: center; gap: 4px; color: #167d92; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.day-snow-volume strong { font-size: 14px; line-height: 1; }
+.day-phase-icon { position: relative; display: block; width: 100%; height: 100%; }
+.day-phase-icon > .day-snow-layer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
+.day-chart-key .day-source { min-width: 0; max-width: 100%; margin: 0; line-height: 1.35; font-weight: 400; text-align: left; }
+.day-key-spacer { flex: 1 1 0; }
+.day-chart-key.day-source-wrapped .day-key-spacer { display: none; }
+.day-chart-key.day-source-wrapped .day-source { flex-basis: 100%; }
+.day-chart-key .day-source, .day-chart-key .day-source time { color: #81929a; font-size: 9px; }
+.day-source > span { display: inline-block; max-width: 100%; }
+.day-summary-icon { position: relative; flex: 0 0 52px; width: 52px; height: 52px; }
+.day-summary-icon .weather-icon, .day-summary-icon .weather-variant-icon { position: relative; display: block; width: 100%; height: 100%; }
+.day-summary-icon img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.day-width-control { display: flex; align-items: center; gap: 6px; margin-left: auto; min-height: 30px; color: #617885; font-size: 11px; cursor: pointer; }
+.day-width-control input { width: 16px; height: 16px; margin: 0; accent-color: #397a9e; cursor: pointer; }
+.day-width-control[hidden] { display: none; }
+.day-combined-body { min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: stretch; }
+.day-combined-body .metric-controls-rail { width: 36px; min-width: 0; margin-top: var(--day-chart-legend-height, 0px); border-radius: 8px 0 0 8px; }
+.forecast-day-row .metric-opacity-control { width: 26px; min-width: 26px; height: 28px; left: 4px; top: calc(7px + var(--day-control-order) * (100% - 44px) / 4); bottom: auto; padding: 3px; }
+.forecast-day-row .metric-symbol svg { width: 17px; height: 17px; }
+.forecast-day-row [data-metric-opacity=cloudiness] { --day-control-order: 0; }
+.forecast-day-row [data-metric-opacity=temperature] { --day-control-order: 1; }
+.forecast-day-row [data-metric-opacity=gust] { --day-control-order: 2; }
+.forecast-day-row [data-metric-opacity=wind] { --day-control-order: 3; }
+.forecast-day-row [data-metric-opacity=rain] { --day-control-order: 4; }
+.day-chart-scroll { min-width: 0; overflow-x: auto; border: 1px solid #cfd9e0; border-radius: 0 8px 8px 0; scrollbar-width: auto; scrollbar-color: #7896a6 #e7eef2; }
+.day-chart-scroll:focus-visible { outline: 2px solid #79bddd; outline-offset: 2px; }
+.day-chart-content { position: relative; width: 100%; }
+.day-chart-key { min-height: 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 12px; padding: 4px 10px; font-size: 10px; line-height: 1.4; }
+.day-chart-scale[data-day-layer=temperature] { color: #d65a2a; }
+.day-chart-scale[data-day-layer=rain] { color: #258bc0; }
+.day-chart-scale[data-day-layer=wind] { color: #16805f; }
+.day-chart-scale[data-day-layer=gust] { color: #8050b5; }
+.day-chart-scale[data-day-layer=cloudiness] { color: #6f7b84; }
+.day-combined-canvas { width: 100%; position: relative; overflow: hidden; }
+.day-combined-svg { display: block; width: 100%; height: 100%; }
+.day-combined-grid { stroke: #71818b; stroke-width: .5; opacity: .16; }
+.day-combined-layer { --curve-color: #ef5b2a; }
+.day-combined-layer.metric-layer-wind { --curve-color: #16805f; }
+.day-combined-layer.metric-layer-gust { --curve-color: #8050b5; }
+.day-combined-layer.metric-layer-cloudiness { --curve-color: #77848e; }
+.day-combined-layer.metric-layer-rain { --curve-color: #258bc0; }
+.day-combined-line { fill: none; stroke: var(--curve-color); stroke-width: 2.5; stroke-linecap: round; }
+.metric-layer-gust .day-combined-line { stroke-dasharray: 5 4; }
+.day-combined-svg circle { fill: var(--curve-color); stroke: #fff; stroke-width: 1; }
+.day-combined-svg text { fill: var(--curve-color); font: 750 11px system-ui; }
+.day-combined-svg .chart-point { cursor: crosshair; outline: none; }
+.day-combined-svg .chart-point:focus-visible circle { r: 6; stroke-width: 2; }
+.day-combined-rain { fill: #59a9d2; opacity: .8; }
+.day-combined-snow .day-combined-rain { fill: #3d9eab; }
+.day-combined-mixed .day-combined-rain { fill: #557fba; }
+.day-combined-svg .day-rain-label { font-size: 11px; }
+.day-timeline-header { position: absolute; inset: 0; pointer-events: none; }
+.day-timeline-slot { width: 69px; position: absolute; top: 0; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); }
+.day-timeline-slot time, .day-timeline-end { color: #18394f; font: 750 11px system-ui; line-height: 22px; white-space: nowrap; }
+.day-timeline-end { position: absolute; top: 0; transform: translateX(-50%); }
+.day-timeline-slot .weather-icon { position: relative; display: block; width: 69px; height: 69px; padding: 0; }
+.day-timeline-slot .weather-variant-icon { position: relative; display: block; width: 100%; height: 100%; }
+.day-timeline-slot .weather-variant-icon img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.day-timeline-slot .day-weather-storm { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.day-elapsed-mask { position: absolute; inset: 0 auto 0 0; z-index: 2; background: rgba(230, 233, 236, .86); backdrop-filter: grayscale(1); -webkit-backdrop-filter: grayscale(1); pointer-events: none; }
+.day-evening-header { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.day-now-marker { position: absolute; inset: 0 auto 0; z-index: 3; border-left: 1px dashed #657a88; pointer-events: none; }
+.day-icon-missing { color: #9cabb2; }
+.day-combined-past-label { font-size: 10px; color: #81929a; }
+.daily-rows-footnote { margin: 16px 0 0; max-width: 1000px; color: #7c8e98; font-size: 11px; line-height: 1.7; }
+.day-time-resolution { margin: 0; padding: 5px 10px; font-size: 10px; color: #7c8e98; line-height: 1.5; }
+#piaf-three-hour-chart { margin: 0; min-width: 0; }
+.piaf-three-hour-view { overflow: hidden; border: 1px solid #cfd9e0; border-radius: 8px; }
+.piaf-diagram-expanded { overflow-x: auto; }
+.piaf-chart-total { margin-left: auto; color: #258bc0; font-weight: 750; }
+.piaf-legend-rain[aria-disabled=true] { color: #667c89; }
+.piaf-intensity-chart { display: block; width: 100%; height: 100%; }
+.piaf-intensity-chart text { fill: #67818e; font: 10px system-ui; }
+.piaf-intensity-area { fill: #a9d4e8; opacity: .45; }
+.piaf-intensity-line { fill: none; stroke: #258bc0; stroke-width: 2; stroke-linejoin: round; }
+.piaf-trace-mark { fill: #258bc0; opacity: .65; }
+.piaf-intensity-chart .piaf-trace-label { fill: #258bc0; font-weight: 700; }
+.piaf-temperature-line { fill: none; stroke: #ef5b2a; stroke-width: 2.5; stroke-linecap: round; }
+.piaf-temperature-point circle { fill: #ef5b2a; stroke: #fff; stroke-width: 1; }
+.piaf-temperature-point text { fill: #d65a2a; font: 750 11px system-ui; }
+.piaf-legend-temperature { color: #d65a2a; }
+.piaf-legend-rain { color: #258bc0; }
+.piaf-timeline-canvas { overflow: hidden; }
+.piaf-intensity-chart .chart-point { cursor: crosshair; }
+.piaf-intensity-chart .chart-point:focus-visible { outline: 2px solid #258bc0; }
+@media (max-width: 700px) {
+  .forecast-rows-layout .three-hour-overview { padding: 18px 10px 0; }
+  .three-hour-card h2 { font-size: 15px; }
+  .forecast-rows-layout .daily-cards-scroll { padding: 16px 10px 24px; }
+  .forecast-day-row { grid-template-columns: minmax(0, 1fr); padding: 12px 10px; gap: 10px; }
+  .forecast-day-row .forecast-day-header { display: grid; grid-template-columns: minmax(0, 1fr) 48px auto; align-items: center; gap: 6px 8px; }
+  .day-summary-icon { width: 48px; height: 48px; }
+  .day-summary { justify-content: flex-end; font-size: 12px; }
+  .day-summary .daily-period-temperatures strong, .day-summary .daily-period-temperatures b { font-size: 14px; }
+  .day-summary .daily-period-rain-volume strong { font-size: 12px; }
+  .day-summary .day-snow-volume strong { font-size: 12px; }
+  .day-width-control { grid-column: 1 / -1; grid-row: 2; gap: 5px; margin: 0; }
+  .day-combined-body { grid-template-columns: 36px minmax(0, 1fr); }
+  .day-combined-body .metric-controls-rail { width: 36px; }
+  .forecast-day-row .metric-opacity-control { width: 26px; min-width: 26px; left: 4px; }
+  .day-date-heading { gap: 4px 6px; }
+  .forecast-day-header h3 { font-size: 15px; }
+  .day-date-heading time { font-size: 10px; }
+  .day-trend-label { margin: 0; }
+}
+@media (max-width: 380px) {
+  .forecast-day-row .forecast-day-header { grid-template-columns: minmax(0, 1fr) 48px; }
+  .day-summary { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .day-width-control { grid-row: 3; }
+}
+
+/* Shared grid and period presentation for daily cards. */
+.bulletin-cards-view { max-width: 1700px; margin: auto; }
+.bulletin-day { display: contents; }
+.bulletin-cards-grid > .bulletin-day > .daily-forecast-card { content-visibility: visible; }
+.bulletin-cards-grid { overflow-anchor: none; }
+.bulletin-cards-grid .forecast-trend-start { grid-column-start: 1; }
+.bulletin-cards-grid .daily-forecast-card > header { flex-wrap: wrap; gap: 6px 10px; }
+.bulletin-cards-grid .day-date-heading { display: block; }
+.bulletin-cards-grid .day-date-heading h3 { margin: 0; color: #173b52; font-size: 18px; letter-spacing: -.02em; text-transform: capitalize; }
+.bulletin-cards-grid .day-date-heading > time { display: block; color: #667b87; font-size: 11px; font-weight: 750; }
+.bulletin-cards-grid .day-date-heading h3 time { text-transform: none; display: inline; color: #667b87; font-size: 13px; font-weight: 750; white-space: nowrap; }
+.day-heading-tools { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.bulletin-cards-grid .day-trend-label { margin: 0 4px 0 0; padding: 2px 6px; border: 0; background: #f8efd9; white-space: nowrap; }
+.day-chart-toggle { display: grid; place-items: center; width: 30px; height: 30px; padding: 3px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.day-chart-toggle:hover, .day-chart-toggle[aria-expanded=true] { background: #dcecf3; }
+.day-chart-toggle:focus-visible { outline: 2px solid #1686b5; outline-offset: 2px; }
+.bulletin-chart-panel { grid-column: 1 / -1; padding: 12px; }
+.day-chart-panel[hidden] { display: none; }
+.bulletin-chart-panel .forecast-day-header { justify-content: space-between; }
+.bulletin-chart-panel .forecast-day-header h3 { text-transform: capitalize; }
+.day-chart-close { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; color: #397a9e; background: #eef4f6; font-size: 22px; cursor: pointer; }
+.day-chart-options { display: flex; }
+.day-chart-options .day-width-control { margin-inline: 0; }
+.day-chart-options:has(.day-width-control[hidden]) { display: none; }
+.bulletin-cards-grid .daily-period-icon > .weather-icon { width: 96px; height: 96px; display: block; position: relative; }
+.bulletin-cards-grid .daily-period-icon .weather-variant-icon { display: block; position: relative; }
+.bulletin-cards-grid .daily-period-icon img { position: absolute; inset: 0; width: 96px; height: 96px; }
+.daily-data-refresh { padding: 0; cursor: default; }
+.daily-data-refresh svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 600px) { .bulletin-chart-panel { padding: 7px; } }
+
+/* Compact local 3-hour preview: temperature summary, precipitation timeline. */
+.piaf-weather-summary { display: flex; width: min(100%, 480px); margin: 0 auto; padding: 8px 4px; }
+.piaf-weather-slot { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; }
+.piaf-weather-slot + .piaf-weather-slot { border-inline-start: 1px solid #e1eaee; }
+.piaf-weather-slot time { color: #18394f; font: 750 11px/20px system-ui; white-space: nowrap; }
+.piaf-weather-slot .weather-icon { position: relative; display: block; width: 62px; height: 62px; }
+.piaf-weather-slot .weather-variant-icon { position: relative; display: block; width: 100%; height: 100%; }
+.piaf-weather-slot :is(.weather-variant-icon img, .day-weather-storm) { position: absolute; inset: 0; width: 100%; height: 100%; }
+.piaf-weather-summary + .piaf-diagram { border-top: 1px solid #e1eaee; }
+.piaf-precipitation-view .piaf-phase-rain { --phase-color: #258bc0; }
+.piaf-precipitation-view .piaf-phase-snow { --phase-color: #3d9eab; }
+.piaf-precipitation-view .piaf-phase-mixed { --phase-color: #557fba; }
+.piaf-precipitation-view .piaf-phase-freezing { --phase-color: #9976ad; }
+.piaf-precipitation-view .piaf-phase-unknown { --phase-color: #71818c; }
+.piaf-precipitation-view .piaf-intensity-line { stroke: var(--phase-color); }
+.piaf-precipitation-view .piaf-intensity-area, .piaf-precipitation-view .piaf-trace-mark { fill: var(--phase-color); }
+.piaf-phase-key { display: inline-flex; align-items: center; gap: 4px; color: #617885; }
+.piaf-phase-key::before { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--phase-color); }
+
+/* Local bulletin masthead. */
+.bulletin-header { padding: 22px 28px 18px; }
+.bulletin-header > div:first-child { flex: 1; min-width: 0; }
+.bulletin-header .header-meta { flex: none; margin-inline-start: 12px; }
+.bulletin-header h1 { color: #193d50; font-size: clamp(25.5px, 4.08vw, 40.8px); line-height: 1.2; }
+.site-title-separator { padding: 0; color: #91a5b0; font-weight: 500; }
+.site-location { margin: 8px 0 0; color: #617885; font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.site-daylight { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; margin-top: 11px; color: #536d7c; font-size: 12px; line-height: 1.5; }
+.site-sun-time { display: inline-flex; align-items: center; gap: 6px; }
+.site-sun-time time { color: #ad7722; font-weight: 750; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .bulletin-header { padding: 18px 16px 14px; }
+  .site-location { font-size: 11px; }
+  .site-daylight { column-gap: 16px; font-size: 11px; }
+}
+
+.site-moon { display: inline-flex; align-items: center; gap: 5px; }
+.site-moon .moon-phase { width: 24px; height: 24px; margin: 0; flex: 0 0 24px; }
+
+.site-sun-icon { width: 30px; height: 30px; flex: 0 0 30px; }
+.site-sun-disk { fill: #f6c453; stroke: #d28a16; stroke-width: 1.6; stroke-linejoin: round; }
+.site-sun-rays { fill: none; stroke: #d28a16; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.site-sunset-icon .site-sun-disk { fill: #f3aa51; stroke: #c17f21; }
+.site-sunset-icon .site-sun-rays { stroke: #c17f21; }
+
+.site-title-place { white-space: nowrap; }
+.site-sun-label { color: #536d7c; }
+
 
 .nowcast-map-attribution{position:absolute;left:50%;bottom:3px;z-index:3;transform:translateX(-50%);padding:1px 4px;border-radius:3px;color:#61737d;background:rgba(255,255,255,.72);font:600 7px system-ui;white-space:nowrap}.nowcast-map-attribution a{color:inherit;text-decoration:none}
 
@@ -1334,3 +1547,32 @@ button.horizon-period-main:hover{filter:brightness(.97)}
 .horizon-detail-track .horizon-axis{height:24px}
 @media(max-width:900px){.horizon-detail-scroll{margin-inline:16px}}
 @media(max-width:700px){.horizon-detail-scroll{margin-inline:10px}}
+
+/* One civil-day summary per card in Tendances. */
+.daily-trend-summary { padding: 14px 12px; }
+.daily-trend-overview { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; }
+.daily-trend-overview .daily-period-icon { position: relative; width: 96px; height: 96px; }
+
+.daily-trend-overview .daily-period-temperatures strong, .daily-trend-overview .daily-period-temperatures b { font-size: 24px; }
+.daily-trend-overview .daily-period-values { align-items: flex-end; flex-wrap: wrap; gap: 10px 20px; }
+.daily-trend-overview .daily-period-metrics { display: flex; flex-wrap: wrap; gap: 10px 14px; min-width: 0; }
+.daily-trend-overview .daily-period-metrics > span { display: grid; gap: 2px; }
+.daily-trend-overview .daily-period-metrics small { display: flex; align-items: center; gap: 3px; color: #748690; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.daily-trend-overview .daily-period-metrics strong { font-size: 16px; line-height: 1; }
+/* Let the transparent SVG follow the card theme, including Dark Reader. */
+.piaf-precipitation-view .piaf-timeline-canvas { background: transparent; }
+
+/* Rain and snow scales and bars from the validated local preview. */
+.piaf-precipitation-view .piaf-weather-slot.chart-point { pointer-events: auto; cursor: crosshair; }
+.piaf-intensity-chart .piaf-rain-unit { fill: #34546b; font-weight: 700; }
+.piaf-precipitation-view .piaf-rain-bar { fill: var(--phase-color); }
+.piaf-precipitation-view .piaf-rain-bar { fill: url(#piaf-rain-intensity); }
+.piaf-snow-bar, .piaf-snow-scale-bar { fill: #fff; }
+.piaf-snow-bar-edge, .piaf-snow-cap-outline { stroke: #258bc0; vector-effect: non-scaling-stroke; }
+.piaf-snow-bar-edge { fill: none; stroke-width: .8; }
+.piaf-snow-caps { pointer-events: none; }
+.piaf-snow-cap-outline, .piaf-snow-cap { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.piaf-snow-cap-outline { stroke-width: 8.6; }
+.piaf-snow-cap { stroke: #fff; stroke-width: 7; vector-effect: non-scaling-stroke; }
+.piaf-intensity-chart .piaf-scale-name { fill: #34546b; font: 700 11px system-ui; }
+.piaf-snow-bar-flake { pointer-events: none; }

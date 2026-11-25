@@ -3,10 +3,34 @@ const runtimeConfig = window.METEO_RUNTIME_CONFIG && typeof window.METEO_RUNTIME
   ? window.METEO_RUNTIME_CONFIG
   : {};
 const apiBaseUrl = new URL(runtimeConfig.apiBase || "./", document.baseURI);
-const apiUrl = path => new URL(String(path).replace(/^\/+/, ""), apiBaseUrl);
+const siteProfile = { id: "local", place: "", latitude: null, longitude: null, ...runtimeConfig.site };
+const siteFeatures = { nowcasting: true, openMeteo: true, ...siteProfile.features };
+const dailyRowsLayout = siteProfile.forecastLayout === "daily-rows";
+const compactForecastLayout = dailyRowsLayout && siteProfile.dailyPresentation === "compact-cards";
+const dailyModuleUrl = name => new URL(name + "?v=" + encodeURIComponent(runtimeConfig.releaseNumber || "1"), document.currentScript?.src || document.baseURI).href;
+let dailyRowsTools = null;
+let compactForecastTools = null;
+const dailyChartStates = new Map();
+let piafShowHourly = false;
+let dailyChartsResizeObserver = null;
+const dailyRowsReady = dailyRowsLayout ? Promise.all([import(dailyModuleUrl("daily-rows.js")),
+  compactForecastLayout ? import(dailyModuleUrl("compact-forecast.js")) : null])
+  .then(([daily, compact]) => { dailyRowsTools = daily; compactForecastTools = compact; renderWeekForecast(); }) : null;
+const apiUrl = path => {
+  const relative = String(path).replace(/^\/+/, "");
+  if (runtimeConfig.dataMode === "static" && relative.startsWith("api/")) {
+    const resource = relative.split("?", 1)[0].slice(4);
+    if (!["dashboard", "week", "config"].includes(resource)) throw new Error("Ressource statique inconnue");
+    return new URL("data/" + resource + ".json", apiBaseUrl);
+  }
+  return new URL(relative, apiBaseUrl);
+};
+let basicForecastTools = null;
+let basicForecast = null;
+const basicForecastReady = siteFeatures.nowcasting ? null : import(new URL("forecast-core.js?v=" + encodeURIComponent(runtimeConfig.releaseNumber || "1"), document.currentScript?.src || document.baseURI).href).then(module => { basicForecastTools = module; });
 const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
 const replayEngineUrl = new URL("nowcast/engine.js", document.currentScript?.src || document.baseURI);
-const point = { lat: 44.6538, lon: 5.5995 };
+const point = { lat: siteProfile.latitude, lon: siteProfile.longitude };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const forecastHourValue = date => Number(hourFormat.format(date).slice(0, 2));
 const forecastHourLabel = date => Number(hourFormat.format(date).slice(0, 2)) + "h";
@@ -102,30 +126,57 @@ const shortTermWindIntensityLevel = (meanWind, gust) => {
   return Math.max(meanWindIntensityLevel(meanSpeed), gustIntensityLevel(gustSpeed));
 };
 
-function forecastSourceAlertTone({ wind = 0, gust = 0, probability = 0, rain = 0, rain3h = 0, stormRainOverlap = false, stormRainWindOverlap = false } = {}) {
+function forecastSourceAlertTone({ wind = 0, gust = 0, probability = 0, rain = 0, rain3h = 0, rainRate = 0, deterministic = false, stormRainOverlap = false, stormRainWindOverlap = false, stormWindCauses } = {}) {
   const windValue = Math.max(0, Number(wind) || 0);
   const gustValue = Math.max(0, Number(gust) || 0);
   const probabilityValue = Math.max(0, Number(probability) || 0);
   const rainValue = Math.max(0, Number(rain) || 0);
   const rain3hValue = Math.max(0, Number(rain3h) || 0);
-  const rainAttention = probabilityValue >= 70 && (rain3hValue >= 10 || rainValue >= 15);
-  const rainSerious = probabilityValue >= 70 && (rain3hValue >= 20 || rainValue >= 30);
-  const rainAlert = probabilityValue >= 80 && (rain3hValue >= 40 || rainValue >= 60);
-  const windAttention = windValue >= 40 || gustValue >= 60;
-  const windSerious = windValue >= 60 || gustValue >= 80;
-  const windAlert = windValue >= 80 || gustValue >= 100;
-  if (windAlert || rainAlert || (windSerious && rainSerious)) return "red";
-  if (windSerious || rainSerious || (stormRainOverlap && rainAttention)) return "orange";
-  if (windAttention || rainAttention || stormRainWindOverlap) return "yellow";
-  return "";
+  const rainCauses = (rateThreshold, amountThreshold, minimumProbability = 70) => {
+    if (!deterministic && probabilityValue < minimumProbability) return {};
+    return {
+      ...(rainRate >= rateThreshold && { rainRate }),
+      ...(rain3hValue >= rateThreshold && { rain3h: rain3hValue }),
+      ...(rainValue >= amountThreshold && { rain: rainValue })
+    };
+  };
+  const windCauses = (windThreshold, gustThreshold) => ({
+    ...(windValue >= windThreshold && { wind: windValue }),
+    ...(gustValue >= gustThreshold && { gust: gustValue })
+  });
+  const yellowRain = rainCauses(10, 15);
+  const yellow = { ...(stormRainWindOverlap && { rain: rainValue, ...(stormWindCauses ?? windCauses(30, 50)) }),
+    ...yellowRain, ...windCauses(40, 60) };
+  const orangeRain = rainCauses(20, 30);
+  const orangeWind = windCauses(60, 80);
+  const redRain = rainCauses(40, 60, 80);
+  const red = { ...redRain, ...windCauses(80, 100) };
+  const combinedRed = Object.keys(orangeRain).length && Object.keys(orangeWind).length;
+  const rainTone = Object.keys(redRain).length || combinedRed ? "red"
+    : Object.keys(orangeRain).length || (stormRainOverlap && Object.keys(yellowRain).length) ? "orange"
+    : Object.keys(yellowRain).length || stormRainWindOverlap ? "yellow" : "";
+  if (Object.keys(red).length || combinedRed) {
+    return { tone: "red", causes: yellow, rainTone };
+  }
+  const orange = { ...(stormRainOverlap && yellowRain), ...orangeRain, ...orangeWind };
+  if (Object.keys(orange).length) {
+    return { tone: "orange", causes: yellow, rainTone };
+  }
+  return { tone: Object.keys(yellow).length ? "yellow" : "", causes: yellow, rainTone };
 }
 
-function forecastSlotAlertTone(sources = []) {
+function forecastSlotAlertTone(sources = [], initialTone = "", detailed = false) {
   const ranks = { "": 0, yellow: 1, orange: 2, red: 3 };
-  return (Array.isArray(sources) ? sources : [sources]).reduce((selected, source) => {
-    const tone = forecastSourceAlertTone(source);
-    return ranks[tone] > ranks[selected] ? tone : selected;
-  }, "");
+  const result = { tone: initialTone, causes: initialTone ? { rain: 0 } : {}, rainTone: initialTone };
+  for (const source of Array.isArray(sources) ? sources : [sources]) {
+    const { tone, causes, rainTone } = forecastSourceAlertTone(source);
+    if (ranks[tone] > ranks[result.tone]) result.tone = tone;
+    if (ranks[rainTone] > ranks[result.rainTone]) result.rainTone = rainTone;
+    for (const [metric, value] of Object.entries(causes)) {
+      result.causes[metric] = Math.max(result.causes[metric] ?? 0, value);
+    }
+  }
+  return detailed ? result : result.tone;
 }
 
 function graphIconMarkup(className) {
@@ -228,6 +279,7 @@ function refreshSourceIndicators() {
 }
 
 function sourceLink(key, section, label) {
+  if (siteProfile.publicAbout === false) return "";
   const state = sourceSyncState(key);
   const href = (window.METEO_REPLAY?.aboutBase ?? (window.METEO_REPLAY ? "../" : "")) + "about.html#" + section;
   return '<a class="source-link" data-source-status="' + key + '" data-sync="' + state + '" href="' + href + '" title="Voir ' + escapeText(label) + ' dans About · ' + escapeText(sourceSyncTitle(key)) + '">' + label + '</a>';
@@ -237,10 +289,10 @@ const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
   + sourceLink("piaf", "api-piaf", "PIAF")
   + sourceLink("pearome", "api-pe-arome", "AROME-PI");
 const openMeteoLink = () => sourceLink("openMeteo", "api-open-meteo", "Open-Meteo");
-const radarLink = () => sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
-const lightningLink = () => sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
+const radarLink = () => !siteFeatures.nowcasting ? "" : sourceLink("radar", "api-radar", window.METEO_REPLAY ? "Radar archivé" : "Radar v1");
+const lightningLink = () => !siteFeatures.nowcasting ? "" : sourceLink("lightning", "api-eumetsat-li", "EUMETSAT LI");
 const vigilanceLink = () => sourceLink("vigilance", "api-vigilance", "Vigilance");
-const nowcastDisplayLink = () => '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
+const nowcastDisplayLink = () => !siteFeatures.nowcasting ? "" : '<a class="source-link source-link-nowcast" href="#nowcast-details" data-open-nowcast-link="true" title="Ouvrir l’affichage nowcasting">Nowcasting</a>';
 const shortRainLinks = () => window.METEO_REPLAY
   ? (window.METEO_REPLAY.archiveTesting ? radarLink() : openMeteoLink()) + nowcastDisplayLink()
   : sourceLink("piaf", "api-piaf", "Météo-France") + nowcastDisplayLink();
@@ -285,6 +337,7 @@ function temperatureNormalAt(time) {
 }
 
 function loadTemperatureNormals() {
+  if (siteFeatures.temperatureNormals === false) return Promise.resolve(null);
   if (temperatureNormalsPromise) return temperatureNormalsPromise;
   temperatureNormalsPromise = fetch(new URL("data/temperature-normals.json", document.baseURI), { cache: "force-cache" })
     .then(response => {
@@ -308,11 +361,12 @@ function loadTemperatureNormals() {
 }
 
 function forecastSourceControlsMarkup() {
+  if (!siteFeatures.openMeteo) return "";
   const unavailable = window.METEO_REPLAY ? ' disabled title="Source non archivée pour cette date"' : '';
   return '<div class="forecast-source-selector" aria-label="Source des prévisions"><button class="forecast-source-button' + (activeForecastSource === "meteofrance" ? " active" : "") + '" type="button" data-source="meteofrance" aria-pressed="' + (activeForecastSource === "meteofrance") + '"' + unavailable + '>Météo-France</button><button class="forecast-source-button' + (activeForecastSource === "openmeteo" ? " active" : "") + '" type="button" data-source="openmeteo" aria-pressed="' + (activeForecastSource === "openmeteo") + '">Open-Meteo</button><button class="forecast-source-button' + (activeForecastSource === "comparison" ? " active" : "") + '" type="button" data-source="comparison" aria-pressed="' + (activeForecastSource === "comparison") + '"' + unavailable + '>Synthèse</button></div>';
 }
 
-function forecastMetricControlsMarkup() {
+function forecastMetricControlsMarkup(opacities = metricOpacities) {
   const icons = {
     temperature: '<path d="M10 4a2 2 0 0 1 4 0v9.2a4 4 0 1 1-4 0V4Z"/><path d="M12 7v9"/>',
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
@@ -320,11 +374,15 @@ function forecastMetricControlsMarkup() {
     gust: '<path d="M3 6h14c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h18M3 18h12"/><path d="m12 15 3 3-3 3"/>',
     cloudiness: '<path d="M5.5 18a4.5 4.5 0 0 1-.6-9A6.2 6.2 0 0 1 16.7 8a5 5 0 1 1 .8 10H5.5Z"/>'
   };
-  return '<div class="metric-controls-rail"><div class="forecast-metric-controls" aria-label="Courbes affichées">' + [{ key: "cloudiness", label: "Nébulosité" }, { key: "temperature", label: "Température" }, { key: "gust", label: "Rafales" }, { key: "wind", label: "Vent moyen" }, { key: "rain", label: "Précipitations" }].map(metric => '<button class="metric-opacity-control" type="button" data-metric-opacity="' + metric.key + '" aria-label="' + metric.label + '" aria-pressed="' + (metricOpacities[metric.key] > 0) + '" title="' + metric.label + '"><span class="metric-symbol" aria-hidden="true"><span class="metric-symbol-part metric-symbol-on-color"><svg viewBox="0 0 24 24">' + icons[metric.key] + '</svg></span><span class="metric-symbol-part metric-symbol-on-white"><svg viewBox="0 0 24 24">' + icons[metric.key] + '</svg></span></span></button>').join("") + '</div></div>';
+  const metrics = [{ key: "cloudiness", label: "Nébulosité" }, { key: "temperature", label: "Température" }, { key: "gust", label: "Rafales" }, { key: "wind", label: "Vent moyen" }, { key: "rain", label: "Précipitations" }];
+  return '<div class="metric-controls-rail"><div class="forecast-metric-controls" aria-label="Courbes affichées">' + metrics.map(metric => '<button class="metric-opacity-control" type="button" data-metric-opacity="' + metric.key + '" aria-label="' + metric.label + '" aria-pressed="' + (opacities[metric.key] > 0) + '" title="' + metric.label + '"><span class="metric-symbol" aria-hidden="true"><span class="metric-symbol-part metric-symbol-on-color"><svg viewBox="0 0 24 24">' + icons[metric.key] + '</svg></span><span class="metric-symbol-part metric-symbol-on-white"><svg viewBox="0 0 24 24">' + icons[metric.key] + '</svg></span></span></button>').join("") + '</div></div>';
 }
 
 function applyMetricOpacities() {
-  const section = $("panel-48h");
+  applyForecastMetricState($("panel-48h"), metricOpacities, metricOffsets);
+}
+
+function applyForecastMetricState(section, metricOpacities, metricOffsets) {
   if (!section) return;
   Object.entries(metricOpacities).forEach(([metric, value]) => {
     section.style.setProperty("--metric-opacity-" + metric, String(value / 100));
@@ -350,7 +408,11 @@ function bindForecastControlButtons() {
     renderActiveForecast();
     if (activeForecastSource === "openmeteo") ensureOpenMeteoEnsemble();
   });
-  document.querySelectorAll("[data-metric-opacity]").forEach(button => {
+  bindMetricControlButtons($("panel-48h"), metricOpacities, metricOffsets, applyMetricOpacities);
+}
+
+function bindMetricControlButtons(root, metricOpacities, metricOffsets, applyMetricOpacities) {
+  root.querySelectorAll("[data-metric-opacity]").forEach(button => {
     const metric = button.dataset.metricOpacity;
     let dragStartX = 0;
     let dragStartY = 0;
@@ -359,7 +421,7 @@ function bindForecastControlButtons() {
     let dragAxis = "";
     let dragged = false;
     const beginDrag = (clientX, clientY) => {
-      document.querySelectorAll("[data-metric-opacity]").forEach(candidate => candidate.style.zIndex = candidate === button ? "2" : "1");
+      root.querySelectorAll("[data-metric-opacity]").forEach(candidate => candidate.style.zIndex = candidate === button ? "2" : "1");
       dragStartX = clientX;
       dragStartY = clientY;
       dragStartOffset = metricOffsets[metric];
@@ -397,12 +459,12 @@ function bindForecastControlButtons() {
       const bounds = offsetBounds(button);
       let nextOffset = Math.max(bounds.minimum, Math.min(bounds.maximum, Math.round(dragStartOffset + movementY)));
       if (metric === "gust" && nextOffset > metricOffsets.wind) {
-        const windButton = document.querySelector('[data-metric-opacity="wind"]');
+        const windButton = root.querySelector('[data-metric-opacity="wind"]');
         const windBounds = offsetBounds(windButton);
         nextOffset = Math.min(nextOffset, windBounds.maximum);
         metricOffsets.wind = nextOffset;
       } else if (metric === "wind" && nextOffset < metricOffsets.gust) {
-        const gustButton = document.querySelector('[data-metric-opacity="gust"]');
+        const gustButton = root.querySelector('[data-metric-opacity="gust"]');
         const gustBounds = offsetBounds(gustButton);
         nextOffset = Math.max(nextOffset, gustBounds.minimum);
         metricOffsets.gust = nextOffset;
@@ -619,27 +681,12 @@ function vigilanceSlotIcons(alerts) {
     const level = levels[alert.colorId] || "jaune";
     const period = alert.start && alert.end ? " · Du " + dateTimeFormat.format(new Date(alert.start)) + " au " + dateTimeFormat.format(new Date(alert.end)) : "";
     const description = "Vigilance " + level + " " + alert.label + period;
-    return '<a class="daily-vigilance-badge" href="https://vigilance.meteofrance.fr/fr/drome" target="_blank" rel="noopener noreferrer" data-level="' + level + '" aria-label="' + escapeText(description + " · Consulter Météo-France (nouvel onglet)") + '" title="' + escapeText(description) + '"><strong>DRÔME</strong><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span></a>';
+    return '<a class="daily-vigilance-badge" href="https://vigilance.meteofrance.fr/fr" target="_blank" rel="noopener noreferrer" data-level="' + level + '" aria-label="' + escapeText(description + " · Consulter Météo-France (nouvel onglet)") + '" title="' + escapeText(description) + '"><strong>Vigilance</strong><span class="daily-vigilance-icon type-' + alert.phenomenonId + '" data-level="' + level + '" aria-hidden="true"><i></i></span></a>';
   }).join("") + "</span>";
 }
 
-const eclipsePeak = new Date("2026-08-12T20:23:00+02:00").getTime();
-const eclipseWindow = { start: new Date("2026-08-12T19:20:00+02:00").getTime(), end: new Date("2026-08-12T21:20:00+02:00").getTime() };
-function isEclipsePeakSlot(date, duration = 3600000) {
-  const start = date.getTime();
-  return start <= eclipsePeak && eclipsePeak < start + duration;
-}
-
-function eclipseOverlayMarkup(timelineStart, timelineEnd, timelineWidth) {
-  const start = Math.max(timelineStart, eclipseWindow.start);
-  const end = Math.min(timelineEnd, eclipseWindow.end);
-  if (end <= start) return "";
-  const duration = timelineEnd - timelineStart;
-  const left = (start - timelineStart) / duration * timelineWidth;
-  const overlayWidth = (end - start) / duration * timelineWidth;
-  const peak = Math.max(0, Math.min(100, (eclipsePeak - start) / (end - start) * 100));
-  return '<div class="eclipse-timeline-wash" style="left:' + left.toFixed(2) + 'px;width:' + overlayWidth.toFixed(2) + 'px;--eclipse-peak:' + peak.toFixed(2) + '%" title="Éclipse solaire · maximum vers 20 h 23"></div>';
-}
+function isEclipsePeakSlot() { return false; }
+function eclipseOverlayMarkup() { return ""; }
 
 
 function compactMinutesLabel(minutes) {
@@ -919,12 +966,13 @@ function isNight(date) {
   return date < sunrise || date >= sunset;
 }
 
-const publicDataCacheName = "meteo-public-data-v1";
+const publicDataCacheName = "meteo-public-data-v2-" + siteProfile.id + "-" + new URL(".", document.baseURI).pathname;
 
 function cacheableApiTarget(target) {
   try {
     const url = new URL(target, document.baseURI);
-    return url.origin === apiBaseUrl.origin && /\/api\/(dashboard|week)$/.test(url.pathname)
+    return runtimeConfig.dataMode === "static" && url.origin === apiBaseUrl.origin && /\/data\/(dashboard|week)\.json$/.test(url.pathname)
+      || url.origin === apiBaseUrl.origin && /\/api\/(dashboard|week)$/.test(url.pathname)
       || ["api.open-meteo.com", "ensemble-api.open-meteo.com"].includes(url.hostname);
   } catch {
     return false;
@@ -957,7 +1005,7 @@ async function json(url) {
   if (window.METEO_REPLAY?.request) return window.METEO_REPLAY.request(String(url));
   const target = typeof url === "string" && /^\/?api\//.test(url) ? apiUrl(url) : url;
   const isPreparedDashboard = /\/api\/dashboard(?:\?|$)/.test(String(target));
-  const response = await fetch(target, { cache: isPreparedDashboard ? "default" : "no-store" });
+  const response = await fetch(target, { cache: isPreparedDashboard && runtimeConfig.dataMode !== "server" ? "default" : "no-store", credentials: "omit" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Erreur " + response.status);
   void writeCachedJson(target, data);
@@ -1026,7 +1074,7 @@ function displayIcon(item) {
   const base = night && cloudLevel === 0 && rainLevel === 0
     ? "vendor/meteocons/" + moonPhaseMeteoconName(date) + ".svg"
     : "vendor/weather-variants/cloud-" + period + "-" + cloudLevel + ".svg";
-  const rainMarkup = rainLevel ? '<img class="weather-rain-layer" src="vendor/weather-variants/rain-' + rainLevel + '.svg" alt="" loading="lazy" decoding="async">' : '';
+  const rainMarkup = rainLevel ? '<img class="weather-rain-layer" src="pictogrammes/calque-pluie-' + rainLevel + '.svg" alt="" loading="lazy" decoding="async">' : '';
   return '<span class="weather-variant-icon" role="img" aria-label="' + escapeText(label) + '"><img class="weather-cloud-layer" src="' + base + '" alt="" loading="lazy" decoding="async">' + rainMarkup + '</span>';
 }
 
@@ -2143,6 +2191,137 @@ function forecastPeriodAvailable(period, meteoFranceRain, meteoFranceWind, meteo
   return Boolean(period || meteoFranceRain || meteoFranceWind || activeStorm);
 }
 
+const periodMetricIcons = {
+  snow: "<path d=\"M12 2v20M3.34 7l17.32 10M3.34 17 20.66 7M9 4l3 3 3-3M9 20l3-3 3 3M3.5 10.5l4.1-1.1-1.1-4.1M17.5 18.7l-1.1-4.1 4.1-1.1M6.5 18.7l1.1-4.1-4.1-1.1M20.5 10.5l-4.1-1.1 1.1-4.1\"/>",
+  cloud: '<path d="M5.5 18a4.5 4.5 0 0 1-.6-9A6.2 6.2 0 0 1 16.7 8a5 5 0 1 1 .8 10H5.5Z"/>',
+  rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
+  showers: '<path d="M5 10.5a5 5 0 0 1 9.4-2.3A3.8 3.8 0 1 1 17 15H6a3.2 3.2 0 0 1-1-6.2"/><path d="m8 17-1.2 3M12 17l-1.2 3M16 17l-1.2 3"/>',
+  wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
+  gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
+  storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>'
+};
+const periodMetricPictogram = (kind, step, label, sources) => {
+  const level = Math.max(0, Math.min(5, Math.round(Number(step) || 0)));
+  const scale = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < level ? "solid" : "") + '"></i>').join("");
+  const sourceTooltip = sources.filter(Boolean).join("\n");
+  const accessibleLabel = label + " · " + level + " sur 5 · " + sourceTooltip.replace(/\n/g, ", ");
+  return '<span class="week-metric-pictogram ' + kind + ' chart-point" tabindex="0" role="img" aria-label="' + escapeText(accessibleLabel) + '" data-tooltip="' + escapeText(sourceTooltip) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons[kind] + '</svg><span class="week-metric-scale" aria-hidden="true">' + scale + '</span></span>';
+};
+
+const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
+
+function periodSourceDetails(sources, key) {
+  const format = (value, digits = 1) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits });
+  return sources.filter(source => source[key] != null).map(source => {
+    let detail;
+    if (key === "rain") {
+      detail = source.rain > 0 && source.rain < .1 - 1e-9 ? "gouttes" : format(source.rain) + " mm";
+      if (source.probability != null) detail += " · " + format(source.probability, 0) + " %";
+      if (source.snowfall > 0) detail += " · " + (Math.round(source.snowfall) || "< 1") + " cm de neige";
+      if (source.completeRain === false) detail += " · couverture partielle";
+      if (source.estimated) detail += " · estimation au prorata";
+    } else if (key === "storm") detail = source.storm ? "orage possible" : "pas d’orage";
+    else detail = format(source[key], 0) + (key === "cloudCover" ? " %" : " km/h");
+    const trendKey = { cloudCover: "cloud", windSpeed: "wind", windGust: "gust" }[key] || key;
+    const values = key === "rain" ? source.intervals?.map(interval => interval.rain * 3600000 / (interval.end - interval.start))
+      : source.samples?.filter(sample => sample.stamp >= source.begin && sample.stamp < source.end).map(sample => sample[key]).filter(value => value != null);
+    const threshold = { cloudCover: 15, windSpeed: 5, windGust: 8, rain: .2, storm: .34 }[key] || 0;
+    const trend = source.trends?.[trendKey] || backgroundTrendArrow(values || [], threshold);
+    return source.name + " : " + detail + " " + trend;
+  });
+}
+
+function forecastPeriodDetailsMarkup({ cloud = null, rain = null, rainLabel, wind = null, gust = null, directionValue = null,
+  hasStorm = null, weatherCode = null, showers = false, hideRain = false, probabilitySummary = rainProbabilitySummary([]),
+  rainDisagreement = false, rainTiming, slotKey, sources = [], stormLevel = 3, snowfall = null, liquidRain = null }) {
+  const format = (value, digits = 1) => value != null && Number.isFinite(Number(value)) ? Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits }) : "—";
+  const rainRangeText = rain > 0 && rain < .1 - 1e-9 ? "gouttes" : format(rain) + " mm";
+  const precipitationText = rainLabel ?? rainRangeText;
+  const rainProbability = probabilitySummary.average;
+  const windRangeText = format(wind, 0), gustRangeText = format(gust, 0);
+  const cloudSources = periodSourceDetails(sources, "cloudCover"), rainSources = periodSourceDetails(sources, "rain");
+  const windSources = periodSourceDetails(sources, "windSpeed"), gustSources = periodSourceDetails(sources, "windGust"), stormSources = periodSourceDetails(sources, "storm");
+  const activeSources = sources.filter(source => source.storm).map(source => source.name);
+  const stormSourceLabel = activeSources.length > 1 ? activeSources.slice(0, -1).join(", ") + " et " + activeSources.at(-1) : (activeSources[0] || "la source disponible") + " seulement";
+  const direction = directionValue == null ? "" : '<span class="daily-period-wind-arrow" style="transform:rotate(' + directionValue + 'deg)" aria-hidden="true">↑</span>';
+  const rainStep = rainPictogramStep(rain), windStep = meanWindIntensityLevel(wind), gustStep = gustIntensityLevel(gust), stormStep = hasStorm ? stormLevel : 0;
+  const metric = (kind, value, step, label, sourceDetails) => value == null ? '<span class="day-detail-unavailable">—</span>' : periodMetricPictogram(kind, step, label, sourceDetails);
+  const skyDescription = cloud == null ? "Nébulosité indisponible." : conciseSkySummary(cloud);
+  const quantityBand = value => value < 1 ? "très faible" : value < 5 ? "faible" : value < 15 ? "modérée" : value < 30 ? "forte" : "très forte";
+  const quantitySummary = "en quantité " + quantityBand(rain);
+  const periodNoun = slotKey === "morning" ? "matinée" : slotKey === "afternoon" ? "après-midi" : slotKey === "evening" ? "soirée" : "nuit";
+  const timingSummary = rainTiming === "start" ? "en début de " + periodNoun
+    : rainTiming === "middle" ? "au milieu de " + periodNoun
+    : rainTiming === "end" ? "en fin de " + periodNoun : "";
+  const pluralRain = showers && !hasStorm;
+  const likelihood = (pluralRain ? {
+    "Prévue": "",
+    "Très probable": " très probables",
+    "Probable": " probables",
+    "Possible": " possibles",
+    "Envisagée": " envisagées",
+    "Peu probable": " peu probables",
+    "Très peu probable": " très peu probables",
+    "Incertain": " incertaines",
+    "À confirmer": " à confirmer"
+  } : {
+    "Prévue": "",
+    "Très probable": " très probable",
+    "Probable": " probable",
+    "Possible": " possible",
+    "Envisagée": " envisagée",
+    "Peu probable": " peu probable",
+    "Très peu probable": " très peu probable",
+    "Incertain": " incertaine",
+    "À confirmer": " à confirmer"
+  })[probabilitySummary.text] ?? "";
+  const rainSubject = hasStorm ? "Pluie orageuse" : pluralRain ? "Averses" : "Pluie";
+  const disagreementSummary = rainSubject + likelihood + (timingSummary ? " " + timingSummary + "," : "") + " " + quantitySummary + ".";
+  // La synthèse reste qualitative. Les valeurs exactes restent dans le
+  // pictogramme et son détail accessible.
+  const rainDescription = rain == null ? "Précipitations indisponibles." : snowfall > 0 ? (liquidRain > 0 ? "Pluie et neige." : "Neige.") : hideRain ? "" : rainDisagreement
+    ? disagreementSummary
+    : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
+  const windDescription = wind == null && gust == null ? "Vent indisponible." : conciseWindSummary(wind == null ? [] : [wind], gust == null ? [] : [gust], [], [], directionValue == null ? [] : [directionValue]);
+  const cloudDetail = periodMetricRow(metric("cloud", cloud, cloudCoverBand(cloud), "Nébulosité " + format(cloud, 0) + " %", cloudSources), format(cloud, 0) + " %", skyDescription);
+  const rainKind = showers ? "showers" : "rain";
+  const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
+  const rainPictogramLabel = "Précipitations " + precipitationText + (rainProbability != null ? " · probabilité " + format(rainProbability, 0) + " %" : "");
+  const rainPictogram = '<span class="week-rain-pictogram">' + metric(rainKind, rain, rainStep, rainPictogramLabel, rainSources) + showerPlus + '</span>';
+  const rainDetail = periodMetricRow(rainPictogram, escapeText(precipitationText), rainDescription, "week-rain-row");
+  const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + metric("wind", wind, windStep, "Vent " + windRangeText + " km/h", windSources) + '</dt><dd><span class="week-metric-number">(' + direction + escapeText(windRangeText) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + metric("gust", gust, gustStep, "Rafales " + gustRangeText + " km/h", gustSources) + '</dt><dd><span class="week-metric-number">(' + escapeText(gustRangeText) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
+  const stormDescription = hasStorm == null ? "Prévision d’orage indisponible." : hasStorm
+    ? Number(weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + "."
+    : "Pas d’orage.";
+  const stormDetail = periodMetricRow(metric("storm", hasStorm, stormStep, hasStorm ? Number(weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage", stormSources), "", stormDescription, "daily-period-storm-detail");
+  return '<dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl>';
+}
+
+function forecastPeriodSummaryText(period) {
+  const format = value => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+    if (!period) return "";
+    const rain = Math.max(0, Number(period.precipitationSum) || 0);
+    const probability = Math.max(0, Number(period.precipitationProbabilityMax) || 0);
+    const gust = Math.max(0, Number(period.windGustMax) || 0);
+    const parts = [];
+    if (period.storm) parts.push(Number(period.weatherCode) >= 96 ? "Orage violent possible" : "Orage possible");
+    else if (rain >= 5) parts.push(format(rain) + " mm de pluie");
+    else if (probability >= 70) parts.push("Pluie probable");
+    const gustLevel = gustIntensityLevel(gust);
+    if (gustLevel >= 3) parts.push(shortTermGustLabel(gustLevel));
+    return parts.join(" · ");
+}
+
+function forecastPeriodHighlights({ storm, gust, sources = [] }) {
+  const format = value => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 0 });
+  const gustSources = periodSourceDetails(sources, "windGust"), stormSources = periodSourceDetails(sources, "storm");
+  const hazard = [storm ? stormSignalPictogram(stormSources.join("\n"), "daily-hazard-symbol storm") : "",
+    gustIntensityLevel(gust) >= 3 ? '<span class="daily-hazard-symbol wind chart-point" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(gustSources.join("\n")) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>' : ""].join("");
+  const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
+  const gustVolume = gust >= 50 ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(format(gust) + " kilomètres par heure") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + escapeText(format(gust)) + ' km/h</strong></span>' : "";
+  return { hazardMarkup, gustVolume };
+}
+
 function renderTestingDailyForecast() {
   const target = $("week-forecast");
   if (!target) return;
@@ -2159,41 +2338,6 @@ function renderTestingDailyForecast() {
     const weekday = weekDayFormat.format(dateFromKey(day.date));
     return weekday.charAt(0).toUpperCase() + weekday.slice(1);
   };
-  const weatherDescription = period => {
-    if (!period) return "";
-    const rain = Math.max(0, Number(period.precipitationSum) || 0);
-    const probability = Math.max(0, Number(period.precipitationProbabilityMax) || 0);
-    const gust = Math.max(0, Number(period.windGustMax) || 0);
-    const parts = [];
-    if (period.storm) parts.push(Number(period.weatherCode) >= 96 ? "Orage violent possible" : "Orage possible");
-    else if (rain >= 5) parts.push(format(rain) + " mm de pluie");
-    else if (probability >= 70) parts.push("Pluie probable");
-    const gustLevel = gustIntensityLevel(gust);
-    if (gustLevel >= 3) parts.push(shortTermGustLabel(gustLevel));
-    return parts.join(" · ");
-  };
-  const hazardPictogram = (kind, detail) => kind === "storm"
-    ? stormSignalPictogram(detail, "daily-hazard-symbol storm")
-    : '<span class="daily-hazard-symbol wind chart-point" tabindex="0" role="img" aria-label="Vent fort" data-tooltip="' + escapeText(detail) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11c3 0 3-4 0-4-1.2 0-2 .6-2.4 1.4M3 12h16c3.2 0 3.2 4.5 0 4.5-1.3 0-2.2-.7-2.5-1.6M3 16h8"/></svg></span>';
-  const periodMetricIcons = {
-    cloud: '<path d="M5.5 18a4.5 4.5 0 0 1-.6-9A6.2 6.2 0 0 1 16.7 8a5 5 0 1 1 .8 10H5.5Z"/>',
-    rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
-    showers: '<path d="M5 10.5a5 5 0 0 1 9.4-2.3A3.8 3.8 0 1 1 17 15H6a3.2 3.2 0 0 1-1-6.2"/><path d="m8 17-1.2 3M12 17l-1.2 3M16 17l-1.2 3"/>',
-    wind: '<path d="M3 7.5h10.5c3.7 0 3.7-4.5.7-4.5-1.3 0-2.2.7-2.6 1.7M3 12h15c3.8 0 3.8 5 .5 5-1.5 0-2.4-.8-2.8-1.8M3 16.5h7"/>',
-    gust: '<path d="M3 7h12c4 0 4-5 .7-5-1.5 0-2.5.8-2.9 2M3 12h17M3 17h10c4 0 4 5 .7 5-1.5 0-2.5-.8-2.9-2"/>',
-    storm: '<path d="M13.5 2 6.8 13h5l-1.2 9L18 10.5h-5L13.5 2Z"/>'
-  };
-  const periodMetricPictogram = (kind, step, label, sources) => {
-    const level = Math.max(0, Math.min(5, Math.round(Number(step) || 0)));
-    const scale = Array.from({ length: 5 }, (_, index) => '<i class="' + (index < level ? "solid" : "") + '"></i>').join("");
-    const sourceTooltip = sources.filter(Boolean).join("\n");
-    const accessibleLabel = label + " · " + level + " sur 5 · " + sourceTooltip.replace(/\n/g, ", ");
-    return '<span class="week-metric-pictogram ' + kind + ' chart-point" tabindex="0" role="img" aria-label="' + escapeText(accessibleLabel) + '" data-tooltip="' + escapeText(sourceTooltip) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons[kind] + '</svg><span class="week-metric-scale" aria-hidden="true">' + scale + '</span></span>';
-  };
-  const periodCloudStep = value => cloudCoverBand(value);
-  const periodWindStep = meanWindIntensityLevel;
-  const periodGustStep = gustIntensityLevel;
-  const periodMetricRow = (pictogram, valueMarkup, description, extraClass = "") => '<div class="week-metric-row' + (extraClass ? " " + extraClass : "") + '"><dt>' + pictogram + '</dt><dd>' + (valueMarkup ? '<span class="week-metric-number">(' + valueMarkup + ')</span>' : '') + '</dd>' + (description ? '<p class="week-metric-description">' + escapeText(description) + '</p>' : '') + '</div>';
   const slotDateKey = (dateKey, slot) => shiftForecastDateKey(dateKey, slot.dayOffset);
   const meteoFranceRainForPeriod = (dateKey, slot) => {
     const periods = (latestForecastData?.pearome?.hours || []).filter(item => {
@@ -2401,14 +2545,17 @@ function renderTestingDailyForecast() {
     const hasMeteoFranceStorm = meteoFranceStorm && typeof meteoFranceStorm === "object"
       ? Boolean(meteoFranceStorm.active)
       : Boolean(meteoFranceStorm);
-    if (!forecastPeriodAvailable(period, meteoFranceRain, meteoFranceWind, meteoFranceStorm)) return "";
     const slotEndTime = forecastLocalDateTime(slotDateKey(dateKey, slot), slot.endHour).getTime();
     const pastClass = Number.isFinite(slotEndTime) && slotEndTime <= appNow() ? " daily-period-past" : "";
+    if (!forecastPeriodAvailable(period, meteoFranceRain, meteoFranceWind, meteoFranceStorm)) {
+      if (!pastClass) return "";
+      return '<details class="daily-period-card daily-period-past" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"><strong>' + escapeText(label) + '</strong></span><span class="daily-period-icon" aria-label="Données indisponibles">—</span><span class="daily-period-values">—</span><span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details">Prévisions de cette période non acquises.</div></details>';
+    }
     const openMeteoRain = hasOpenMeteoPeriod ? Math.max(0, Number(period.precipitationSum) || 0) : null;
     const meteoFranceRainAmount = meteoFranceRain?.amount != null && Number.isFinite(Number(meteoFranceRain.amount)) ? Math.max(0, Number(meteoFranceRain.amount)) : null;
     const rain = weekWeightedValue(openMeteoRain, meteoFranceRainAmount);
     const rainDisagreement = openMeteoRain != null && meteoFranceRainAmount != null && Math.abs(openMeteoRain - meteoFranceRainAmount) >= .05;
-    const rainAmountText = value => value > 0 && value < .1 ? "< 0,1" : format(value);
+    const rainAmountText = value => value > 0 && value < .1 - 1e-9 ? "gouttes" : format(value) + " mm";
     const rainRangeText = rainAmountText(rain);
     const rainProbability = weekWeightedValue(hasOpenMeteoPeriod ? period.precipitationProbabilityMax : null, meteoFranceRain?.probability);
     const probabilitySummary = rainProbabilitySummary([rainProbability]);
@@ -2438,101 +2585,29 @@ function renderTestingDailyForecast() {
     const gust = weekWeightedValue(openMeteoGust, meteoFranceGustValue);
     const gustRangeText = format(gust, 0);
     const openMeteoTrends = period?.backgroundTrends || {};
-    const meteoFranceRainProbability = meteoFranceRain?.probability != null && meteoFranceRain.probability !== "" && Number.isFinite(Number(meteoFranceRain.probability))
-      ? " · " + format(meteoFranceRain.probability, 0) + " %"
-      : "";
-    const rainSources = [
-      hasOpenMeteoPeriod ? "Open-Meteo : " + rainAmountText(openMeteoRain) + " mm · " + format(period.precipitationProbabilityMax, 0) + " % " + (openMeteoTrends.rain || "→") : "",
-      meteoFranceRainAmount != null ? "Météo-France : " + rainAmountText(meteoFranceRainAmount) + " mm" + meteoFranceRainProbability + " " + (meteoFranceRain.backgroundTrend || "→") : ""
-    ];
-    const windSources = [
-      hasOpenMeteoPeriod ? "Open-Meteo : " + format(openMeteoWind, 0) + " km/h " + (openMeteoTrends.wind || "→") : "",
-      meteoFranceWindValue != null ? "Météo-France : " + format(meteoFranceWindValue, 0) + " km/h " + (meteoFranceWind.windBackgroundTrend || "→") : ""
-    ];
-    const gustSources = [
-      hasOpenMeteoPeriod ? "Open-Meteo : " + format(openMeteoGust, 0) + " km/h " + (openMeteoTrends.gust || "→") : "",
-      meteoFranceGustValue != null ? "Météo-France : " + format(meteoFranceGustValue, 0) + " km/h " + (meteoFranceWind.gustBackgroundTrend || "→") : ""
-    ];
-    const stormSources = [
-      hasOpenMeteoPeriod ? "Open-Meteo : " + (hasOpenMeteoStorm ? "orage possible" : "pas d’orage") + " " + (openMeteoTrends.storm || "→") : "",
-      hasMeteoFranceDay ? "Météo-France : " + (hasMeteoFranceStorm ? "orage possible" : "pas d’orage") + " " + (meteoFranceStorm?.backgroundTrend || "→") : ""
-    ];
-    const hazard = [
-      hasStorm
-        ? hazardPictogram("storm", stormSources.filter(Boolean).join("\n")) : "",
-      gustIntensityLevel(gust) >= 3
-        ? hazardPictogram("wind", gustSources.filter(Boolean).join("\n")) : ""
-    ].join("");
-    const rainStep = rainPictogramStep(rain);
-    const windStep = periodWindStep(wind);
-    const gustStep = periodGustStep(gust);
+    const sourcePeriods = [
+      hasOpenMeteoPeriod ? { name: "Open-Meteo", rain: openMeteoRain, probability: period.precipitationProbabilityMax,
+        cloudCover: period.cloudCover, windSpeed: openMeteoWind, windGust: openMeteoGust, storm: hasOpenMeteoStorm, trends: openMeteoTrends } : null,
+      { name: "Météo-France", rain: meteoFranceRainAmount, probability: meteoFranceRain?.probability,
+        cloudCover: meteoFranceWind?.cloudCover, windSpeed: meteoFranceWindValue, windGust: meteoFranceGustValue,
+        storm: hasMeteoFranceDay ? hasMeteoFranceStorm : null,
+        trends: { rain: meteoFranceRain?.backgroundTrend, wind: meteoFranceWind?.windBackgroundTrend,
+          gust: meteoFranceWind?.gustBackgroundTrend, storm: meteoFranceStorm?.backgroundTrend } }
+    ].filter(Boolean);
+    const rainSources = periodSourceDetails(sourcePeriods, "rain");
     const stormRisk = weekStormRisk(dateKey);
     const stormStep = hasStorm ? Math.max(3, stormRisk.level) : 0;
-    const activeStormSources = [
-      hasOpenMeteoStorm ? "Open-Meteo" : "",
-      hasMeteoFranceStorm ? "Météo-France" : ""
-    ].filter(Boolean);
-    const stormSourceLabel = activeStormSources.length > 1 ? activeStormSources.slice(0, -1).join(", ") + " et " + activeStormSources.at(-1) : activeStormSources[0] + " seulement";
     const rainVolume = !hideRain && rain >= .1
-      ? '<span class="daily-period-rain-volume" role="img" aria-label="Cumul de pluie ' + escapeText(rainAmountText(rain) + " millimètres") + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/></svg><strong>' + escapeText(rainRangeText) + ' mm</strong></span>'
+      ? '<span class="daily-period-rain-volume" title="Cumul de pluie ' + escapeText(rainAmountText(rain)) + '"><strong>' + escapeText(rainRangeText) + '</strong></span>'
       : "";
-    // Le rappel chiffré du créneau garde son seuil historique de 50 km/h :
-    // il informe sur la valeur sans dépendre du niveau qualitatif recalibré.
-    const gustVolume = gust >= 50
-      ? '<span class="daily-period-gust-volume" role="img" aria-label="Rafales ' + escapeText(format(gust, 0) + " kilomètres par heure") + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + periodMetricIcons.gust + '</svg><strong>' + escapeText(gustRangeText) + ' km/h</strong></span>'
-      : "";
-    const notable = weatherDescription({ ...(period || {}), precipitationSum: hideRain ? 0 : rain, precipitationProbabilityMax: hideRain ? 0 : rainProbability, storm: hasStorm });
+    const { hazardMarkup, gustVolume } = forecastPeriodHighlights({ storm: hasStorm, gust, sources: sourcePeriods });
+    const notable = forecastPeriodSummaryText({ ...(period || {}), precipitationSum: hideRain ? 0 : rain, precipitationProbabilityMax: hideRain ? 0 : rainProbability, storm: hasStorm });
     const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
     const showers = (Number(period?.weatherCode) >= 80 && Number(period?.weatherCode) <= 82) || hasStorm;
-    const skyDescription = conciseSkySummary(cloud);
-    const quantityBand = value => value < 1 ? "très faible" : value < 5 ? "faible" : value < 15 ? "modérée" : value < 30 ? "forte" : "très forte";
-    const quantitySummary = "en quantité " + quantityBand(rain);
-    const periodNoun = slot.key === "morning" ? "matinée" : slot.key === "afternoon" ? "après-midi" : slot.key === "evening" ? "soirée" : "nuit";
-    const timingSummary = period?.rainTiming === "start" ? "en début de " + periodNoun
-      : period?.rainTiming === "middle" ? "au milieu de " + periodNoun
-      : period?.rainTiming === "end" ? "en fin de " + periodNoun : "";
-    const pluralRain = showers && !hasStorm;
-    const likelihood = (pluralRain ? {
-      "Prévue": "",
-      "Très probable": " très probables",
-      "Probable": " probables",
-      "Possible": " possibles",
-      "Envisagée": " envisagées",
-      "Peu probable": " peu probables",
-      "Très peu probable": " très peu probables",
-      "Incertain": " incertaines",
-      "À confirmer": " à confirmer"
-    } : {
-      "Prévue": "",
-      "Très probable": " très probable",
-      "Probable": " probable",
-      "Possible": " possible",
-      "Envisagée": " envisagée",
-      "Peu probable": " peu probable",
-      "Très peu probable": " très peu probable",
-      "Incertain": " incertaine",
-      "À confirmer": " à confirmer"
-    })[probabilitySummary.text] ?? "";
-    const rainSubject = hasStorm ? "Pluie orageuse" : pluralRain ? "Averses" : "Pluie";
-    const disagreementSummary = rainSubject + likelihood + (timingSummary ? " " + timingSummary + "," : "") + " " + quantitySummary + ".";
-    // La synthèse reste qualitative. Les valeurs exactes restent dans le
-    // pictogramme et son détail accessible.
-    const rainDescription = hideRain ? "" : rainDisagreement
-      ? disagreementSummary
-      : conciseRainSummary(rain, [], [], showers, hasStorm, probabilitySummary) || "Pas de pluie.";
-    const windDescription = conciseWindSummary([wind], [gust], [], [], [directionValue]);
-    const cloudDetail = periodMetricRow(periodMetricPictogram("cloud", periodCloudStep(cloud), "Nébulosité " + format(cloud, 0) + " %", [hasOpenMeteoPeriod ? "Open-Meteo : " + format(period.cloudCover, 0) + " % " + (openMeteoTrends.cloud || "→") : "", meteoFranceWind?.cloudCover != null ? "Météo-France : " + format(meteoFranceWind.cloudCover, 0) + " %" : ""]), format(cloud, 0) + " %", skyDescription);
-    const rainKind = showers ? "showers" : "rain";
-    const showerPlus = showers ? '<span class="week-shower-plus" aria-hidden="true">+</span>' : "";
-    const rainPictogramLabel = "Pluie " + rainRangeText + " mm" + (rainProbability != null ? " · probabilité " + format(rainProbability, 0) + " %" : "");
-    const rainPictogram = '<span class="week-rain-pictogram">' + periodMetricPictogram(rainKind, rainStep, rainPictogramLabel, rainSources) + showerPlus + '</span>';
-    const rainDetail = periodMetricRow(rainPictogram, escapeText(rainRangeText) + " mm", rainDescription, "week-rain-row");
-    const windDetail = '<div class="week-wind-group"><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("wind", windStep, "Vent " + windRangeText + " km/h", windSources) + '</dt><dd><span class="week-metric-number">(' + direction + escapeText(windRangeText) + ' km/h)</span></dd></div><div class="week-grouped-metric-line"><dt>' + periodMetricPictogram("gust", gustStep, "Rafales " + gustRangeText + " km/h", gustSources) + '</dt><dd><span class="week-metric-number">(' + escapeText(gustRangeText) + ' km/h)</span></dd></div><p class="week-metric-description">' + escapeText(windDescription) + '</p></div>';
-    const stormDescription = hasStorm
-      ? Number(period?.weatherCode) >= 96 ? "Phénomène orageux violent possible selon " + stormSourceLabel + "." : "Orage possible selon " + stormSourceLabel + "."
-      : "Pas d’orage.";
-    const stormDetail = periodMetricRow(periodMetricPictogram("storm", stormStep, hasStorm ? Number(period?.weatherCode) >= 96 ? "Phénomène violent possible" : "Orage possible" : "Pas d’orage", stormSources), "", stormDescription, "daily-period-storm-detail");
-    const hazardMarkup = hazard ? '<span class="daily-period-hazards">' + hazard + '</span>' : "";
+    const detailsMarkup = forecastPeriodDetailsMarkup({ cloud, rain, rainLabel: rainRangeText, wind, gust, directionValue,
+      hasStorm, weatherCode: period?.weatherCode, showers, hideRain, probabilitySummary, rainDisagreement,
+      rainTiming: period?.rainTiming, slotKey: slot.key, sources: sourcePeriods, stormLevel: stormStep });
+
     // Chaque modèle conserve son propre scénario pluie/probabilité. Cela
     // évite de fabriquer un niveau avec la probabilité de l'un et le cumul de
     // l'autre. L'orage ne relève le niveau que s'il chevauche soit une pluie
@@ -2543,22 +2618,23 @@ function renderTestingDailyForecast() {
     const meteoFranceStormRainWindOverlap = (meteoFranceWind?.stormWindTimes || []).some(stormTime =>
       (meteoFranceRain?.intervals || []).some(interval => interval.amount >= 1 && stormTime >= interval.start && stormTime < interval.end)
     );
-    const alertTone = forecastSlotAlertTone([
-      {
-        wind,
-        gust,
-        probability: rainProbability,
-        rain,
-        rain3h: weekWeightedValue(hasOpenMeteoPeriod ? period.peakRain3h : null, meteoFranceRain?.peak3h),
-        stormRainOverlap: (hasOpenMeteoStorm && Boolean(period?.stormRainOverlap))
-          || (hasMeteoFranceStorm && meteoFranceStormRainOverlap),
-        stormRainWindOverlap: (hasOpenMeteoStorm && Boolean(period?.stormRainWindOverlap))
-          || (hasMeteoFranceStorm && meteoFranceStormRainWindOverlap)
-      }
-    ]);
+    const meteoFranceAlertAvailable = meteoFranceRainAmount != null || meteoFranceWindValue != null
+      || meteoFranceGustValue != null || hasMeteoFranceStorm || meteoFranceStorm?.available === true;
+    const alertTone = forecastSlotAlertTone([meteoFranceAlertAvailable ? {
+      wind: meteoFranceWindValue, gust: meteoFranceGustValue,
+      probability: meteoFranceRain?.probability, deterministic: true,
+      rain: meteoFranceRainAmount, rain3h: meteoFranceRain?.peak3h,
+      stormRainOverlap: hasMeteoFranceStorm && meteoFranceStormRainOverlap,
+      stormRainWindOverlap: hasMeteoFranceStorm && meteoFranceStormRainWindOverlap
+    } : {
+      wind: openMeteoWind, gust: openMeteoGust, probability: period?.precipitationProbabilityMax,
+      rain: openMeteoRain, rain3h: period?.peakRain3h,
+      stormRainOverlap: hasOpenMeteoStorm && Boolean(period?.stormRainOverlap),
+      stormRainWindOverlap: hasOpenMeteoStorm && Boolean(period?.stormRainWindOverlap)
+    }]);
     const alertClass = alertTone ? " daily-period-alert-" + alertTone : "";
     const titleAttribute = labelTitle ? ' title="' + escapeText(labelTitle) + '"' : "";
-    return '<details class="daily-period-card' + alertClass + pastClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon chart-point" tabindex="0" data-tooltip="' + escapeText("Précipitations\n" + rainSources.filter(Boolean).join("\n")) + '">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details"><dl>' + cloudDetail + rainDetail + windDetail + stormDetail + '</dl></div></details>';
+    return '<details class="daily-period-card' + alertClass + pastClass + '" data-period-key="' + escapeText(periodKey) + '"><summary><span class="daily-period-title"' + titleAttribute + '><strong>' + label + '</strong>' + vigilanceSlotIcons(vigilanceAlerts) + '</span><span class="daily-period-icon weather-icon chart-point" tabindex="0" data-tooltip="' + escapeText("Précipitations\n" + rainSources.filter(Boolean).join("\n")) + '">' + icon + hazardMarkup + '</span><span class="daily-period-values">' + temperature + rainVolume + gustVolume + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span></summary><div class="daily-period-details">' + detailsMarkup + '</div></details>';
   };
   const openMeteoByDate = new Map((latestWeekForecast?.days || [])
     .filter(day => day.date >= todayDateKey())
@@ -2610,7 +2686,7 @@ function renderTestingDailyForecast() {
     if (!periods.length) return "";
     return '<article class="daily-forecast-card"><header>' + dayHeading + confidenceIndicator(openMeteo, storedOpenMeteo ? meteoFranceDay : null) + '</header><div class="daily-period-grid">' + periods.join("") + '</div></article>';
   }).join("");
-  target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur 7 jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText(weekForecastErrors.openmeteo || "Chargement des prévisions quotidiennes…") + '</div>';
+  target.innerHTML = cards ? '<section class="daily-cards-view" aria-label="Prévisions quotidiennes sur ' + forecastDates.length + ' jours"><div class="daily-cards-grid">' + cards + '</div></section>' : '<div class="week-source-message">' + escapeText((siteFeatures.openMeteo ? weekForecastErrors.openmeteo : weekForecastErrors.meteofrance) || "Chargement des prévisions quotidiennes…") + '</div>';
   const periodDetails = [...target.querySelectorAll(".daily-period-card")];
   periodDetails.forEach(detail => { detail.open = openPeriodKeys.has(detail.dataset.periodKey); });
   periodDetails.forEach(detail => detail.addEventListener("toggle", () => {
@@ -2624,7 +2700,383 @@ function renderTestingDailyForecast() {
   renderWeekApiLinks();
 }
 
+function dailyDataUpdateMarkup(day) {
+  const tone = dailyRowsTools.dailyDataUpdateStatus(day, appNow());
+  const title = dailyRowsTools.dailyDataUpdateTitle(day, appNow());
+
+  return '<span class="daily-confidence-indicator daily-data-refresh ' + tone + '" role="img" aria-label="' + escapeText(title) + '" title="' + escapeText(title) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 11.6-1L20 9M4 15l2.4 3A7 7 0 0 0 18 17"/></svg></span>';
+}
+
+function threeHourHazardsMarkup(period, causes) {
+  const wind = causes.wind ?? period.windSpeed;
+  const gust = causes.gust ?? period.windGust;
+  return dailyRowsTools.windSummaryMarkup(wind, gust, causes);
+}
+
+function dailyRowPeriodsMarkup(day, state, sourceRows = []) {
+  const format = (value, digits = 0) => value == null ? "—" : Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits });
+  return forecastDailySlots.map(slot => {
+    const { start, end } = forecastSlotTimeRange(day.date, slot);
+    const period = dailyRowsTools.dailyPeriodSummary(day, start, end, appNow());
+    const sourcePeriods = dailyRowsTools.dailyPeriodSourceSummaries(sourceRows, day.date, start, end, appNow());
+    const sourceDetails = key => periodSourceDetails(sourcePeriods, key);
+    const rain = period.rain;
+    const probabilityValues = period.rainSources.length === 1 && period.rainSources[0] === "Open-Meteo"
+      ? (latestForecastData?.openMeteo?.hours || []).filter(hour => Date.parse(hour.time) > period.begin && Date.parse(hour.time) <= end)
+        .map(hour => hour.probability).filter(value => value != null && Number.isFinite(value)) : [];
+    const probability = rainProbabilitySummary(probabilityValues);
+    const snow = period.snowfall > 0;
+    const snowAmount = snow ? (Math.round(period.snowfall) || "< 1") + " cm" : "";
+    const rainQuantity = value => value > 0 && value < .1 - 1e-9 ? "gouttes" : format(value, 2) + " mm";
+    const rainAmount = rain == null ? "—" : snow ? (period.liquidRain > 0 ? rainQuantity(period.liquidRain) + " · " : "") + snowAmount : rainQuantity(rain);
+    const amount = rainAmount + (period.estimated ? "*" : "") + (rain != null && !period.completeRain ? dailyRowsTools.precipitationCoverageSuffix(period.intervals, siteProfile.timezone) : "");
+    const weatherCode = sourcePeriods.find(item => item.name === period.sources.storm)?.weatherCode;
+    const details = forecastPeriodDetailsMarkup({ cloud: period.cloudCover, rain, rainLabel: snow || period.estimated || !period.completeRain ? amount : undefined,
+      wind: period.windSpeed, gust: period.windGust, directionValue: period.windDirection, hasStorm: period.storm,
+      weatherCode, showers: (weatherCode >= 80 && weatherCode <= 82) || period.storm === true, hideRain: weekRainBelowDisplayThreshold(probabilityValues, period.storm === true),
+      probabilitySummary: probability, rainTiming: period.rainTiming,
+      slotKey: slot.key, sources: sourcePeriods, snowfall: period.snowfall, liquidRain: period.liquidRain });
+    const { hazardMarkup, gustVolume } = forecastPeriodHighlights({ storm: period.storm, gust: period.windGust, sources: sourcePeriods });
+    const alertPeriods = dailyRowsTools.dailyPeriodAlertSummaries(sourceRows, day.date, start, end, appNow());
+    const alertTone = forecastSlotAlertTone(alertPeriods.map(item => ({ wind: item.windSpeed, gust: item.windGust,
+      rain: item.rain, probability: item.probability, rain3h: item.rain3h, deterministic: item.deterministic,
+      stormRainOverlap: item.stormRainOverlap, stormRainWindOverlap: item.stormRainWindOverlap })));
+    const time = new Date((start + end) / 2).toISOString();
+    const iconRain = snow ? period.liquidRain : rain;
+    const icon = dailyRowsTools.weatherPictogram({ ...period, time, rain,
+      rainLevel: iconRain >= .01 ? rainPictogramStep(iconRain) : 0,
+      cloudCover: period.cloudCover ?? (period.storm ? 100 : null), stormSignal: false }, displayIcon);
+    const temperatures = '<span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin) + '°</b></span></span>';
+    const rainVolume = rain >= .01 ? '<span class="daily-period-rain-volume"><strong>' + escapeText(rainAmount) + '</strong></span>' : "";
+    const title = slot.key === "night" ? "Nuit du " + nightPeriodDateFormat.format(new Date(day.date + "T12:00:00")) + " au " + nightPeriodDateFormat.format(new Date(shiftForecastDateKey(day.date, 1) + "T12:00:00")) + " matin" : "";
+    const notable = forecastPeriodSummaryText({ precipitationSum: rain, precipitationProbabilityMax: probability.average,
+      storm: period.storm, weatherCode, windGustMax: period.windGust });
+    const notableMarkup = notable ? '<span class="daily-period-copy">' + escapeText(notable) + '</span>' : "";
+    const summary = '<span class="daily-period-title"' + (title ? ' title="' + escapeText(title) + '"' : '') + '><strong>' + slot.label + '</strong></span><span class="daily-period-icon weather-icon chart-point" tabindex="0" data-tooltip="' + escapeText("Précipitations\n" + sourceDetails("rain").join("\n")) + '">' + (period.available ? icon + hazardMarkup : "—") + '</span><span class="daily-period-values">' + (period.available ? temperatures + rainVolume + gustVolume : "—") + '</span>' + notableMarkup + '<span class="daily-period-chevron" aria-hidden="true">⌄</span>';
+    return '<details class="daily-period-card' + (alertTone ? ' daily-period-alert-' + alertTone : '') + (end <= appNow() ? ' daily-period-past' : '') + '" data-period-key="' + day.date + ':' + slot.key + '" data-slot-key="' + slot.key + '"' + (state.openPeriod === slot.key ? ' open' : '') + '><summary>' + summary + '</summary><div class="daily-period-details">' + details + '</div></details>';
+  }).join("");
+}
+
+function dailyRowDaySummaryMarkup(day, sourceRows = []) {
+  const period = dailyRowsTools.dailyPeriodSummary(day, day.start, day.end, appNow());
+  const sources = dailyRowsTools.dailyPeriodSourceSummaries(sourceRows, day.date, day.start, day.end, appNow());
+  const sample = dailyRowsTools.dailySummarySample(day);
+  const format = (value, digits = 0) => value == null ? "—" : Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits });
+  const snow = period.snowfall > 0;
+  const roundedSnowfall = Math.round(period.snowfall);
+  const liquidKnown = period.liquidRain != null;
+  const rain = liquidKnown ? period.liquidRain : period.rain;
+  const rainLabel = liquidKnown || ["dry", "rain", "freezing"].includes(sample.phase) ? "Pluie" : "Précip.";
+  const rainAmount = rain == null ? "—" : rain > 0 && rain < .1 - 1e-9 ? "gouttes" : format(rain, 2) + " mm";
+  const rainSuffix = rain == null ? "" : (period.estimated ? "*" : "") + (!period.completeRain ? dailyRowsTools.precipitationCoverageSuffix(period.intervals, siteProfile.timezone) : "");
+  const rainTitle = [liquidKnown ? "Cumul de pluie de la journée" : "Précipitations en équivalent eau ; répartition pluie/neige inconnue",
+    period.estimated ? "Part estimée au prorata" : "", ...periodSourceDetails(sources, "rain")].filter(Boolean).join("\n");
+  const rainVolume = rain == null || rain >= .01 - 1e-9
+    ? '<span class="daily-period-rain-volume" title="' + escapeText(rainTitle) + '"><small>' + rainLabel + '</small><strong>' + escapeText(rainAmount + rainSuffix) + '</strong></span>' : "";
+  const snowVolume = snow ? '<span class="daily-period-rain-volume daily-period-snow-volume" title="Neige fraîche estimée de la journée ; pas une hauteur au sol"><small>Neige</small><strong>' + (roundedSnowfall || "&lt; 1") + ' cm' + escapeText(rainSuffix) + '</strong></span>' : "";
+  const { hazardMarkup, gustVolume } = forecastPeriodHighlights({ storm: period.storm, gust: period.windGust, sources });
+  const iconRain = ["rain", "mixed", "freezing"].includes(sample.phase) ? rain : 0;
+  const snowLevel = period.snowfall > 15 + 1e-9 ? 3 : period.snowfall > 5 + 1e-9 ? 2 : 1;
+  const icon = dailyRowsTools.weatherPictogram({ ...sample, stormSignal: false,
+    rainLevel: rainPictogramStep(iconRain), snowLevel }, displayIcon);
+  return '<section class="daily-trend-summary" aria-label="Synthèse de la journée"><div class="daily-trend-overview"><span class="daily-period-icon weather-icon">' + icon + hazardMarkup
+    + '</span><span class="daily-period-values"><span class="daily-period-temperatures"><span><small>Max.</small><strong>' + format(period.temperatureMax) + '°</strong></span><span><small>Min.</small><b>' + format(period.temperatureMin)
+    + '°</b></span></span><span class="daily-period-metrics">' + rainVolume + snowVolume + gustVolume + '</span></span></div></section>';
+}
+
+function alignDailyLegendSources(root) {
+  root.querySelectorAll('.day-chart-key').forEach(key => {
+    key.classList.remove('day-source-wrapped');
+    const source = key.querySelector('.day-source');
+    const first = [...key.children].find(child => child !== source && child.getBoundingClientRect().height > 0);
+    if (!source || !first) return;
+    const rect = source.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(source).lineHeight);
+    key.classList.toggle('day-source-wrapped', rect.top - first.getBoundingClientRect().top > 6 || rect.height > lineHeight * 1.5);
+  });
+}
+
+function renderSiteHeader() {
+  const target = $("site-daylight");
+  if (!target || !Number.isFinite(siteProfile.latitude) || !Number.isFinite(siteProfile.longitude)) return;
+  const now = new Date(appNow());
+  const timezone = siteProfile.timezone || "Europe/Paris";
+  const time = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
+  const key = todayDateKey();
+  const sun = sunTimes(new Date(key + "T12:00:00Z"));
+  const moon = moonPhaseMeteoconName(now);
+  const moonLabels = { "moon-new": "Nouvelle lune", "moon-waxing-crescent": "Premier croissant", "moon-first-quarter": "Premier quartier", "moon-waxing-gibbous": "Lune gibbeuse croissante", "moon-full": "Pleine lune", "moon-waning-gibbous": "Lune gibbeuse décroissante", "moon-last-quarter": "Dernier quartier", "moon-waning-crescent": "Dernier croissant" };
+  const solarIcon = setting => '<svg class="site-sun-icon' + (setting ? ' site-sunset-icon' : '') + '" viewBox="0 6 32 26" aria-hidden="true"><path class="site-sun-disk" d="M8 22a8 8 0 0 1 16 0Z"/><path class="site-sun-rays" d="M4 22h24M7 27h18M3 17h3M26 17h3M6 11l2.5 2.5M23.5 13.5 26 11"/></svg>';
+  const solarTime = (label, instant, setting) => '<span class="site-sun-time" role="img" aria-label="' + label + ' à ' + time.format(instant) + '" title="' + label + '">' + solarIcon(setting) + '<span class="site-sun-label">' + (setting ? 'Couché' : 'Levé') + '</span><time datetime="' + instant.toISOString() + '">' + time.format(instant) + '</time></span>';
+  target.innerHTML = solarTime("Lever du soleil", sun.sunrise, false) + solarTime("Coucher du soleil", sun.sunset, true) + '<span class="site-moon">' + moonPhaseIcon(now) + '<span>' + moonLabels[moon] + '</span></span>';
+}
+
+function addDailyTimeCursor(canvas, day, timezone) {
+  const timeFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
+  const cursor = document.createElement('div');
+  cursor.className = 'daily-time-cursor';
+  cursor.hidden = true;
+  cursor.setAttribute('aria-hidden', 'true');
+  const time = document.createElement('output');
+  cursor.append(time);
+  canvas.append(cursor);
+
+  const svg = canvas.querySelector('.day-combined-svg');
+  const width = Number(svg.getAttribute('viewBox').split(' ')[2]);
+  const axis = dailyRowsTools.dailyTimeAxis(day, width);
+  function move(event) {
+    const bounds = svg.getBoundingClientRect();
+    if (!bounds.width || !Number.isFinite(event.clientX)) return;
+    const position = (event.clientX - bounds.left) * width / bounds.width;
+    const x = Math.max(axis.xStamp(day.start), Math.min(axis.xStamp(day.end), position));
+    cursor.style.left = `${100 * x / width}%`;
+    time.textContent = x >= axis.xStamp(day.end) ? '24:00' : timeFormat.format(Math.min(day.end - 60000, Math.round(axis.timeAt(x) / 60000) * 60000));
+    cursor.hidden = false;
+  }
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerdown', move);
+  canvas.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') cursor.hidden = true; });
+}
+
+function bindDailyChart(article, day, state, chartOptions, { visible = () => true, beforeRedraw = () => {}, cursor = false } = {}) {
+  const scroll = article.querySelector(".day-chart-scroll");
+  const rail = article.querySelector(".metric-controls-rail");
+  const apply = () => {
+    article.querySelectorAll("[data-day-layer]").forEach(layer => {
+      const visible = state.opacities[layer.dataset.dayLayer] > 0;
+      layer.style.display = visible ? "" : "none";
+      layer.setAttribute("aria-hidden", String(!visible));
+      layer.querySelectorAll("[tabindex]").forEach(point => point.tabIndex = visible ? 0 : -1);
+    });
+    alignDailyLegendSources(article);
+    const canvas = scroll.querySelector(".day-combined-canvas");
+    if (rail && canvas && scroll.clientWidth) {
+      const legendHeight = canvas.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+      rail.style.setProperty("--day-chart-legend-height", `${legendHeight}px`);
+      rail.querySelectorAll("[data-metric-opacity]").forEach(button => {
+        const key = button.dataset.metricOpacity;
+        const base = button.offsetTop;
+        const bottom = rail.clientHeight - button.offsetHeight - 7;
+        state.offsets[key] = Math.max(7 - base, Math.min(bottom - base, state.offsets[key]));
+      });
+    }
+    applyForecastMetricState(article, state.opacities, state.offsets);
+  };
+  const redraw = () => {
+    if (!visible()) return;
+    beforeRedraw();
+    const viewportWidth = Math.max(160, scroll.clientWidth);
+    const { width, canExpand } = dailyRowsTools.dailyChartSize(viewportWidth, state, day);
+    scroll._dailyChartWidth = Math.round(viewportWidth);
+    const content = article.querySelector(".day-chart-content");
+    content.style.width = width + "px";
+    content.innerHTML = dailyRowsTools.dailyChartMarkup(day, { ...chartOptions, now: appNow(), state, width, viewportWidth });
+    const widthControl = article.querySelector(".day-width-control");
+    widthControl.hidden = !canExpand;
+    widthControl.querySelector("input").checked = state.showHourly;
+    apply();
+    bindChartTooltips(article);
+    if (cursor) addDailyTimeCursor(content.querySelector(".day-combined-canvas"), day, chartOptions.timezone);
+  };
+  scroll._redrawDailyChart = redraw;
+  bindMetricControlButtons(article, state.opacities, state.offsets, apply);
+  redraw();
+  dailyChartsResizeObserver.observe(scroll);
+  article.querySelector(".day-width-control input").onchange = event => { state.showHourly = event.target.checked; redraw(); };
+  article.querySelectorAll("[data-metric-opacity]").forEach(button => button.onkeydown = event => {
+    const metric = button.dataset.metricOpacity;
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") state.opacities[metric] = Math.max(0, Math.min(100, state.opacities[metric] + (event.key === "ArrowRight" ? 10 : -10)));
+    else if (!["rain", "cloudiness"].includes(metric)) state.offsets[metric] += event.key === "ArrowDown" ? 10 : -10;
+    apply();
+  });
+  return redraw;
+}
+
+function renderCompactWeek(target, days, { now, dashboard, week, sourceRows, chartOptions, stateForDate }) {
+  target.closest("#panel-week").classList.add("compact-week");
+  document.body.classList.add("compact-forecast-layout");
+  target.classList.add("compact-forecast");
+  target.innerHTML = compactForecastTools.compactCardsMarkup(days, {
+    now, dashboard, week, timezone: chartOptions.timezone, siteId: siteProfile.id, forecastDays: siteProfile.forecastDays,
+    alertSources: sourceRows, forecastSlotAlertTone, rainPictogramStep, weatherCodeLabel, ...dailyRowsTools
+  });
+
+  let dialog = $("compact-forecast-dialog");
+  if (!dialog) {
+    document.body.insertAdjacentHTML("beforeend", '<div class="compact-forecast"><dialog id="compact-forecast-dialog" aria-labelledby="compact-forecast-title"><header class="panel-heading"><h2 id="compact-forecast-title"></h2><form method="dialog"><button class="panel-close" aria-label="Fermer" autofocus>×</button></form></header><div class="panel-content"></div></dialog></div>');
+    dialog = $("compact-forecast-dialog");
+    dialog.addEventListener("close", () => {
+      if (dialog.open) return;
+      const scroll = dialog.querySelector(".day-chart-scroll");
+      if (scroll) dailyChartsResizeObserver?.unobserve(scroll);
+      const tooltip = $("chart-tooltip");
+      if (tooltip) {
+        tooltip.hidden = true;
+        document.body.append(tooltip);
+      }
+      dialog.querySelector(".panel-content").replaceChildren();
+      target.querySelector(`button[data-date="${dialog.dataset.date}"]`)?.focus({ preventScroll: true });
+    });
+  }
+  const openDate = date => {
+    const day = days.find(item => item.date === date);
+    const trigger = target.querySelector(`button[data-date="${date}"]`);
+    if (!day || !trigger) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    const template = document.createElement("template");
+    const state = stateForDate(date);
+    template.innerHTML = dailyRowsTools.dailyRowsMarkup([day], { ...chartOptions, now, collapsible: true,
+      stateForDate, controlsMarkup: forecastMetricControlsMarkup });
+    const panel = template.content.querySelector(".day-chart-panel");
+    panel.hidden = false;
+    panel.removeAttribute("style");
+    const previous = dialog.querySelector(".day-chart-scroll");
+    if (previous) dailyChartsResizeObserver.unobserve(previous);
+    dialog.querySelector(".panel-content").replaceChildren(panel);
+    dialog.dataset.date = date;
+    const [weekday, ...dateParts] = trigger.dataset.title.split(" ");
+    const dateLabel = document.createElement("small");
+    dateLabel.textContent = dateParts.join(" ");
+    $("compact-forecast-title").replaceChildren(weekday + " ", dateLabel);
+    const tooltip = $("chart-tooltip");
+    if (tooltip) {
+      tooltip.hidden = true;
+      dialog.append(tooltip);
+    }
+    if (!dialog.open) dialog.showModal();
+    bindDailyChart(panel, day, state, { ...chartOptions, compactRain: true, backgroundForTime: time =>
+      "color-mix(in srgb, var(--chart-night) " + (100 * nightLevel(time, new Date(time))) + "%, var(--chart-day))" },
+    { visible: () => dialog.open, cursor: true });
+  };
+  target.onclick = event => {
+    const card = event.target.closest(".card");
+    const trigger = card?.querySelector(".card-chart-hit");
+    if (trigger) openDate(trigger.dataset.date);
+  };
+  if (dialog.open) openDate(dialog.dataset.date);
+}
+
 function renderWeekForecast() {
+  if (dailyRowsLayout) {
+    renderSiteHeader();
+    if (!dailyRowsTools) return;
+    const target = $("week-forecast");
+    const current = latestForecastData || {};
+    const longRange = current.openMeteo?.longRange;
+    const dashboard = longRange?.hours?.length
+      ? { ...current, openMeteo: { ...current.openMeteo, ...longRange } }
+      : current;
+    dailyChartsResizeObserver?.disconnect();
+    dailyChartsResizeObserver = new ResizeObserver(entries => entries.forEach(entry => {
+      const width = Math.round(entry.contentRect.width);
+      if (width > 0 && Math.abs(width - (entry.target._dailyChartWidth || 0)) > 1) entry.target._redrawDailyChart?.();
+    }));
+    const stateForDate = date => {
+      if (!dailyChartStates.has(date)) dailyChartStates.set(date, dailyRowsTools.createDailyChartState());
+      return dailyChartStates.get(date);
+    };
+    const days = dailyRowsTools.buildDailyRows({ dashboard, week: latestMeteoFranceWeek,
+      now: appNow(), timezone: siteProfile.timezone, count: siteProfile.forecastDays || 16, sunTimesForDate: sunTimes, piafForChart: true });
+    const collapsible = compactForecastLayout || siteProfile.dailyPresentation === "period-cards";
+    const sourceRows = collapsible ? dailyRowsTools.buildDailySourceRows({ dashboard, week: latestMeteoFranceWeek,
+      now: appNow(), timezone: siteProfile.timezone, count: siteProfile.forecastDays || 16 }) : [];
+    const chartOptions = { timezone: siteProfile.timezone, iconMarkup: displayIcon, rainScale: dailyRowsTools.dailyRainScale(days),
+      backgroundForTime: time => daylightColor(time, new Date(time)) };
+    const alertForSlot = ({ start, end, rainRate }) => {
+      const modelAlerts = days.filter(day => day.start < end && day.end > start).flatMap(day =>
+        dailyRowsTools.dailyPeriodAlertSummaries(sourceRows, day.date, Math.max(start, day.start), Math.min(end, day.end), start));
+      return forecastSlotAlertTone([
+        ...modelAlerts.map(item => ({ ...item, wind: item.windSpeed, gust: item.windGust })),
+        { rainRate, deterministic: true }
+      ], "", true);
+    };
+    const piafTarget = $("piaf-three-hour-chart");
+    if (piafTarget) {
+      piafTarget._redrawDailyChart = () => {
+        const width = Math.max(200, piafTarget.clientWidth - 2);
+        piafTarget._dailyChartWidth = Math.round(piafTarget.clientWidth);
+        piafTarget.innerHTML = dailyRowsTools.piafChartMarkup(currentNowcast(), { ...chartOptions, compact: collapsible, compactRain: compactForecastLayout, precipitationOnly: compactForecastLayout, showHourly: piafShowHourly, now: appNow(), width,
+          dashboard, week: latestMeteoFranceWeek, hazardsMarkup: threeHourHazardsMarkup, alertForSlot });
+        const hourlyControl = piafTarget.querySelector('.day-width-control input');
+        if (hourlyControl) hourlyControl.onchange = event => {
+          piafShowHourly = event.target.checked;
+          piafTarget._redrawDailyChart();
+          piafTarget.querySelector('.day-width-control input')?.focus({ preventScroll: true });
+        };
+        alignDailyLegendSources(piafTarget);
+        bindChartTooltips(piafTarget);
+      };
+      piafTarget._redrawDailyChart();
+      dailyChartsResizeObserver.observe(piafTarget);
+    }
+    if (collapsible) target.querySelectorAll(".forecast-day-periods").forEach(article => {
+      stateForDate(article.dataset.dayDate).openPeriod = article.querySelector(".daily-period-card[open]")?.dataset.slotKey || null;
+    });
+    if (compactForecastLayout) {
+      renderCompactWeek(target, days, { now: appNow(), dashboard, week: latestMeteoFranceWeek,
+        sourceRows, chartOptions, stateForDate });
+      return;
+    }
+    target.innerHTML = dailyRowsTools.dailyRowsMarkup(days, { ...chartOptions, now: appNow(), stateForDate, alertSources: sourceRows,
+      collapsible, periodsMarkup: (day, state) => day.trend ? dailyRowDaySummaryMarkup(day, sourceRows) : dailyRowPeriodsMarkup(day, state, sourceRows), updateMarkup: dailyDataUpdateMarkup, chartIconMarkup: graphIconMarkup("daily-day-open-icon"),
+      controlsMarkup: opacities => forecastMetricControlsMarkup(opacities) });
+    target.querySelectorAll("[data-day-date]").forEach(article => {
+      const state = stateForDate(article.dataset.dayDate);
+      const day = days.find(item => item.date === article.dataset.dayDate);
+      const redraw = bindDailyChart(article, day, state, chartOptions, {
+        visible: () => !collapsible || state.chartOpen,
+        beforeRedraw: () => {
+          if (!collapsible) return;
+          const columns = getComputedStyle(target.querySelector(".daily-cards-grid")).gridTemplateColumns.split(" ").length;
+          article.querySelector(".day-chart-panel").style.order = Math.floor(days.indexOf(day) / columns) * columns * 2 - 1;
+        }
+      });
+      if (collapsible) {
+        const showPeriod = period => {
+          if (!article.isConnected) return;
+          const opened = period?.open ? period : article.querySelector(".daily-period-card[open]");
+          state.openPeriod = opened?.dataset.slotKey || null;
+          if (period?.open) target.querySelectorAll(".daily-period-card[open]").forEach(other => {
+            if (other !== period) {
+              other.open = false;
+              if (other.closest("[data-day-date]") !== article) stateForDate(other.closest("[data-day-date]").dataset.dayDate).openPeriod = null;
+            }
+          });
+        };
+        article.querySelectorAll(".daily-period-card").forEach(period => period.addEventListener("toggle", () => showPeriod(period)));
+        const chartButton = article.querySelector(".day-chart-toggle");
+        const chartPanel = article.querySelector(".day-chart-panel");
+        const toggleChart = (collapsePeriod = false) => {
+          const pagePosition = { left: window.scrollX, top: window.scrollY, behavior: "instant" };
+          if (collapsePeriod) {
+            state.openPeriod = null;
+            article.querySelectorAll(".daily-period-card[open]").forEach(period => { period.open = false; });
+          }
+          state.chartOpen = !state.chartOpen;
+          if (state.chartOpen) target.querySelectorAll("[data-day-date]").forEach(other => {
+            if (other === article) return;
+            stateForDate(other.dataset.dayDate).chartOpen = false;
+            other.querySelector(".day-chart-panel").hidden = true;
+            other.querySelector(".day-chart-toggle").setAttribute("aria-expanded", "false");
+          });
+          chartPanel.hidden = !state.chartOpen;
+          chartButton.setAttribute("aria-expanded", String(state.chartOpen));
+          if (state.chartOpen) redraw();
+          else chartButton.focus({ preventScroll: true });
+          window.scrollTo(pagePosition);
+          requestAnimationFrame(() => window.scrollTo(pagePosition));
+        };
+        chartButton.onclick = () => toggleChart(true);
+        article.querySelector(".day-chart-close").onclick = () => toggleChart();
+      }
+    });
+    bindChartTooltips();
+    return;
+  }
   renderTestingDailyForecast();
   return;
   const number = value => value != null && Number.isFinite(Number(value)) ? Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "—";
@@ -2736,7 +3188,7 @@ function renderWeekForecast() {
     const hideRain = weekRainBelowDisplayThreshold([day.precipitationProbabilityMax], stormActive);
     const icon = displayIcon({ time: day.time, cloudCover: iconCloud, rain: hideRain ? 0 : iconRain, rainLevel: hideRain ? 0 : rainPictogramStep(dailyRain) });
     const openMeteoShowerSignal = sourceKey === "openmeteo" && ((Number(day.showersSum) || 0) >= .1 || code >= 80 && code <= 82);
-    const precipitationTotal = dailyRain > 0 && dailyRain < .1 ? "< 0,1 mm" : dailyRain === 0 && openMeteoShowerSignal ? "type averse" : number(dailyRain) + " mm";
+    const precipitationTotal = dailyRain > 0 && dailyRain < .1 - 1e-9 ? "gouttes" : dailyRain === 0 && openMeteoShowerSignal ? "type averse" : number(dailyRain) + " mm";
     const windDirection = Number.isFinite(Number(day.windDirection)) ? '<span class="week-wind-arrow" style="transform:rotate(' + Number(day.windDirection) + 'deg)">↑</span>' : '';
     const ensembleStatus = sourceKey === "meteofrance" ? latestMeteoFranceWeek?.ensembleStatus?.status : "ready";
     const showersTotal = Number(day.showersSum);
@@ -2838,8 +3290,8 @@ function renderWeekForecast() {
     const rainRange = values => {
       const valid = finite(values);
       if (!valid.length) return "—";
-      const format = value => value > 0 && value < .1 ? "< 0,1" : value.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
-      return (valid.length > 1 && Math.abs(valid[0] - valid[1]) >= .05 ? format(Math.min(...valid)) + " – " + format(Math.max(...valid)) : format(valid[0])) + " mm";
+      const format = value => value > 0 && value < .1 - 1e-9 ? "gouttes" : value.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " mm";
+      return valid.length > 1 && Math.abs(valid[0] - valid[1]) >= .05 ? format(Math.min(...valid)) + " – " + format(Math.max(...valid)) : format(valid[0]);
     };
     const modelRangeDetail = (label, values, suffix = " km/h") => {
       const valid = finite(values);
@@ -3012,7 +3464,7 @@ async function loadMeteoFranceWeek() {
       scheduleMeteoFranceWeekPoll(ensembleStatus?.status);
       return { ...payload.data, ensembleStatus };
     }
-    if (payload.status === "error") throw new Error(payload.error || "Prévision ARPEGE impossible à charger.");
+    if (payload.status === "error" || runtimeConfig.dataMode === "static") throw new Error(payload.error || "Prévision ARPEGE en attente d’actualisation.");
     weekForecastErrors.meteofrance = (payload.stage || "Acquisition ARPEGE") + " · " + (payload.progress || 0) + " %";
     renderWeekForecast();
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -3021,6 +3473,35 @@ async function loadMeteoFranceWeek() {
 }
 
 async function ensureWeekForecast() {
+  if (dailyRowsLayout) {
+    if (weekForecastPromise) return weekForecastPromise;
+    weekForecastPromise = (async () => {
+      await dailyRowsReady;
+      const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
+      if (payload.data) latestMeteoFranceWeek = payload.data;
+      renderWeekForecast();
+    })().catch(error => { weekForecastErrors.meteofrance = error.message; renderWeekForecast(); }).finally(() => {
+      weekForecastPromise = null;
+      clearTimeout(weekForecastRetryTimer);
+      weekForecastRetryTimer = setTimeout(ensureWeekForecast, 60000);
+    });
+    return weekForecastPromise;
+  }
+  if (!siteFeatures.openMeteo) {
+    if (weekForecastPromise) return weekForecastPromise;
+    weekForecastPromise = loadMeteoFranceWeek().then(data => {
+      latestMeteoFranceWeek = data;
+      renderWeekForecast();
+    }).catch(error => {
+      weekForecastErrors.meteofrance = error.message;
+      renderWeekForecast();
+    }).finally(() => {
+      weekForecastPromise = null;
+      clearTimeout(weekForecastRetryTimer);
+      weekForecastRetryTimer = setTimeout(ensureWeekForecast, 60000);
+    });
+    return weekForecastPromise;
+  }
   if (!weekCacheHydrated) {
     weekCacheHydrated = true;
     const weekPath = "api/week?lat=" + point.lat + "&lon=" + point.lon;
@@ -3111,6 +3592,8 @@ async function ensureWeekForecast() {
 }
 
 async function ensureOpenMeteoEnsemble() {
+  if (dailyRowsLayout) return null;
+  if (!siteFeatures.openMeteo) return null;
   if (latestOpenMeteoEnsemble && Date.now() - latestOpenMeteoEnsemble.fetchedAt < 30 * 60000) return latestOpenMeteoEnsemble;
   if (openMeteoEnsemblePromise) return openMeteoEnsemblePromise;
   openMeteoEnsemblePromise = (async () => {
@@ -3276,6 +3759,10 @@ function piafHourlyRain(piaf, radar = null) {
 }
 
 function currentNowcast() {
+  if (!siteFeatures.nowcasting) {
+    if (basicForecastTools && latestForecastData && (!basicForecast || appNow() >= basicForecast.validUntil)) basicForecast = basicForecastTools.prepareBasicForecast(latestForecastData, appNow());
+    return basicForecast;
+  }
   const forecast = latestForecastData?.nowcast;
   return forecast?.schemaVersion === 1 && appNow() <= forecast.validUntil ? forecast : null;
 }
@@ -3777,12 +4264,12 @@ function renderForecast(arome, pearome, ensemble, openMeteo) {
     const shortTermPassage = Number(item.rainEtaPassage);
     const shortTermDetail = isShortTermHour
       ? '\nMétéo-France : ' + Number(item.rainBasePiaf || 0).toFixed(2) + ' mm'
-        + (Number(item.rainDirectRadarAmendment) > 0 ? '\nRadar aux Tatins : +' + Number(item.rainDirectRadarAmendment).toFixed(2) + ' mm' : '')
+        + (Number(item.rainDirectRadarAmendment) > 0 ? '\nRadar au point de prévision : +' + Number(item.rainDirectRadarAmendment).toFixed(2) + ' mm' : '')
         + (Number(item.rainEtaAmendment) > 0 ? '\nCellule(s) ETA si passage : +' + Number(item.rainEtaAmendment).toFixed(2) + ' mm' : '')
         + (Number.isFinite(shortTermPassage) && shortTermPassage < 100 ? '\nPassage Nowcasting : ' + Math.round(shortTermPassage) + ' %' : '')
         + ((item.rainEtaCellIds || []).length ? '\nCellule(s) avec ETA : ' + item.rainEtaCellIds.join(', ') : '')
       : '';
-    const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + shortTermDetail + intervalPeriod + (item.rainRadarCellOverPoint ? '\nPluie détectée aux Tatins par le radar' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
+    const detail = (item.rainSource || forecastModelLabel) + '\nCumul : ' + displayedAmount.toFixed(2) + ' mm (' + durationLabel + ')' + shortTermDetail + intervalPeriod + (item.rainRadarCellOverPoint ? '\nPluie détectée au point de prévision par le radar' : '') + (usePearomePeriod ? '\nRéférence AROME : ' + aromeAmount.toFixed(2) + ' mm' : '') + (hasProbability ? '\nProbabilité : ' + probability + '%' : '') + (interval ? '\n' + intervalLabel + ' : ' + interval.low.toFixed(2) + ' – ' + interval.high.toFixed(2) + ' mm sur ' + durationHours + ' h' : '') + '\nÉchéance : ' + dateTimeFormat.format(new Date(item.time));
     const precipitationLabel = drops ? 'gouttes' : measurable ? displayedAmount.toFixed(isShortTermHour ? 2 : 1) + ' mm' : (!pearome && probability >= rainRiskDisplayThreshold ? 'pluie' : '');
     const intervalAmountLabel = interval && measurable && !drops ? '(' + interval.low.toFixed(1) + '–' + interval.high.toFixed(1) + ' mm)' : '';
     const centerX = usePearomePeriod ? (periodIndexes[0] * cell + (periodIndexes.length * cell) / 2) : x(index);
@@ -4071,7 +4558,7 @@ function bindSharedHorizontalScroll(width, onScroll = () => {}) {
   }));
 }
 
-function bindChartTooltips() {
+function bindChartTooltips(root = document) {
   const tooltip = $("chart-tooltip");
   const show = (target, event) => {
     tooltip.textContent = target.dataset.tooltip;
@@ -4079,7 +4566,7 @@ function bindChartTooltips() {
     tooltip.style.left = Math.min(window.innerWidth - 260, Math.max(12, event.clientX + 14)) + "px";
     tooltip.style.top = Math.max(12, event.clientY - 82) + "px";
   };
-  document.querySelectorAll(".chart-point").forEach(point => {
+  root.querySelectorAll(".chart-point").forEach(point => {
     if (point.dataset.tooltipBound === "true") return;
     point.dataset.tooltipBound = "true";
     point.addEventListener("pointerenter", event => show(point, event));
@@ -4245,7 +4732,7 @@ function nowcastRectangleDistance(left, right) {
 }
 
 // Choisit une position proche de la cellule, contenue dans la carte et, dès
-// que possible, hors de la zone occupée par Les Tatins et son libellé.
+// que possible, hors de la zone occupée par le lieu et son libellé.
 function nowcastCellOverlayPlacement({ cellBounds, targetBounds = null, viewport, overlaySize }) {
   const margin = 8;
   const gap = 8;
@@ -4335,7 +4822,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
       return '<g class="range-distance"><circle class="range-ring" cx="' + targetX + '" cy="' + targetY + '" r="' + radius.toFixed(1) + '"></circle><text x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="middle">' + distance + ' km</text></g>';
     }).join('');
     const lightningMarks = (lightning?.flashes || []).filter(flash => Math.hypot(Number(flash.eastKm), Number(flash.northKm)) <= mapRadiusKm).map(flash => '<g class="lightning-flash" transform="translate(' + (targetX + flash.eastKm * scale).toFixed(1) + ' ' + (targetY - flash.northKm * scale).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path></g>').join('');
-    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.esri.com/" target="_blank" rel="noopener">Fond © Esri</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur Les Tatins"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g></svg></div>';
+    return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.esri.com/" target="_blank" rel="noopener">Fond © Esri</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Zone de détection radar à ' + mapRadiusKm + ' km centrée sur le lieu"><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rings + lightningMarks + '<g class="target-point"><title>le lieu</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">le lieu</text></g></svg></div>';
   }
   const points = threat.track?.points || [];
   const etaProjectionCells = nowcastEtaProjectionCells(radarCells);
@@ -4545,7 +5032,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
     }
     return '<g class="radar-cell-marker" data-nowcast-cell-marker="' + escapeText(cellId) + '">' + shape + '<text class="cell-name' + (selected ? '' : ' secondary') + '" x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '" text-anchor="end">' + escapeText(cellId) + '</text></g>';
   }).join('');
-  const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km des Tatins</title></g>').join('');
+  const lightningMarks = (lightning?.flashes || []).filter(flash => flash.eastKm >= minimumEast && flash.eastKm <= maximumEast && flash.northKm >= minimumNorth && flash.northKm <= maximumNorth).map(flash => '<g class="lightning-flash" transform="translate(' + x(flash.eastKm).toFixed(1) + ' ' + y(flash.northKm).toFixed(1) + ')"><path d="M2-8-4 1h4l-2 8 7-11H1z"></path><title>Éclair · ' + escapeText(Number(flash.distanceKm).toFixed(1)) + ' km du point de prévision</title></g>').join('');
   const secondaryTracks = '';
   const milestones = '';
   const targetX = x(0).toFixed(1);
@@ -4565,7 +5052,7 @@ function renderThreatMap(radar, lightning = null, mapRadiusKm = activeNowcastMap
   return '<div class="storm-map"><div class="storm-map-leaflet" aria-hidden="true"></div><div class="nowcast-map-attribution"><a href="https://www.esri.com/" target="_blank" rel="noopener">Fond © Esri</a></div>' + updateAgeMarkup + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="group" aria-label="Cellules radar et trajectoires avec ETA sur la carte à ' + mapRadiusKm + ' km"><defs><marker id="storm-arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M1 2L10 6L1 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>' +
     '<path class="map-axis" d="M' + targetX + ' 14V' + (height - 14) + 'M18 ' + targetY + 'H' + (width - 18) + '"></path><g class="north-arrow"><path d="M28 40V17l-5 8m5-8 5 8"></path><text x="23" y="54">N</text></g>' + rangeRings +
     distanceLink + cones + secondaryTracks + cells + lightningMarks + directionChevrons + milestones +
-    '<g class="target-point"><title>Les Tatins</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">Les Tatins</text></g>' +
+    '<g class="target-point"><title>le lieu</title><circle cx="' + targetX + '" cy="' + targetY + '" r="5"></circle><text x="' + (targetX + 8) + '" y="' + (targetY - 8) + '" text-anchor="start">le lieu</text></g>' +
     '</svg>' + (etaProjectionCells.some(cell => radarCellShapeRuns(cell).length)
       ? (etaProjectionCells.some(cell => cell.passageEnsemble?.status === 'ready')
         ? '<div class="nowcast-probability-legend" title="Probabilité estimée de passage sur l’horizon annoncé.">Passage estimé · 0 % <span aria-hidden="true"></span> 100 %</div>'
@@ -4729,28 +5216,9 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   }).setView([point.lat, point.lon], mapRadiusKm === 20 ? 9 : 7);
   window.L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom: 16, opacity: 0.62, attribution: "" }).addTo(nowcastLeafletMap);
   let placeContext = [];
-  const regionalPlaceNames = new Set(["Montélimar", "Carpentras", "Sisteron", "Embrun", "Valence", "Grenoble", "Gap", "Briançon"]);
-  const regionalPlaceFallback = [
-    { name: "Montélimar", place: "town", latitude: 44.5579, longitude: 4.7503, distanceKm: 68 },
-    { name: "Carpentras", place: "town", latitude: 44.0554, longitude: 5.0488, distanceKm: 79 },
-    { name: "Sisteron", place: "town", latitude: 44.1963, longitude: 5.9444, distanceKm: 58 },
-    { name: "Embrun", place: "town", latitude: 44.5642, longitude: 6.4958, distanceKm: 72 },
-    { name: "Valence", place: "city", latitude: 44.9332, longitude: 4.8921, distanceKm: 64 },
-    { name: "Grenoble", place: "city", latitude: 45.1876, longitude: 5.7358, distanceKm: 60 },
-    { name: "Gap", place: "town", latitude: 44.5612, longitude: 6.0821, distanceKm: 40 },
-    { name: "Briançon", place: "town", latitude: 44.899, longitude: 6.643, distanceKm: 87 }
-  ];
-  const localPlaceFallback = [
-    { name: "Châtillon-en-Diois", place: "village", latitude: 44.6952, longitude: 5.4857, distanceKm: 11.5 },
-    { name: "Die", place: "town", latitude: 44.7537, longitude: 5.3703, distanceKm: 21.2 },
-    { name: "Saint-Roman", place: "village", latitude: 44.692, longitude: 5.432, distanceKm: 14 },
-    { name: "Valdrôme", place: "village", latitude: 44.5043, longitude: 5.5724, distanceKm: 16.8 },
-    { name: "La Faurie", place: "village", latitude: 44.568, longitude: 5.739, distanceKm: 14.7 },
-    { name: "Aspremont", place: "village", latitude: 44.491, longitude: 5.729, distanceKm: 20.8 },
-    { name: "Clelles", place: "village", latitude: 44.827, longitude: 5.623, distanceKm: 19.4 },
-    { name: "Glandage", place: "village", latitude: 44.6885, longitude: 5.5977, distanceKm: 3.9 },
-    { name: "Lus-la-Croix-Haute", place: "village", latitude: 44.665, longitude: 5.705, distanceKm: 8.5 }
-  ];
+  const regionalPlaceNames = new Set();
+  const regionalPlaceFallback = [];
+  const localPlaceFallback = [];
   const placeLayer = window.L.layerGroup().addTo(nowcastLeafletMap);
   const renderPlaceLabels = () => {
     placeLayer.clearLayers();
@@ -4789,21 +5257,14 @@ function initializeNowcastMapBackground(mapRadiusKm) {
   requestAnimationFrame(fitToContainer);
 }
 
-function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
-  const element = $("radar-nowcast");
+function renderThreeHourSummary(forecast) {
   const summaryElement = $("three-hour-summary");
-  const forecast = latestForecastData?.nowcast;
-  const now = appNow();
-  if (!radar || !forecast || forecast.schemaVersion !== 1 || now > forecast.validUntil) {
-    clearThreeHourMessageSequence(true);
-    if (summaryElement) summaryElement.innerHTML = '<p class="horizon-empty">Prévision en attente d’actualisation</p>';
-    if (element) element.innerHTML = '<strong>Radar</strong><span>Prévision serveur indisponible ou périmée.</span>';
+  if (dailyRowsLayout) {
+    if (summaryElement) summaryElement.innerHTML = "";
     return;
   }
+  const now = appNow();
   const { rainMessageSequence, rainValue, rainColorLevel, rainDetail, rainTrend, stormCombinedLevel, stormDetail, stormTrend, stormTrendDetail, stormEtaLabel, stormDurationLabel, stormEtaDetail, windValue, windLevel, windDetail, windTrendWithDetail, windColorLevel } = forecast;
-  if (!nowcastMapRadiusManuallySelected) activeNowcastMapRadius = forecast.recommendedMapRadius;
-  nowcastMapAutoExpanded = activeNowcastMapRadius === 60;
-  const metrics = new Map(forecast.cellMetrics.map(metric => [String(metric.id), metric]));
   const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const nowcastMetricIcons = {
     rain: '<path d="M12 2.8C9.5 6.4 6.8 9.7 6.8 13.2a5.2 5.2 0 0 0 10.4 0C17.2 9.7 14.5 6.4 12 2.8Z"/>',
@@ -4861,6 +5322,67 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     return '<button class="three-hour-action metric-' + kind + ' level-' + colorLevel + (target ? ' actionable' : '') + (stableTooltip ? ' chart-point' : '') + '" type="button"' + (target ? ' data-summary-target="' + target + '"' : ' aria-disabled="true"') + ' aria-label="' + escapeText(accessibleDetail) + '"' + (stableTooltip ? ' data-tooltip="' + escapeText(detail) + '"' : ' title="' + escapeText(accessibleDetail) + '"') + '><span class="three-hour-action-body">' + metric + '</span></button>';
   };
 
+  const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
+    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainMessageSequence.length ? rainTrend : null, 'rain')
+    + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, siteFeatures.nowcasting ? 'nowcast' : null, stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
+    + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
+    + '</div></section>';
+  if (summaryElement) {
+    const cycleLabel = forecast.mode === "forecast"
+      ? '<p class="source-update-status">' + escapeText(Number.isFinite(forecast.sourceCycleAt)
+        ? "PIAF · cycle du " + dateTimeFormat.format(new Date(forecast.sourceCycleAt))
+          + (appNow() - forecast.sourceCycleAt > sourceFreshness.piaf ? " · actualisation ancienne" : "")
+        : "PIAF · prévisions en attente d’actualisation") + '</p>' : '';
+    summaryElement.innerHTML = sandboxThreeHourTimeline(forecast.timelineSlots, now, forecast.ongoingStorm);
+    if (cycleLabel) summaryElement.insertAdjacentHTML('afterbegin', cycleLabel);
+    initializeThreeHourMessageSequence(summaryElement);
+    summaryElement.querySelector(".horizon-scroll")?.addEventListener("click", event => { if (!event.target.closest("button")) sandboxToggleRainDetails(); });
+    sandboxBindRainScroll();
+    summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
+      if (button.dataset.summaryTarget === "wind48") {
+        button.setAttribute("aria-controls", "panel-48h");
+        button.setAttribute("aria-expanded", String(!$("panel-48h").hidden && $("panel-48h").dataset.focusMetric === "wind"));
+        button.addEventListener("click", open48HourWindForecast);
+        return;
+      }
+      const details = $(button.dataset.summaryTarget + "-details");
+      button.setAttribute("aria-controls", details?.id || "");
+      button.setAttribute("aria-expanded", String(details ? !details.hidden : false));
+      button.addEventListener('click', () => {
+        if (button.dataset.summaryTarget === "rain" && button.closest(".horizon-scroll")) { sandboxToggleRainDetails(); return; }
+        if (!details) return;
+        if (button.dataset.summaryTarget === "nowcast") {
+          setNowcastOpen(details.hidden, details.hidden);
+          return;
+        }
+        details.hidden = !details.hidden;
+        button.setAttribute("aria-expanded", String(!details.hidden));
+      });
+    });
+  }
+}
+
+function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
+  if (!siteFeatures.nowcasting) {
+    const forecast = currentNowcast();
+    if (forecast) renderThreeHourSummary(forecast);
+    return;
+  }
+  const element = $("radar-nowcast");
+  const summaryElement = $("three-hour-summary");
+  const forecast = latestForecastData?.nowcast;
+  const now = appNow();
+  if (!radar || !forecast || forecast.schemaVersion !== 1 || now > forecast.validUntil) {
+    clearThreeHourMessageSequence(true);
+    if (summaryElement) summaryElement.innerHTML = '<p class="horizon-empty">Prévision en attente d’actualisation</p>';
+    if (element) element.innerHTML = '<strong>Radar</strong><span>Prévision serveur indisponible ou périmée.</span>';
+    return;
+  }
+  const { rainMessageSequence, rainValue, rainColorLevel, rainDetail, rainTrend, stormCombinedLevel, stormDetail, stormTrend, stormTrendDetail, stormEtaLabel, stormDurationLabel, stormEtaDetail, windValue, windLevel, windDetail, windTrendWithDetail, windColorLevel } = forecast;
+  if (!nowcastMapRadiusManuallySelected) activeNowcastMapRadius = forecast.recommendedMapRadius;
+  nowcastMapAutoExpanded = activeNowcastMapRadius === 60;
+  const metrics = new Map(forecast.cellMetrics.map(metric => [String(metric.id), metric]));
+  const riskTone = value => value >= 60 ? "high" : value >= 30 ? "medium" : value > 0 ? "low" : "none";
   const cellPresentation = cell => {
     const risks = cell.risks || {};
     const metric = metrics.get(String(cell.id));
@@ -4903,7 +5425,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
     const trackedSince = cell.trackedSince ? hourFormat.format(new Date(cell.trackedSince)) : "—";
     const confidence = cell.track?.confidence == null ? null : Math.round(Number(cell.track.confidence));
     const confidenceText = Number.isFinite(confidence) ? confidence + " %" : "—";
-    const label = "Cellule " + cell.id + " · bord à " + distance + " des Tatins · passage " + passageText + " · " + etaDetail
+    const label = "Cellule " + cell.id + " · bord à " + distance + " du point de prévision · passage " + passageText + " · " + etaDetail
       + " · grêle " + hailLevel + " sur 5 · pluie " + rainLevel + " sur 5 · foudre " + lightningLevel + " sur 5"
       + " · vitesse " + speedText + " km/h · suivie depuis " + trackedSince + " · confiance trajectoire " + confidenceText;
     const markup = '<div class="nowcast-cell-map-head"><strong>' + escapeText(cell.id) + '</strong><span>' + escapeText(distance) + '</span><b>Passage ' + escapeText(passageText) + '</b><b>ETA ' + escapeText(etaText) + '</b></div>'
@@ -4914,38 +5436,7 @@ function renderRadarNowcast(radar, piaf, arome, lightning, vigilance = null) {
 
   const cellsInRange = (radar.cells || []).filter(cell => metrics.has(String(cell.id)) && metrics.get(String(cell.id)).distanceKm <= activeNowcastMapRadius);
   const cellPresentations = new Map(cellsInRange.map(cell => [String(cell.id), cellPresentation(cell)]));
-  const generalExpertise = '<section class="storm-summary storm-general"><div class="three-hour-actions">'
-    + summaryAction('rain', rainMessageSequence.length ? rainMessageSequence : rainValue, rainColorLevel, rainDetail, rainMessageSequence.length ? rainTrend : null, 'rain')
-    + summaryAction('storm', '', stormCombinedLevel, stormDetail, stormTrend, 'nowcast', stormCombinedLevel, { passage: stormDetail, trend: stormTrendDetail, eta: stormEtaLabel, duration: stormDurationLabel, etaDetail: stormEtaDetail })
-    + summaryAction('wind', windValue, windLevel, windDetail, windTrendWithDetail, 'wind48', null, null, windColorLevel, true)
-    + '</div></section>';
-  if (summaryElement) {
-    summaryElement.innerHTML = sandboxThreeHourTimeline(forecast.timelineSlots, now, forecast.ongoingStorm);
-    initializeThreeHourMessageSequence(summaryElement);
-    summaryElement.querySelector(".horizon-scroll")?.addEventListener("click", event => { if (!event.target.closest("button")) sandboxToggleRainDetails(); });
-    sandboxBindRainScroll();
-    summaryElement.querySelectorAll('[data-summary-target]').forEach(button => {
-      if (button.dataset.summaryTarget === "wind48") {
-        button.setAttribute("aria-controls", "panel-48h");
-        button.setAttribute("aria-expanded", String(!$("panel-48h").hidden && $("panel-48h").dataset.focusMetric === "wind"));
-        button.addEventListener("click", open48HourWindForecast);
-        return;
-      }
-      const details = $(button.dataset.summaryTarget + "-details");
-      button.setAttribute("aria-controls", details?.id || "");
-      button.setAttribute("aria-expanded", String(details ? !details.hidden : false));
-      button.addEventListener('click', () => {
-        if (button.dataset.summaryTarget === "rain" && button.closest(".horizon-scroll")) { sandboxToggleRainDetails(); return; }
-        if (!details) return;
-        if (button.dataset.summaryTarget === "nowcast") {
-          setNowcastOpen(details.hidden, details.hidden);
-          return;
-        }
-        details.hidden = !details.hidden;
-        button.setAttribute("aria-expanded", String(!details.hidden));
-      });
-    });
-  }
+  renderThreeHourSummary(forecast);
   const mapControlsMarkup = '<div class="forecast-source-selector storm-map-controls" aria-label="Portée de la carte"><button class="forecast-source-button' + (activeNowcastMapRadius === 20 ? ' active' : '') + '" type="button" data-nowcast-radius="20" aria-pressed="' + (activeNowcastMapRadius === 20) + '">20 km</button><button class="forecast-source-button' + (activeNowcastMapRadius === 60 ? ' active' : '') + '" type="button" data-nowcast-radius="60" aria-pressed="' + (activeNowcastMapRadius === 60) + '">60 km</button></div>';
   element.innerHTML = '<div class="nowcast-workspace"><div class="nowcast-map-column">' + mapControlsMarkup + renderThreatMap(radar, lightning, activeNowcastMapRadius, cellPresentations) + '</div></div>';
   initializeNowcastCellOverlays(element);
@@ -4972,6 +5463,11 @@ function renderPiaf(piaf, radar = null) {
   // PIAF arrive toutes les 5 minutes. La frise publique regroupe trois pas
   // afin de présenter des cumuls exacts de 15 minutes issus du même run.
   const values = isTimedForecast ? piaf.values : piafQuarterHourRain(piaf, radar).filter(item => item.intervalEnd > appNow());
+  if (!values.length) {
+    $("rain-bars").innerHTML = '<p class="horizon-empty">Prévisions de pluie en attente d’actualisation</p>';
+    $("rain-axis").innerHTML = '';
+    return;
+  }
   const slotTimes = values.map(item => item.slotTime || (isTimedForecast ? new Date(item.time) : new Date(piafBaseTime.getTime() + item.seconds * 1000)));
   const precipitationFor = item => Number(item.nowcastPrecipitation ?? item.precipitation) || 0;
   const slotIntervalFor = (item, index) => {
@@ -5027,7 +5523,7 @@ function renderPiaf(piaf, radar = null) {
     const nowcastDetail = nowcastTotal - precipitation > .01 + 1e-9
       ? "\nAvec nowcasting : " + nowcastTotal.toFixed(2) + " mm (estimation, passage à confirmer)" : "";
     const detail = (isOpenMeteo && !wet && probability != null ? slotTime + " · risque de pluie · probabilité de précipitations " + probability + "% · aucun cumul prévu" : slotTime + " · " + precipitationSourceLabel + " " + precipitation.toFixed(2) + " mm" + periodDetail) + nowcastDetail
-      + (item.piafUnconfirmed && announcedRain ? "\nPluie possible : PIAF non confirmé par le nowcasting récent aux Tatins." : "");
+      + (item.piafUnconfirmed && announcedRain ? "\nPluie possible : PIAF non confirmé par le nowcasting récent au point de prévision." : "");
     const visibleLabel = label;
     return '<div class="now-slice chart-point' + (risk ? " averse-risk" : "") + (trace ? " trace" : "") + '" style="grid-column:' + (index + 1) + ';grid-row:1;--rain-height:' + height + '%" tabindex="0" data-tooltip="' + escapeText(detail) + '"><span class="now-value"' + (trace ? ' data-mobile-label="≈"' : '') + '>' + visibleLabel + '</span><div class="now-bar' + (wet ? " active" : "") + '" style="height:' + height + '%"></div></div>';
   }).join("");
@@ -5097,16 +5593,18 @@ function applyDashboardPayload(payload) {
     // four-minute cache is being refreshed. Keep the previous complete run
     // during that short gap so both rain views switch atomically to the next
     // run instead of briefly falling back to AROME.
-    const data = receivedData && !receivedData.nowcast && !receivedData.piaf && latestForecastData?.piaf
+    const data = receivedData && (!siteFeatures.nowcasting || !receivedData.nowcast) && !receivedData.piaf && latestForecastData?.piaf
       ? { ...receivedData, piaf: latestForecastData.piaf }
       : receivedData;
     dashboardSync = { status: payload.status, error: payload.error || null };
     latestForecastData = data;
+    basicForecast = null;
+    if (dailyRowsLayout) renderWeekForecast();
     clearTimeout(nowcastExpiryTimer);
-    if (!window.METEO_REPLAY && data?.nowcast?.validUntil > appNow()) {
+    if (siteFeatures.nowcasting && !window.METEO_REPLAY && data?.nowcast?.validUntil > appNow()) {
       nowcastExpiryTimer = setTimeout(() => { renderActiveRain(); renderActiveForecast(); }, data.nowcast.validUntil - appNow() + 1);
     }
-    if (!latestWeekForecast?.days?.length && data?.openMeteo?.days?.length) {
+    if (!dailyRowsLayout && !latestWeekForecast?.days?.length && data?.openMeteo?.days?.length) {
       const detailedDays = normalizeDashboardOpenMeteoDays(data.openMeteo);
       latestWeekForecast = {
         fetchedAt: data.openMeteo.fetchedAt || Date.now(),
@@ -5153,6 +5651,7 @@ function applyDashboardPayload(payload) {
 
 async function refresh() {
   try {
+    if (basicForecastReady) await basicForecastReady;
     const dashboardPath = "api/dashboard?lat=" + point.lat + "&lon=" + point.lon;
     if (!dashboardCacheHydrated) {
       dashboardCacheHydrated = true;
@@ -5185,6 +5684,7 @@ function renderNewsBanner(news) {
 }
 
 async function renderAppVersion() {
+  if (!$("app-version")) return;
   let releaseNumber = "";
   try {
     const config = await json("api/config");
@@ -5209,6 +5709,7 @@ async function renderAppVersion() {
 }
 
 function setNowcastOpen(open, scroll = false) {
+  if (!siteFeatures.nowcasting) return;
   const link = $("header-nowcast-link");
   const details = $("nowcast-details");
   const titleToggle = $("nowcast-title-toggle");
@@ -5295,6 +5796,10 @@ if (window.METEO_REPLAY?.start) import(replayEngineUrl.href).then(({ createNowca
   });
 }).catch(error => { console.error("Moteur du replay indisponible", error); });
 else refresh();
+if ($("site-daylight")) {
+  renderSiteHeader();
+  window.setInterval(renderSiteHeader, 60000);
+}
 
 function sandboxNowcastDimensions() {
   return { width: window.matchMedia("(max-width: 600px)").matches ? 360 : 640, height: 360 };
@@ -5309,7 +5814,7 @@ function sandboxCloudLevel(value, hasPhenomenon = false) {
   return hasPhenomenon ? Math.max(1, level) : level;
 }
 function sandboxSkyPresentation(slot) {
-  const hasPhenomenon = slot.level > 0 || Boolean(slot.storm) || Boolean(slot.hail);
+  const hasPhenomenon = slot.level > 0 || Boolean(slot.storm) || Boolean(slot.hail) || Boolean(slot.modelStorm);
   const level = sandboxCloudLevel(slot.cloudCover, hasPhenomenon);
   const labels = ["dégagé", "très peu nuageux", "peu nuageux", "nuageux", "très nuageux", "couvert"];
   const suffixes = ["1", "tres-peu-nuageux", "2", "3", "4", "5"];
@@ -5333,10 +5838,11 @@ function sandboxSlotPresentation(slot, now) {
   const rain = slot.level > 0 && slot.label !== "Grêle";
   const unavailable = slot.label === "Indisponible";
   const qualifier = slot.label === "Gouttes" ? slot.qualifier.replace(/^(possible|probable)$/, "$1s") : slot.qualifier;
-  let title = unavailable ? "Indisponible" : rain ? slot.label : storm ? "Orage" : slot.hail ? "Grêle" : sky.label.replace(/^Nuit, ciel |^Ciel /, "Ciel ");
+  let title = unavailable ? "Indisponible" : rain ? slot.label : storm ? "Orage" : slot.hail ? "Grêle" : slot.modelStorm ? "Orage possible" : sky.label.replace(/^Nuit, ciel |^Ciel /, "Ciel ");
   const details = [];
   if (rain && qualifier) details.push(qualifier);
   if (storm) details.push(storm.label + (storm.intensity ? " · " + storm.intensity : ""));
+  if (slot.modelStorm && title !== "Orage possible") details.push("Orage possible");
   if (slot.hail) {
     const hailQualifier = slot.hailLocalized == null ? shortTermRiskQualifier(slot.hailRisk).trim() : "possible";
     if (title !== "Grêle") details.push(["Grêle", hailQualifier].filter(Boolean).join(" "));
@@ -5347,7 +5853,7 @@ function sandboxSlotPresentation(slot, now) {
   const wind = slot.wind >= 2;
   return {
     sky, storm, rain, unavailable, title, details,
-    signature: JSON.stringify([sky.level, slot.night, slot.level, title, details, Boolean(slot.hail), wind ? slot.wind : 0])
+    signature: JSON.stringify([sky.level, slot.night, slot.level, title, details, Boolean(slot.hail), wind ? slot.wind : 0, Boolean(slot.modelStorm)])
   };
 }
 function sandboxWeatherGroups(slots, now) {
@@ -5399,14 +5905,14 @@ function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
     return Number(hour) + " h" + (minute === "00" ? "" : " " + minute);
   };
   const groups = sandboxWeatherGroups(slots, now);
-  const quiet = groups.length === 1 && !groups[0].presentation.rain && !groups[0].presentation.storm && !groups[0].slot.hail && !(groups[0].slot.wind >= 2);
-  const compact = groups.every(group => !group.presentation.rain && !group.presentation.storm && !group.slot.hail
+  const quiet = groups.length === 1 && !groups[0].presentation.rain && !groups[0].presentation.storm && !groups[0].slot.hail && !groups[0].slot.modelStorm && !(groups[0].slot.wind >= 2);
+  const compact = groups.every(group => !group.presentation.rain && !group.presentation.storm && !group.slot.hail && !group.slot.modelStorm
     && !(group.slot.wind >= 2) && group.presentation.details.length === 0);
   const renderIcon = (slot, presentation) => {
     const layers = [presentation.sky.src];
     if (slot.level > 0) layers.push("pictogrammes/calque-pluie-" + Math.max(1, Math.min(5, slot.level)) + ".svg");
     if (slot.wind >= 2) layers.push("pictogrammes/calque-vent.svg");
-    if (slot.storm) layers.push("pictogrammes/calque-orage.svg");
+    if (slot.storm || slot.modelStorm) layers.push("pictogrammes/calque-orage.svg");
     if (slot.hail) layers.push("pictogrammes/calque-grele.svg");
     const alt = [presentation.sky.label, presentation.title, ...presentation.details, slot.wind >= 2 ? shortTermWindLabel(slot.wind) : ""].filter(Boolean).join(" · ");
     return '<span class="horizon-period-icon" role="img" aria-label="' + escapeText(alt) + '">' + layers.map(src => '<img src="' + src + '" alt="" loading="lazy" decoding="async">').join("") + '</span>';
@@ -5418,8 +5924,8 @@ function sandboxThreeHourTimeline(preparedSlots, now, ongoingStorm = null) {
     const hailTone = slot.hail ? probabilityStep(slot.hailRisk) : 0;
     const tone = Math.max(slot.level || 0, slot.wind || 0, stormTone, hailTone);
     const rainTone = Math.max(0, Math.min(5, slot.level || 0));
-    const possible = /possible/.test(slot.qualifier || "") || /possible/.test(presentation.storm?.label || "") || slot.hail && slot.hailLocalized !== true;
-    const clear = !presentation.rain && !presentation.storm && !slot.hail && !(slot.wind >= 2) && presentation.sky.level === 0;
+    const possible = /possible/.test(slot.qualifier || "") || /possible/.test(presentation.storm?.label || "") || Boolean(slot.modelStorm) || slot.hail && slot.hailLocalized !== true;
+    const clear = !presentation.rain && !presentation.storm && !slot.hail && !slot.modelStorm && !(slot.wind >= 2) && presentation.sky.level === 0;
     const detailed = presentation.details.length > 0 || slot.wind >= 2;
     const description = periodLabel + " : " + [presentation.title, ...presentation.details].filter(Boolean).join(" · ")
       + (slot.hailLocalized === false ? " · noyau de grêle non localisé dans les données" : "")
@@ -5465,4 +5971,3 @@ function sandboxBindRainScroll() {
     }), {passive:true});
   });
 }
-

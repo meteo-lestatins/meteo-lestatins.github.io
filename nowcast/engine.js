@@ -3,15 +3,16 @@ import { preparePassageMap } from './map.js';
 // Exécuté par le serveur. L'import navigateur est réservé aux replays historiques.
 export const NOWCAST_ENGINE_VERSION = 2;
 
-export function tatinsSunTimes(date) {
+export function locationSunTimes(date, latitudeDegrees, longitudeDegrees) {
+  if (!Number.isFinite(latitudeDegrees) || !Number.isFinite(longitudeDegrees)) return { sunrise: null, sunset: null };
   // Les résultats sont des instants UTC. Ils restent donc justes quand
   // Europe/Paris passe de l'heure d'hiver à l'heure d'été, et inversement.
   const radians = Math.PI / 180;
   const dayMilliseconds = 86400000;
   const julian1970 = 2440588;
   const julian2000 = 2451545;
-  const latitude = 44.6538 * radians;
-  const longitudeWest = -5.5995 * radians;
+  const latitude = latitudeDegrees * radians;
+  const longitudeWest = -longitudeDegrees * radians;
   const toJulian = value => value.valueOf() / dayMilliseconds - 0.5 + julian1970;
   const fromJulian = value => new Date((value + 0.5 - julian1970) * dayMilliseconds);
   const days = toJulian(date) - julian2000;
@@ -32,10 +33,10 @@ export function tatinsSunTimes(date) {
   };
 }
 
-export function isNightAtTatins(date) {
+export function isNightAtLocation(date, latitudeDegrees, longitudeDegrees) {
   const instant = date instanceof Date ? date : new Date(date);
-  const { sunrise, sunset } = tatinsSunTimes(instant);
-  return instant < sunrise || instant >= sunset;
+  const { sunrise, sunset } = locationSunTimes(instant, latitudeDegrees, longitudeDegrees);
+  return sunrise !== null && sunset !== null && (instant < sunrise || instant >= sunset);
 }
 
 export function createNowcastEngine({ now = Date.now(), snapshot = null, replay = false, includePassageMaps = true } = {}) {
@@ -1910,7 +1911,7 @@ function nowcastLocalStormHazards(cell, radar, lightning, events, now) {
   const east = elapsed ? (Number(next.eastKm) - Number(first.eastKm)) / elapsed : 0;
   const north = elapsed ? (Number(next.northKm) - Number(first.northKm)) / elapsed : 0;
   // Conserver seulement les éclairs proches du point, ou dont la zone advectée
-  // traverse le voisinage de 8 km des Tatins pendant un passage confirmé.
+  // traverse le voisinage de 8 km du point de prévision pendant un passage confirmé.
   const flashes = fresh && nowcastEvidenceIsFresh(lightning?.observedAt, radar.observedAt, now)
     ? (lightning.flashes || []).filter(flash => {
       if (!nowcastEvidenceIsFresh(flash.time, radar.observedAt, now)
@@ -2077,7 +2078,7 @@ function sandboxThreeHourSlots(steps, events, candidates, hours, now, intervals)
     const cloudCover = cloudValues.length ? cloudValues.reduce((sum, value) => sum + value, 0) / cloudValues.length : null;
     const windSpeed = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windSpeed) || 0)) : null;
     const windGust = windHours.length ? Math.max(...windHours.map(hour => Number(hour.windGust) || 0)) : null;
-    const night = isNightAtTatins(new Date((start + end) / 2));
+    const night = isNightAtLocation(new Date((start + end) / 2), latestForecastData?.latitude, latestForecastData?.longitude);
     return { start, end, slotTime: interval.slotTime, total, level, qualifier, hail, storm, wind, windSpeed, windGust, cloudCover, night, hailRisk: hailSource?.risk, hailLocalized: hailSource?.candidate.hailLocalized, hailScore: hailSource?.score,
       label: hail ? "Grêle" : level ? (peak < .5 ? "Gouttes" : rainIntensityLabel(level)) : samples.length ? "" : "Indisponible" };
   });
