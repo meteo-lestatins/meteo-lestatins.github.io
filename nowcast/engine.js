@@ -1,4 +1,4 @@
-import { preparePassageMap } from './map.js?v=1.24';
+import { preparePassageMap } from './map.js?v=1.26';
 // Moteur 0–180 min : mêmes méthodes que l'ancien client, horloge et historique explicites.
 // Exécuté par le serveur. L'import navigateur est réservé aux replays historiques.
 export const NOWCAST_ENGINE_VERSION = 2;

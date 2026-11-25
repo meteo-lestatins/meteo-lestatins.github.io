@@ -27,9 +27,9 @@ const apiUrl = path => {
 };
 let basicForecastTools = null;
 let basicForecast = null;
-const basicForecastReady = siteFeatures.nowcasting ? null : import(dailyModuleUrl("forecast-core.js")).then(module => { basicForecastTools = module; });
+const basicForecastReady = siteFeatures.nowcasting ? null : import(new URL("forecast-core.js?v=" + encodeURIComponent(runtimeConfig.releaseNumber || "1"), document.currentScript?.src || document.baseURI).href).then(module => { basicForecastTools = module; });
 const appNow = () => Number(window.METEO_REPLAY?.currentTime?.()) || Date.now();
-const replayEngineUrl = dailyModuleUrl("nowcast/engine.js");
+const replayEngineUrl = new URL("nowcast/engine.js?v=1.26", document.currentScript?.src || document.baseURI);
 const point = { lat: siteProfile.latitude, lon: siteProfile.longitude };
 const hourFormat = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const forecastHourValue = date => Number(hourFormat.format(date).slice(0, 2));
@@ -278,12 +278,7 @@ function refreshSourceIndicators() {
   });
 }
 
-function sourceLink(key, section, label) {
-  if (siteProfile.publicAbout === false) return "";
-  const state = sourceSyncState(key);
-  const href = (window.METEO_REPLAY?.aboutBase ?? (window.METEO_REPLAY ? "../" : "")) + "about.html#" + section;
-  return '<a class="source-link" data-source-status="' + key + '" data-sync="' + state + '" href="' + href + '" title="Voir ' + escapeText(label) + ' dans About · ' + escapeText(sourceSyncTitle(key)) + '">' + label + '</a>';
-}
+function sourceLink() { return ""; }
 
 const meteoFranceLinks = () => sourceLink("arome", "api-arome", "AROME")
   + sourceLink("piaf", "api-piaf", "PIAF")
@@ -2899,8 +2894,8 @@ function renderCompactWeek(target, days, { now, dashboard, week, sourceRows, cha
   document.body.classList.add("compact-forecast-layout");
   target.classList.add("compact-forecast");
   target.innerHTML = compactForecastTools.compactCardsMarkup(days, {
-    now, dashboard, week, timezone: chartOptions.timezone, siteId: siteProfile.id, forecastDays: siteProfile.forecastDays,
-    alertSources: sourceRows, forecastSlotAlertTone, rainPictogramStep, weatherCodeLabel, ...dailyRowsTools
+    now, dashboard, week, timezone: chartOptions.timezone, siteId: siteProfile.id, alertSources: sourceRows,
+    forecastSlotAlertTone, rainPictogramStep, ...dailyRowsTools
   });
 
   let dialog = $("compact-forecast-dialog");
@@ -2963,13 +2958,8 @@ function renderCompactWeek(target, days, { now, dashboard, week, sourceRows, cha
 function renderWeekForecast() {
   if (dailyRowsLayout) {
     renderSiteHeader();
-    if (!dailyRowsTools || (dashboardSync.status === "loading" && !latestForecastData && !latestMeteoFranceWeek)) return;
+    if (!dailyRowsTools) return;
     const target = $("week-forecast");
-    const current = latestForecastData || {};
-    const longRange = current.openMeteo?.longRange;
-    const dashboard = longRange?.hours?.length
-      ? { ...current, openMeteo: { ...current.openMeteo, ...longRange } }
-      : current;
     dailyChartsResizeObserver?.disconnect();
     dailyChartsResizeObserver = new ResizeObserver(entries => entries.forEach(entry => {
       const width = Math.round(entry.contentRect.width);
@@ -2979,10 +2969,10 @@ function renderWeekForecast() {
       if (!dailyChartStates.has(date)) dailyChartStates.set(date, dailyRowsTools.createDailyChartState());
       return dailyChartStates.get(date);
     };
-    const days = dailyRowsTools.buildDailyRows({ dashboard, week: latestMeteoFranceWeek,
+    const days = dailyRowsTools.buildDailyRows({ dashboard: latestForecastData || {}, week: latestMeteoFranceWeek,
       now: appNow(), timezone: siteProfile.timezone, count: siteProfile.forecastDays || 16, sunTimesForDate: sunTimes, piafForChart: true });
     const collapsible = compactForecastLayout || siteProfile.dailyPresentation === "period-cards";
-    const sourceRows = collapsible ? dailyRowsTools.buildDailySourceRows({ dashboard, week: latestMeteoFranceWeek,
+    const sourceRows = collapsible ? dailyRowsTools.buildDailySourceRows({ dashboard: latestForecastData || {}, week: latestMeteoFranceWeek,
       now: appNow(), timezone: siteProfile.timezone, count: siteProfile.forecastDays || 16 }) : [];
     const chartOptions = { timezone: siteProfile.timezone, iconMarkup: displayIcon, rainScale: dailyRowsTools.dailyRainScale(days),
       backgroundForTime: time => daylightColor(time, new Date(time)) };
@@ -3000,7 +2990,7 @@ function renderWeekForecast() {
         const width = Math.max(200, piafTarget.clientWidth - 2);
         piafTarget._dailyChartWidth = Math.round(piafTarget.clientWidth);
         piafTarget.innerHTML = dailyRowsTools.piafChartMarkup(currentNowcast(), { ...chartOptions, compact: collapsible, compactRain: compactForecastLayout, precipitationOnly: compactForecastLayout, showHourly: piafShowHourly, now: appNow(), width,
-          dashboard, week: latestMeteoFranceWeek, hazardsMarkup: threeHourHazardsMarkup, alertForSlot });
+          dashboard: latestForecastData || {}, week: latestMeteoFranceWeek, hazardsMarkup: threeHourHazardsMarkup, alertForSlot });
         const hourlyControl = piafTarget.querySelector('.day-width-control input');
         if (hourlyControl) hourlyControl.onchange = event => {
           piafShowHourly = event.target.checked;
@@ -3017,7 +3007,7 @@ function renderWeekForecast() {
       stateForDate(article.dataset.dayDate).openPeriod = article.querySelector(".daily-period-card[open]")?.dataset.slotKey || null;
     });
     if (compactForecastLayout) {
-      renderCompactWeek(target, days, { now: appNow(), dashboard, week: latestMeteoFranceWeek,
+      renderCompactWeek(target, days, { now: appNow(), dashboard: latestForecastData || {}, week: latestMeteoFranceWeek,
         sourceRows, chartOptions, stateForDate });
       return;
     }
@@ -3473,12 +3463,12 @@ async function loadMeteoFranceWeek() {
 }
 
 async function ensureWeekForecast() {
-  if (dailyRowsLayout) {
+  if (dailyRowsLayout && runtimeConfig.dataMode === "static") {
     if (weekForecastPromise) return weekForecastPromise;
     weekForecastPromise = (async () => {
       await dailyRowsReady;
       const payload = await json("api/week?lat=" + point.lat + "&lon=" + point.lon);
-      if (payload.data) latestMeteoFranceWeek = payload.data;
+      latestMeteoFranceWeek = payload.data || null;
       renderWeekForecast();
     })().catch(error => { weekForecastErrors.meteofrance = error.message; renderWeekForecast(); }).finally(() => {
       weekForecastPromise = null;
@@ -3592,7 +3582,7 @@ async function ensureWeekForecast() {
 }
 
 async function ensureOpenMeteoEnsemble() {
-  if (dailyRowsLayout) return null;
+  if (dailyRowsLayout && runtimeConfig.dataMode === "static") return null;
   if (!siteFeatures.openMeteo) return null;
   if (latestOpenMeteoEnsemble && Date.now() - latestOpenMeteoEnsemble.fetchedAt < 30 * 60000) return latestOpenMeteoEnsemble;
   if (openMeteoEnsemblePromise) return openMeteoEnsemblePromise;
@@ -5593,15 +5583,15 @@ function applyDashboardPayload(payload) {
     // four-minute cache is being refreshed. Keep the previous complete run
     // during that short gap so both rain views switch atomically to the next
     // run instead of briefly falling back to AROME.
-    const data = receivedData && (!siteFeatures.nowcasting || !receivedData.nowcast) && !receivedData.piaf && latestForecastData?.piaf
+    const data = receivedData && !receivedData.nowcast && !receivedData.piaf && latestForecastData?.piaf
       ? { ...receivedData, piaf: latestForecastData.piaf }
-      : receivedData || (payload.status === "loading" ? latestForecastData : null);
+      : receivedData;
     dashboardSync = { status: payload.status, error: payload.error || null };
     latestForecastData = data;
-    basicForecast = null;
     if (dailyRowsLayout) renderWeekForecast();
+    basicForecast = null;
     clearTimeout(nowcastExpiryTimer);
-    if (siteFeatures.nowcasting && !window.METEO_REPLAY && data?.nowcast?.validUntil > appNow()) {
+    if (!window.METEO_REPLAY && data?.nowcast?.validUntil > appNow()) {
       nowcastExpiryTimer = setTimeout(() => { renderActiveRain(); renderActiveForecast(); }, data.nowcast.validUntil - appNow() + 1);
     }
     if (!dailyRowsLayout && !latestWeekForecast?.days?.length && data?.openMeteo?.days?.length) {
@@ -5665,7 +5655,6 @@ async function refresh() {
     console.error(error);
     dashboardSync = { status: "error", error: error.message };
     refreshSourceIndicators();
-    if (dailyRowsLayout && !latestForecastData && !latestMeteoFranceWeek) renderWeekForecast();
     scheduleRefresh(10000);
   }
 }
@@ -5774,7 +5763,7 @@ if (window.location.hash === "#radar-nowcast") {
   }
 }
 renderAppVersion();
-if (window.METEO_REPLAY?.start) import(replayEngineUrl).then(({ createNowcastEngine }) => {
+if (window.METEO_REPLAY?.start) import(replayEngineUrl.href).then(({ createNowcastEngine }) => {
   const renderState = { snapshot: null, lastTime: -Infinity };
   const preparationState = { snapshot: null, lastTime: -Infinity };
   const prepareReplayPayload = (payload, state, { reset = false } = {}) => {

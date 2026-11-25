@@ -1,4 +1,4 @@
-import { createNowcastEngine, isNightAtLocation } from './nowcast/engine.js?v=1.24';
+import { createNowcastEngine, isNightAtLocation } from './nowcast/engine.js?v=1.26';
 
 // PIAF aggregation and forecast messages without computing
 // radar trajectories or synthesising radar observations.

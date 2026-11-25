@@ -30,7 +30,6 @@
   .compact-forecast .trend-up svg { transform: rotate(45deg); }
   .compact-forecast .trend-down svg { transform: rotate(135deg); }
   .compact-forecast .pictogram { position: relative; z-index: 2; display: block; width: calc(72px * var(--pictogram-scale)); height: calc(65px * var(--pictogram-scale)); cursor: pointer; }
-  .compact-forecast .card-summary .pictogram { cursor: default; }
   .compact-forecast .card-transition .pictogram { width: calc(56px * var(--pictogram-scale)); height: calc(52px * var(--pictogram-scale)); }
   .compact-forecast [data-pictograms="3"] .pictogram { width: min(24cqw, calc(56px * var(--pictogram-scale))); }
   .compact-forecast [data-pictograms="3"] .period { font-size: clamp(.49rem, 5cqw, .63rem); }
@@ -64,7 +63,6 @@
   .forecast-metrics .temperatures { grid-column: 1; justify-self: start; }
   .forecast-metrics .temperature-values { display: flex; align-items: baseline; gap: 3px; }
   .forecast-metrics .rain-total { position: relative; z-index: 2; grid-column: 3; justify-self: end; max-width: 100%; color: #21617e; }
-  .forecast-metrics .precipitation-equivalent { font-size: .68em; }
   .compact-forecast .daily-precipitation-totals { position: relative; z-index: 2; grid-column: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 2px .35em; }
   .compact-forecast .daily-precipitation-totals > * { flex: none; }
   .compact-forecast .card-metrics {

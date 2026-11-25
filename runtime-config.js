@@ -2,10 +2,10 @@ window.METEO_RUNTIME_CONFIG = Object.freeze({
   "management": {
     "repository": "meteo-lestatins/meteo-lestatins.github.io",
     "branch": "main",
-    "revision": "b3f45ca8d4f8af3b67aabdea4496b860def5d6d2"
+    "revision": "c70e2895e2ae3c61386a0f139b71b1c6218d0507"
   },
-  "apiBase": "https://nicolas.sindelar.fr/meteo-les_tatins/",
-  "dataMode": "server",
+  "apiBase": "https://nicolas.sindelar.fr/meteo-les_tatins/bulletin/",
+  "dataMode": "static",
   "site": {
     "id": "tatins",
     "name": "Météo les Tatins",
@@ -19,7 +19,7 @@ window.METEO_RUNTIME_CONFIG = Object.freeze({
     "dailyPresentation": "compact-cards",
     "publicAbout": false,
     "headerAltitude": 1164.33,
-    "apiMode": "server",
+    "apiMode": "github-actions",
     "features": {
       "piaf": true,
       "arome": true,
@@ -38,9 +38,9 @@ window.METEO_RUNTIME_CONFIG = Object.freeze({
       "longitude": 5.598844383717663
     },
     "publicUrl": "https://meteo-lestatins.github.io/",
-    "apiBaseUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/",
+    "apiBaseUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/bulletin/",
     "adminUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/admin/"
   },
   "changelogUrl": "changelog.html",
-  "releaseNumber": "1.24"
+  "releaseNumber": "1.26"
 });

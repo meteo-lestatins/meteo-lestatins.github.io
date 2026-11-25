@@ -1,6 +1,6 @@
-import { prepareBasicForecast } from './forecast-core.js?v=1.24';
+import { prepareBasicForecast } from './forecast-core.js?v=1.26';
 import { precipitation24h, precipitation24hScales, precipitation24hHeight, precipitation24hGradient,
-  precipitation24hLegend, precipitation24hBarMarkup, minimumRainBarHeight, rainBarDropsMarkup, rainIntensityGradient } from './precipitation-24h.js?v=1.24';
+  precipitation24hLegend, precipitation24hBarMarkup, minimumRainBarHeight, rainBarDropsMarkup, rainIntensityGradient } from './precipitation-24h.js?v=1.26';
 
 const HOUR = 3600000;
 const CHART_INSET = 30;
@@ -175,11 +175,11 @@ function rainIntensityPictogramLevel(rate) {
   return rate < 2 ? 1 : rate < 10 ? 2 : rate < 30 ? 3 : rate < 60 ? 4 : 5;
 }
 
-export function rainPictogramLevelForIntervals(intervals, { includeUnclassified = false } = {}) {
+export function rainPictogramLevelForIntervals(intervals) {
   const rates = intervals.map(interval => {
-    const amount = interval.phase === 'mixed' ? interval.liquidRain
-      : interval.phase === 'rain' || (includeUnclassified && interval.phase === 'unknown') ? interval.rain : 0;
-    return amount > 0 ? amount * HOUR / (interval.end - interval.start) : 0;
+    const liquid = interval.phase === 'mixed' ? interval.liquidRain
+      : interval.phase === 'rain' ? interval.rain : 0;
+    return liquid > 0 ? liquid * HOUR / (interval.end - interval.start) : 0;
   });
   return rainIntensityPictogramLevel(Math.max(0, ...rates));
 }
@@ -950,10 +950,10 @@ export function dailyPeriodSummary(day, start, end, now = Date.now()) {
   const covered = rains.reduce((sum, interval) => sum + interval.end - interval.start, 0);
   const rain = rains.length ? rains.reduce((sum, interval) => sum + interval.rain, 0) : null;
   const completeRain = covered >= end - begin - 1;
-  const snowfall = rains.length && rains.every(interval => interval.phase === 'dry' || valid(interval.snowfall))
-    ? rains.reduce((sum, interval) => sum + (interval.phase === 'dry' ? 0 : displayedSnowfall(interval)), 0) : null;
-  const liquidRain = rains.length && rains.every(interval => interval.phase === 'dry' || valid(interval.liquidRain))
-    ? rains.reduce((sum, interval) => sum + (interval.phase === 'dry' ? 0 : interval.liquidRain), 0) : null;
+  const snowfall = rains.length && rains.every(interval => valid(interval.snowfall))
+    ? rains.reduce((sum, interval) => sum + displayedSnowfall(interval), 0) : null;
+  const liquidRain = rains.length && rains.every(interval => valid(interval.liquidRain))
+    ? rains.reduce((sum, interval) => sum + interval.liquidRain, 0) : null;
   const wet = rains.filter(interval => interval.rain >= .01 - 1e-9);
   const mass = wet.reduce((sum, interval) => sum + interval.rain, 0);
   const wetDuration = wet.reduce((sum, interval) => sum + interval.end - interval.start, 0);
