@@ -2,7 +2,7 @@ window.METEO_RUNTIME_CONFIG = Object.freeze({
   "management": {
     "repository": "meteo-lestatins/meteo-lestatins.github.io",
     "branch": "main",
-    "revision": "18c47bf9a8157b86e565d217f0747598b6778ab2"
+    "revision": "ad0503231c73b6f6309cb4a63e74db4a3da688b3"
   },
   "apiBase": "https://nicolas.sindelar.fr/meteo-les_tatins/",
   "dataMode": "server",
@@ -42,5 +42,5 @@ window.METEO_RUNTIME_CONFIG = Object.freeze({
     "adminUrl": "https://nicolas.sindelar.fr/meteo-les_tatins/admin/"
   },
   "changelogUrl": "changelog.html",
-  "releaseNumber": "1.22"
+  "releaseNumber": "1.23"
 });

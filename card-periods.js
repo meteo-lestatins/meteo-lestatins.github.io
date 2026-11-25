@@ -34,7 +34,7 @@ function consecutive(spans, valueOf) {
   return runs;
 }
 
-export function cardPeriods(day, { total, daytime, summarize, at, leadDays, clock, notableGust }) {
+export function cardPeriods(day, { total, daytime, summarize, at, leadDays, clock, notableGust, describe }) {
   const sunrise = day.sunrise ?? at(6);
   const sunset = day.sunset ?? at(18);
   const earlyMorning = at(outdoorStartHour);
@@ -150,23 +150,37 @@ export function cardPeriods(day, { total, daytime, summarize, at, leadDays, cloc
   };
   const hourLabel = time => clock.format(time).replace(':00', ' h').replace(':', ' h ');
   const afternoonPart = time => time < at(15) ? 'début' : time < at(17) ? 'milieu' : 'fin';
-  return periods.map((period, index) => {
-    const { start: from, end: to } = period;
-    const night = to <= nightEnd || Math.min(to, sunset) - Math.max(from, sunrise) < Math.min(HOUR, (to - from) / 2);
+  // Keep only changes that are visible on the card, before labeling the remaining boundaries.
+  const conditions = [];
+  for (const period of periods) {
+    const { start, end, rain, phase } = period;
+    const night = periods.length > 1 && (end <= nightEnd
+      || Math.min(end, sunset) - Math.max(start, sunrise) < Math.min(HOUR, (end - start) / 2));
+    const presentation = describe(period, night);
+    const key = JSON.stringify(presentation);
+    const previous = conditions.at(-1);
+    if (previous?.end === start && start < day.end && previous.night === night && previous.key === key) {
+      previous.end = end;
+      previous.rain += rain;
+    } else {
+      conditions.push({ start, end, rain, phase, night, presentation, key });
+    }
+  }
+  const labeledConditions = conditions.map(({ start: from, end: to, rain, phase, night, presentation }, index) => {
     let label = '';
-    if (periods.length === 1) return { period, label, night: false };
+    if (conditions.length === 1) return { start: from, label, night, presentation };
     if (to <= nightEnd) label = 'Nuit';
     else if (from >= evening && to === day.end && (!precise(from) || from === evening)) label = 'Soir';
     else if (to === at(12)) label = 'Matin';
     else if (from === at(12) && to === day.end) label = 'Reste de la journée';
-    else if (index === 0 && from < at(12) && to > at(13) && to < evening && period.rain > 0
-      && periods[1].phase === 'dry' && periods[1].end === day.end && leadDays <= 5
+    else if (index === 0 && from < at(12) && to > at(13) && to < evening && rain > 0
+      && conditions[1].phase === 'dry' && conditions[1].end === day.end && leadDays <= 5
       && clock.format(to).endsWith(':00') && stepsAt(to).every(interval => interval.nativeEnd - interval.nativeStart <= HOUR)) {
       label = `Jusqu’à ${hourLabel(to)}`;
     }
     else if (index === 0 && precise(to) && to < day.end) label = `Avant ${hourLabel(to)}`;
     else if (index > 0 && from <= sunrise + HOUR && to === day.end && !precise(from)) label = 'En journée';
-    else if (index > 0 && to === day.end && period.phase === 'dry') label = 'Reste de la journée';
+    else if (index > 0 && to === day.end && phase === 'dry') label = 'Reste de la journée';
     else if (index > 0 && precise(from) && to === day.end) label = `Dès ${hourLabel(from)}`;
     else if (index > 0 && from <= sunrise + HOUR && to >= evening && to < day.end) label = 'En journée';
     else if (index > 0 && to < day.end && precise(from) && precise(to)) label = `${hourLabel(from)} – ${hourLabel(to)}`;
@@ -177,6 +191,18 @@ export function cardPeriods(day, { total, daytime, summarize, at, leadDays, cloc
     else if (from >= evening) label = 'Soir';
     else if (from >= at(12)) label = to <= evening ? 'Après-midi' : 'Fin de journée';
     else label = 'En journée';
-    return { period, label, night };
+    return { start: from, label, night, presentation };
   });
+
+  // A weather transition may split a broad part of the day when hours are too uncertain to display.
+  for (const [label, early, late] of [
+    ['Matin', 'Début de matinée', 'Fin de matinée'],
+    ['Soir', 'Début de soirée', 'Fin de soirée'],
+  ]) {
+    const matching = labeledConditions.filter(condition => condition.label === label);
+    if (matching.length !== 2) continue;
+    matching[0].label = early;
+    matching[1].label = late;
+  }
+  return labeledConditions;
 }

@@ -1,6 +1,6 @@
 const prefix = "meteo-local-";
-const cacheName = prefix + "1.22";
-const shell = ["./","index.html","runtime-config.js?v=1.22","app.js?v=1.22","style.css?v=1.22","compact-forecast.css?v=1.22","forecast-core.js?v=1.22","daily-rows.js?v=1.22","compact-forecast.js?v=1.22","card-periods.js","precipitation-24h.js","pictogrammes/calque-traces-pluie.svg","nowcast/engine.js","nowcast/map.js","manifest.webmanifest"].map(p => new URL(p, self.registration.scope).href);
+const cacheName = prefix + "1.23";
+const shell = ["./","index.html","runtime-config.js?v=1.23","app.js?v=1.23","style.css?v=1.23","compact-forecast.css?v=1.23","forecast-core.js?v=1.23","daily-rows.js?v=1.23","compact-forecast.js?v=1.23","card-periods.js","precipitation-24h.js","pictogrammes/calque-traces-pluie.svg","nowcast/engine.js","nowcast/map.js","manifest.webmanifest"].map(p => new URL(p, self.registration.scope).href);
 self.addEventListener('install', event => event.waitUntil(caches.open(cacheName).then(c => c.addAll(shell)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith(prefix) && k !== cacheName).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
