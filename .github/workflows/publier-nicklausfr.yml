@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BULLETIN_REVISION: '9370b05e4cffaed5aa2766eaa29abd84e523ad37'
+  BULLETIN_REVISION: 'd2004eb4b59bdbecacf718ec88a5321e9ffa7139'
 
 jobs:
   build:
